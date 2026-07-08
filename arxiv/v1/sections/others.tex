@@ -1,0 +1,82 @@
+\section{Existing works}
+
+\paragraph{Aleatoric reject-option}
+The classical cost-based formulation of reject-option prediction was introduced in~\cite{Chow-RejectOpt-TIT1970}, where the optimal predictor is defined with respect to the data-generating distribution $p(x, y)$. A common modern approach to learn the reject-option classifier from examples builds on maximum-likelihood (ML) estimation and the plug-in rule, where the posterior $p(y|x)$ is approximated by training a neural network using cross-entropy loss on softmax-normalized class scores. The model thus estimates the conditional posterior $p(y|x, \theta)$, and training corresponds to maximizing the conditional log-likelihood $\log L(\theta) = \sum_{i=1}^m \log p(y_i | x_i, \theta)$. Under 0/1-loss, the plug-in rule rejects predictions based on the maximum class posterior, a strategy known as the Maximal Class Probability (MCP) rule, which serves as a standard baseline. Reject-option predictors can also be trained under the Empirical Risk Minimization (ERM) framework~\cite{Yuan-ClassiRejOpt-JMLR2010}. Beyond these principled methods, a wide range of heuristic approaches has been proposed. For a comprehensive overview, see the recent survey~\cite{Hendrickx-MLwithRejectOpt-ML2024}.
+
+%A substantial line of research investigates generalization bounds, which quantify the gap between the expected risk of a predictor learned via empirical risk minimization (ERM) and the minimal achievable risk within a given hypothesis class. These bounds offer a formal perspective on epistemic uncertainty~\cite{ShalecSchwarts-UnderML-2014}. However, because they are based on worst-case analyses, their practical utility is often limited—particularly in settings with finite datasets and realistic model classes. Moreover, such bounds do not provide input-specific decompositions. As a result, they are not directly applicable for designing reject-option rules.
+% Nonetheless, our proposed formulation of the epistemic reject-option predictor draws on a similar concept of regret, defined as the performance gap between the data-driven predictor and the optimal one.
+
+%Both ERM and maximum likelihood learning, while foundational, do not offer practical mechanisms for handling epistemic uncertainty unless large amounts of training data are available. In summary, the methods discussed above yield only point estimates (i.e., a single prediction rule) and are capable of capturing only aleatoric uncertainty, making them most suitable for data-rich scenarios.
+
+\begin{comment}
+Beyond maximum-likelihood and plug-in approaches, reject-option prediction can also be trained using the Empirical Risk Minimization (ERM) framework~\cite{Yuan-ClassiRejOpt-JMLR2010}. 
+
+Beyond the original cost-based formulation of reject-option prediction, an alternative approach imposes a constraint on the prediction error while maximizing coverage (the proportion of accepted inputs), or vice versa. This naturally leads to a decomposition into two components: a non-reject predictor and a binary selector that decides whether to accept or reject a prediction. This framework, known as selective prediction (or selective classification)~\cite{Yaniv-SelClassif-ML2010}, shares the same objective as reject-option prediction despite the different terminology~\cite{Franc-OptimalRejOpt-JMLR2021}.
+
+In addition to the principled approaches based on maximum likelihood and ERM, numerous heuristic methods have been proposed. For a comprehensive overview, see the recent survey~\cite{Hendrickx-MLwithRejectOpt-ML2024}.
+
+A substantial body of research focuses on generalization bounds, which quantify the gap between the expected risk of the learned predictor, $R(\hat{h})$, and the lowest achievable risk within the hypothesis class, $\inf_{h \in \mathcal{H}} R(h)$. These bounds offer a formal way to characterize epistemic uncertainty. However, since they are typically based on worst-case analyses, their practical utility is often limited—especially for finite datasets and realistic hypothesis classes.
+Consequently, the ERM principle on its own does not offer a practical approach to addressing epistemic uncertainty unless an infinite amount of training data is available. The same limitation applies to maximum likelihood (ML) learning. 
+\end{comment}
+
+
+\paragraph{Bayesian learning}
+
+Bayesian learning (e.g.~\cite{Bishop-PRML-2006,Gelman-Bayesian-2013}) is a principled  framework for modeling uncertainty. Unlike ERM or ML learning, that produce a point estimate of model parameters, Bayesian learning maintains a distribution over parameters, thereby capturing both aleatoric epistemic uncertainty. 
+
+%Predictions are made using the predictive distribution, which represents the distribution of the target variable $y$ given input $x$ and training data $D$. Under the assumption that $p(x, y | \theta) = p(x)\, p(y | x, \theta)$, the predictive distribution is given by:
+%\begin{equation}
+%\label{equ:PredictiveDistr}
+%p(y \mid x, D) = \EE_{\theta \sim p(\theta \mid D)}[p(y \mid x, \theta) ],
+%\end{equation}
+%
+%which captures aleatoric uncertainty through $p(y \mid x, \theta)$ and epistemic uncertainty through averaging over the posterior distribution $p(\theta \mid D)$.
+
+Recently, considerable attention has been given to Bayesian neural networks (BNNs), which extend Bayesian inference to neural networks by placing a prior (typically a Gaussian) over their parameters. Unlike simple models such as linear regression used in our running example, evaluating the predictive distribution in deep networks requires intractable marginalization and must therefore be approximated. Common approximation methods include Monte Carlo Dropout~\cite{Gal-Dropout-ICML2016} and deep ensembles~\cite{Lakshminarayanan-Ensembles-NIPS2017}, which offer scalable estimates of the predictive distribution.
+
+BNNs have been successfully applied to improve predictive performance, yield better-calibrated uncertainty estimates, support out-of-distribution detection, and enhance reject-option prediction~\cite{Kendal-What-NIPS2017, Lakshminarayanan-Ensembles-NIPS2017}.
+
+\paragraph{Aleatoric and epistemic uncertainty representation}
+
+The predictive distribution $p(y|x,D)$ obtained through Bayesian learning captures total uncertainty, comprising both aleatoric and epistemic components. \cite{Depeweg-Decompos-ICML2018} proposed an approach to decompose total uncertainty into these two components. Their method first quantifies total and aleatoric uncertainty, and then derives the epistemic uncertainty as their difference.
+In the classification setting, $\SY=\{1,\ldots,Y\}$, total uncertainty is measured by the entropy of the predictive distribution $T(x,D)=H[p(y|x,D)]$. Aleatoric uncertainty is defined as the expected entropy of the conditional distribution $p(y|x,D)$, averaged over the posterior distribution of the parameters: $A(x,D)=\EE_{\theta\sim p(|D)}[H[p(y|x,\theta)]]$. Epistemic uncertainty is then defined as $E(x,D) = T(x,D) - A(x,D)$  which corresponds to the mutual information between $y$ and $\theta$:
+\begin{equation}
+\label{equ:EntropyBaseDecomposition}
+  E(x,D) = \EE_{\theta\sim p(\theta|x,D)} \big [{\rm D}_{\rm KL}\big (p(y|x,\theta)\, \|\, p(y|x,D)\big ) \big ] \:,
+\end{equation}
+%
+%which corresponds to the mutual information between the target $y$ and the model parameters $\theta$. 
+%This entropy-based definition of epistemic uncertainty in~\eqref{equ:EntropyBaseDecomposition} coincides with our general definition~\eqref{equ:ConditionalRegret} when instantiated for the cross-entropy loss, as summarized in Table~\ref{tab:Summary}. 
+%
+A similar approach was used for regression, $\SY=\Re$, by replacing entropy with variance. Namely, the total uncertainty is defined as the variance of the predictive distribution, $T(x,D)={\rm Var}_{y \sim p(y \mid x, D)} [y]$ and the aleatoric uncertainty as the expected conditional variance $A(x,D) = \EE_{\theta \sim p(\theta \mid x,D)} \big [ {\rm Var}_{y \sim p(y \mid x, \theta)}[y] \big ]$. The epistemic uncertainty is then $E(x,D) = T(x,D) - A(x,D)$, corresponding to the variance of the conditional mean w.r.t. to model parameters:
+\begin{equation}
+\label{equ:VarianceBaseDecomposition}
+  E(x,D) = {\rm Var}_{\theta\sim p(\theta|D)} \big [ \EE_{y\sim p(y|x,\theta)}[y] \big ] \:.
+\end{equation}
+%
+\cite{Hofman-QuantifAleatoricEpistemic-Arxiv2024} proposed a general framework for quantifying aleatoric and epistemic uncertainty based on proper scoring rules, originally developed for probability estimation. They showed that the entropy-based and variance-based uncertainty decompositions are special cases of this more general approach.
+
+The entropy-based~\eqref{equ:EntropyBaseDecomposition} and the variance-based~\eqref{equ:VarianceBaseDecomposition} defintions of epistemic uncertainty coincide with our definition of the conditinal regret~\eqref{equ:ConditionalRegret} when instantiated with the cross-entropy or the squared loss, see Table~\ref{tab:Summary}. While we arrive at the same expressions for epistemic uncertainty, our methodology is fundamentally different. We first define the optimal epistemic reject-option predictor as the minimizer of the expected regret-based reject loss~\equ{equ:ExpectedRejectRegret}, and then demonstrate that the optimal accept-reject decision is governed by the conditional regret $E(x,D)$, which naturally serves as a measure of epistemic uncertainty.
+%
+Our formulation thus offers a theoretical justification for these widely used measures of epistemic uncertainty that were previously introduced from different principles and applied across diverse tasks. Notably, the definitions of epistemic uncertainty given in~\eqref{equ:EntropyBaseDecomposition} and~\eqref{equ:VarianceBaseDecomposition} have proven effective in various domains, including active learning, reinforcement learning, and credible interval estimation~\cite{Depeweg-Decompos-ICML2018,Wang-EpistQuant-CVPR2024}. However, to our knowledge, these measures have not yet been employed for constructing reject-option predictors.
+
+We also note that some works have questioned the validity of the entropy-based uncertainty decomposition proposed in~\cite{Depeweg-Decompos-ICML2018}. E.g.~\cite{Wimmer-Proper-CUAI2023} propose an axiomatic framework for defining epistemic and aleatoric uncertainty and show that the entropy-based decomposition violates their axioms. In contrast, our contribution offers a complementary perspective: we demonstrate that the epistemic uncertainty $E(x, D)$, as defined by~\equ{equ:EntropyBaseDecomposition}, is the optimal uncertainty measure for the epistemic reject-option under the cross-entropy loss. Therefore, the axiomatic notion of uncertainty in~\cite{Wimmer-Proper-CUAI2023} may not be aligned with the objectives and requirements of this particular task.
+
+
+\section{Conclusions}
+This paper introduces the concept of epistemic reject-option predictor, which abstains from making predictions when epistemic uncertainty, i.e. uncertainty due to limited data, is high. Unlike standard reject-option approach focusing solely on aleatoric uncertainty, or Bayesian reject-option predictors based on total uncertainty, our framework is, to our knowledge, the first to systematically identify inputs for which training data is insufficient to support reliable predictions. 
+
+%We formalize this approach as the problem whose objective is  to minimize the expected regret, which is defined as the performance gap between the learned predictor and the Bayes-optimal predictor with full knowledge of the data-generating process. The optimal epistemic reject-option predictor then abstains when the conditinal regret for a given input exceeds a specified rejection cost.  
+
+We formalize this approach by minimizing the expected regret, defined as the performance gap between the learned predictor and the ideal Bayes-optimal predictor with full knowledge of the data-generating process. The resulting optimal epistemic reject-option predictor abstains whenever the conditional regret for a given input exceeds a user-specified rejection cost.
+
+Notably, widely used measures of epistemic uncertainty in Bayesian neural networks, such as entropy- and variance-based scores, correspond to the conditional regret under specific loss functions. While epistemic uncertainty has been leveraged in various areas, we present, to our knowledge, its first principled application to reject-option prediction.
+
+To provide an initial validation, we apply our framework to a simple regression model with simulated data, where all key quantities can be computed analytically. While this setting allows for a clear proof-of-concept, applying the framework to real-world tasks necessitates intensive computational approximations, a direction left for future research.
+
+%by extending standard Bayesian learning: rather than minimizing expected loss, we minimize expected regret, defined as the performance gap between the learned predictor and the Bayes-optimal predictor with full knowledge of the data-generating process. The resulting optimal epistemic predictor makes accept–reject decisions based on the conditional regret, which naturally quantifies epistemic uncertainty. 
+%The epistemic reject-option predictor abstains when the regret for a given input exceeds a specified rejection cost.
+
+
+%We demonstrate the framework on simulated data using a simple regression model where all key quantities are analytically tractable. Evaluating the proposed framework on real-world tasks requires intensive computational approximations, which we leave for future work.
+

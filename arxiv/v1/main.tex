@@ -1,0 +1,87 @@
+\documentclass[twocolumn]{article} % DO NOT CHANGE THIS
+\usepackage{times}  % DO NOT CHANGE THIS
+\usepackage{helvet}  % DO NOT CHANGE THIS
+\usepackage{courier}  % DO NOT CHANGE THIS
+\usepackage[hyphens]{url}  % DO NOT CHANGE THIS
+\usepackage{graphicx} % DO NOT CHANGE THIS
+\urlstyle{rm} % DO NOT CHANGE THIS
+\def\UrlFont{\rm}  % DO NOT CHANGE THIS
+\usepackage{natbib}  % DO NOT CHANGE THIS AND DO NOT ADD ANY OPTIONS TO IT
+\usepackage{caption} % DO NOT CHANGE THIS AND DO NOT ADD ANY OPTIONS TO IT
+\frenchspacing  % DO NOT CHANGE THIS
+%\setlength{\pdfpagewidth}{8.5in} % DO NOT CHANGE THIS
+%\setlength{\pdfpageheight}{11in} % DO NOT CHANGE THIS
+%
+% These are recommended to typeset algorithms but not required. See the subsubsection on algorithms. Remove them if you don't have algorithms in your paper.
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+%
+
+% Keep the \pdfinfo as shown here. There's no need
+% for you to add the /Title and /Author tags.
+\pdfinfo{
+/TemplateVersion (2026.1)
+}
+
+% PACKAGES ADDED BY JAKUB P.
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{subcaption}
+\usepackage{comment}
+%\usepackage{bbm}
+
+
+%\setcounter{secnumdepth}{0} %May be changed to 1 or 2 if section numbers are desired.
+% The file aaai2026.sty is the style file for AAAI Press
+% proceedings, working notes, and technical reports.
+%
+
+% Title
+
+\title{Epistemic Reject Option Prediction}
+\author {
+    % Authors
+    Vojtech Franc, 
+    Jakub Paplham\\
+    Department of Cybernetics\\
+    Faculty of Electrical Engineering\\
+    Czech Technical University in Prague\\
+    xfrancv@fel.cvut.cz, paplhjak@fel.cvut.cz
+}
+
+\input{sections/makros}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+In high-stakes applications, predictive models must not only produce accurate predictions but also quantify and communicate their uncertainty. Reject-option prediction addresses this by allowing the model to abstain when prediction uncertainty is high. Traditional reject-option approaches focus solely on aleatoric uncertainty, an assumption valid only when large training data makes the epistemic uncertainty negligible. However, in many practical scenarios, limited data makes this assumption unrealistic. This paper introduces the epistemic reject-option predictor, which abstains in regions of high epistemic uncertainty caused by insufficient data. Building on Bayesian learning, we redefine the optimal predictor as the one that minimizes expected regret -- the performance gap between the learned model and the Bayes-optimal predictor with full knowledge of the data distribution. The model abstains when the regret for a given input exceeds a specified rejection cost. To our knowledge, this is the first principled framework that enables learning predictors capable of identifying inputs for which the training data is insufficient to make reliable decisions.
+\end{abstract}
+
+% Uncomment the following to link to your code, datasets, an extended version or similar.
+% You must keep this block between (not within) the abstract and the main body of the paper.
+%\begin{links}
+%     \link{Code}{https://aaai.org/example/code}
+%     \link{Datasets}{https://aaai.org/example/datasets}
+%     \link{Extended version}{https://aaai.org/example/extended-version}
+%\end{links}
+
+\input{sections/intro}
+\input{sections/preliminaries}
+\input{sections/proposal}
+%\input{AnonymousSubmission/LaTeX/sections/instances}
+\input{sections/summary}
+\input{sections/experiments}
+\input{sections/others}
+%\input{AnonymousSubmission/LaTeX/sections/draft}
+
+\bibliographystyle{abbrv}
+\bibliography{aaai2026}
+
+\newpage
+\input{sections/appendix}
+
+\end{document}
+

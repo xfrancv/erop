@@ -1,0 +1,85 @@
+\section{Summary}
+\label{sec:summary}
+
+%The aleatoric reject-option predictor $q^*(x)$ relies on the base (non-rejecting) Bayes-optiom predictor $h^*(x)$ to make predictions when a rejection is not issued. The accept-or-reject decision is based on the conditional risk $r^*(x)$, which can be interpreted as the aleatoric uncertainty when the full data-generating distribution $p(x,y)$ is known.
+%
+%As a theoretical construct, the aleatoric reject-option predictor assumes access to the true distribution $p(x,y)$ and neglects epistemic uncertainty. This assumption is reasonable when the amount of training data is sufficiently large. In contrast, the 
+
+Bayesian $Q_B(x,D)$ and the epistemic $Q_E(x,D)$ reject-option predictors are designed for scenarios with finite training data $D$. Both follow a similar structure (see~\equ{equ:TotalRejectBL} and~\equ{equ:OptEpistRejOptPred}): they use the Bayesian predictor $H_B(x,D)$ as the base predictor, but they differ in the uncertainty measure used to decide whether to accept or reject a prediction. The Bayesian reject-option predictor relies on the total uncertainty $T(x,D)$, while the epistemic reject-option predictor uses the epistemic uncertainty $E(x,D)$. Table~\ref{tab:Summary} presents specific instances of the Bayesian and epistemic reject-option predictors for three commonly used loss functions: quadratic loss, 0/1 loss, and cross-entropy loss. 
+
+To clarify the relationship between the uncertainties used by the two approaches, we introduce a third quantity:
+\begin{equation}
+\label{equ:AleatorUncertainty}
+\begin{array}{rcl}
+A(x, D) & = & T(x, D) - E(x, D) \\
+& = & \EE_{(\theta, y) \sim p(\theta, y \mid x, D)} \left[\ell(y, h(x, \theta))\right].
+\end{array}
+\end{equation}
+%
+Recall that the conditional risk $r^*(x) = \EE_{y \sim p(y \mid x)}[\ell(y, h^*(x))]$, 
+used by the aleatoric reject-option predictor, represents the aleatoric uncertainty under the true data-generating distribution $p(x,y)$. By comparison, the expression for $A(x,D)$ in Equation~\equ{equ:AleatorUncertainty} gives the expected conditional risk under the posterior over parameters given the data $D$. Thus, $A(x,D)$ can be interpreted as the aleatoric uncertainty in input $x$, estimated from the available data. The decomposition (following from~\equ{equ:AleatorUncertainty})
+\[ 
+  T(x,D)=A(x,D)+E(x,D)
+\]
+%
+highlights a key distinction between the proposed epistemic and Bayesian reject-option predictors. The epistemic predictor makes its accept-reject decisions based solely on epistemic uncertainty $E(x,D)$, whereas the Bayesian predictor uses the total uncertainty $T(x,D)$, which combines both aleatoric $A(x,D)$ and epistemic $E(x,D)$ components. 
+
+\begin{example} 
+Consider the setting of Example~\ref{example:BLregression}. The three types of the uncertainties decompose as follows:
+\[
+  \begin{array}{lrcl}
+    \text{Aleatoric} & A(x,D) &=& v(x) \:,\\
+    \text{Epistemic}  & E(x,D) &=& \#x^T \#\Sigma_m\#x \:,\\
+    \text{Total}     & T(x,D) &=& \#x^T\, \#\Sigma_m\, \#x + v(x) \:.
+  \end{array}
+\]
+Note that the aleatoric uncertainty $A(x,D)$ coincides with the true conditional risk $r^*(x)$, since noise variance $v(x)$ is assumed to be known in our example.  To compare the accept-reject regions of the three reject-option predictors, refer to the following figures:
+\begin{itemize}
+    \item \textbf{Aleatoric Predictor:} As shown in Figure~\ref{fig:aleatoricRejectOption}, this theoretical predictor with full knowledge of $p(x,y)$ uses aleatoric uncertainty, $r^*(x)=A(x,D)$, to define its rejection rule. Consequently, the rejection area consists of inputs with high inherent noise (i.e. high variance~$v(x)$).
+    \item \textbf{Bayesian Predictor:} This predictor, illustrated in Figure~\ref{fig:BayesianRejectOpt}, bases its rejection on total uncertainty, $T(x,D)$. It rejects inputs that both have high aleatoric noise and are far from the training data.
+    \item \textbf{Epistemic Predictor:} Shown in Figure~\ref{fig:EpistemicRejectOpt}, this predictor utilizes epistemic uncertainty, $E(x,D)$. Its rejection area contains inputs that are not reliably supported by the training data. Notably, this allows the predictor to accept inputs with high aleatoric uncertainty, provided its performance is comparable to that of the Bayes-optimal predictor. This acceptable performance gap is controlled by the rejection cost~$\delta$.
+    %    Notably, this allows the predictor to accept inputs with high aleatoric uncertainty, as long as its performance on them is similar to that of the Bayes-optimal predictor. The allowed performance gap is controlled via the rejection cost $\delta$.
+\end{itemize}
+
+%\begin{itemize}
+%    \item The aleatoric reject-option predictor, which uses uncertainty $r^*(x)=A(x,D)$, is shown in Figure~\ref{fig:aleatoricRejectOption}. The rejection area contains inputs with high aleatoric noise.
+%    \item The Bayesian reject-option predictor, based on total uncertainty $T(x,D)$, is shown in Figure~\ref{fig:BayesianRejectOpt}. The rejection area corresponds to inputs where the aleatoric noise is high and which are not covered by trainig samples.
+%    \item The epistemic reject-option predictor, which uses $E(x,D)$, is shown in Figure~\ref{fig:EpistemicRejectOpt}. The rejection area contains inputs which are not relibly supported by training data. Note that the accepted inputs can have high aleatoric uncertainty, yet the learned predictor performs on these inputssimilarly to the Bayes-optimal predictor.
+%\end{itemize}
+\end{example}
+
+
+
+\begin{table*}[]
+    \centering
+    \begin{tabular}{ll|c|c|c}
+          \multicolumn{2}{c|}{Loss}& Bayesian predictor & Total uncertainty & Epistemic uncertainty\\
+          \multicolumn{2}{c|}{$\ell(y,\hat{y})$} & $H_B(x,D)$        & $T(x,D)$          & $E(x,D)$ \\
+       \hline%\hline
+       %
+%       General & $\ell(y,\hat{y})$ &
+%       $\argmin\limits_{\hat{y} \in \SY} \EE_{y\sim p(y|x,D)}\big [ \ell(y, \hat{y}) \big ] $ & $\EE_{y\sim p(y|x,D)}\big[\ell(y,H_B(x,D))\big ]$  &
+%       $\EE_{(\theta,y)\sim p(\theta,y|x,D)}\big [ \ell(y,H_B(x,D)) - \ell(y,h(x,\theta)) \big ]$\\
+       %
+       \hline
+       Squared & $(y-\hat{y})^2$ &
+       $\EE_{\theta\sim p(\theta|D)}\Big[\EE_{y\sim p(y|x,\theta)}[y] \Big ]$  &
+       ${\rm Var}_{y\sim p(y|x,D)} [y]$&
+       ${\rm Var}_{\theta\sim p(\theta|D)} \Big [ \EE_{y\sim p(y|x,\theta)}[y] \Big ]$\\
+       %
+       \hline
+       %\multicolumn{5}{l}{0/1 loss $\ell(y,\hat{y})=\leftbb y\neq \hat{y}\rightbb$} \\
+       0/1 & $\leftbb y\neq \hat{y}\rightbb$ & 
+       $\argmax\limits_{y\in\SY} p(y|x,D)$  &
+       $1-\max_{y\in\SY} p(y|x,D)$ &
+       $\EE_{\theta\sim p(\theta|D)}\Big[ \max\limits_{y\in\SY} p(y|x,\theta)\Big ] - \max\limits_{y\in\SY} p(y|x,D)$ \\
+       \hline
+       CE & $-\log p_y$ & $p(y|x,D)$ & $H[p(y|x,D)]$ &
+       $\EE_{\theta\sim p(\theta|D)} \Big [{\rm D}_{\rm KL}\big (p(y|x,\theta)\, \|\, p(y|x,D)\big ) \Big ]$ \\       
+    \end{tabular}
+    \caption{Specific instances of the Bayesian (using $H_B(x,D)$ and $T(x,D)$) and epistemic (using $H_B(x,D)$ and $E(x,D)$) reject-option predictors for three commonly used loss functions: squared loss, 0/1 loss, and cross-entropy (CE) loss. These instances are derived under the assumption that the conditional model factorizes as $p(x,y|\theta)=p(x)\,p(y|x,\theta)$
+    %, and that training data $D=((x_i,y_i)\in\SX\times\Re\mid i=1,\ldots,m)$ are i.i.d, 
+    so the predictive distribution takes the form $p(y|x,D)=\EE_{\theta\sim p(\theta|D)}[p(y|x,\theta)]$.
+    In case of the cross-entropy loss $\ell(y,\#p)=-\log p_y$, the set of target space is finite, $\SY=\{1,2,\ldots,Y\}$, while the base predictor $H\colon\SX\times(\SX\times\SY)^m\rightarrow\SP=\{\#p\in\Re_+^Y\mid \sum_{y\in\SY}p_y=1\}$ outputs a distribution over $\SY$. We use $H[p(y)] = -\mathbb{E}_{y \sim p(y)}[\log_2 p(y)]$ to denote the entropy of a discrete distribution.}
+    \label{tab:Summary}
+\end{table*}

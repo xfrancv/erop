@@ -1,0 +1,21 @@
+\section{Conclusions}
+This paper introduces the concept of epistemic reject-option predictor, which abstains from making predictions when epistemic uncertainty, i.e. uncertainty due to limited data, is high. Unlike standard reject-option approach focusing solely on aleatoric uncertainty, or Bayesian reject-option predictors based on total uncertainty, our framework is, to our knowledge, the first to systematically identify inputs for which training data is insufficient to support well-informed predictions. 
+
+\vspace{-0.1cm}
+
+We formalize this approach by minimizing expected regret, defined as the performance gap between the learned predictor and the Bayes-optimal predictor with full knowledge of the data-generating process. The resulting optimal epistemic reject-option predictor abstains whenever the conditional regret for a given input exceeds a user-specified rejection cost, which controls the maximum performance degradation we are willing to accept.
+
+\vspace{-0.05cm}
+
+Notably, widely used measures of epistemic uncertainty in Bayesian neural networks, such as entropy- and variance-based scores, correspond to the conditional regret under specific loss functions. While epistemic uncertainty has been leveraged in various areas, we present, to our knowledge, its first principled application to reject-option prediction.
+
+%To provide an empirical validation, we apply our framework to regression models for which all relevant quantities can be computed analytically, using simulated data that enable a direct evaluation of expected regret. In addition, we consider a more realistic setting--age prediction from facial images--and observe consistent behavior (c.f. Appendix~\ref{appendix:experiments}). The experimental results support our theoretical findings. Investigating scalable implementations of the proposed framework in more complex models, such as deep Bayesian neural networks, represents an important direction for future work. However, we see as the main contribution formulating the theoretical framework that is the necessary first step for developing practical prediction models able to identify inputs on which their predictions are supported by data.
+
+\vspace{-0.05cm}
+To provide an empirical validation, we apply our framework to regression models for which all relevant quantities can be computed analytically, using simulated data that enable a direct evaluation of expected regret. In addition, we consider a more realistic setting—age prediction from facial images—and observe consistent behavior (cf. Appendix~\ref{appendix:experiments}). Investigating scalable implementations of the proposed framework in complex models, such as deep Bayesian neural networks, represents an important direction for future work. We emphasize that the primary contribution of this work lies in formulating the underlying theoretical framework, which constitutes a necessary first step toward developing practical prediction models capable of identifying inputs for which their predictions are supported by the available data.
+
+%by extending standard Bayesian learning: rather than minimizing expected loss, we minimize expected regret, defined as the performance gap between the learned predictor and the Bayes-optimal predictor with full knowledge of the data-generating process. The resulting optimal epistemic predictor makes accept–reject decisions based on the conditional regret, which naturally quantifies epistemic uncertainty. 
+%The epistemic reject-option predictor abstains when the regret for a given input exceeds a specified rejection cost.
+
+%We demonstrate the framework on simulated data using a simple regression model where all key quantities are analytically tractable. Evaluating the proposed framework on real-world tasks requires intensive computational approximations, which we leave for future work.
+

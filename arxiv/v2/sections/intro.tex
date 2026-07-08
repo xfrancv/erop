@@ -1,0 +1,53 @@
+\section{Introduction}
+
+Predictive models learned from data lie at the core of most practical AI systems. These models are typically trained to minimize the average prediction error. However, in high-stakes applications such as medicine, it is crucial not only to achieve low prediction error but also to quantify the uncertainty of individual predictions and effectively communicate this uncertainty to the end user.
+
+Prediction uncertainty arises from two primary sources: aleatoric uncertainty and epistemic uncertainty~\cite{Hullermeier-Intro-ML2021}. Aleatoric uncertainty stems from the inherent randomness in the relationship between the inputs and the target outputs. It reflects noise in the data and is considered irreducible. In contrast, epistemic uncertainty arises due to the model being trained on a finite dataset instead of having access to the true data-generating distribution. Unlike aleatoric uncertainty, epistemic uncertainty is reducible with more data.
+
+\vspace{-0.1cm}
+
+Prediction uncertainty can be leveraged to support decision-making in various ways. A widely used approach is reject-option prediction, where the model abstains from predicting when uncertainty is high, thus indicating an elevated risk of an incorrect outcome. Traditional reject-option predictors~\cite{Chow-RejectOpt-TIT1970} consider only aleatoric uncertainty, a setting we term aleatoric reject-option prediction. Existing methods for training these predictors often rely on empirical risk minimization or maximum likelihood estimation, assuming a training dataset large enough to disregard epistemic uncertainty~\cite{Hendrickx-MLwithRejectOpt-ML2024}.
+
+\vspace{-0.1cm}
+
+In practical applications, training data is inherently finite, and consequently, ignoring epistemic uncertainty is often unjustified. Bayesian learning provides a principled methodology for naturally incorporating both aleatoric and epistemic uncertainties~\cite{Bishop-PRML-2006,Gelman-Bayesian-2013}. Its application to reject-option prediction enables the development of models we call Bayesian reject-option predictors. Such models are designed to abstain from making a prediction when the overall predictive uncertainty, encompassing both its aleatoric and epistemic sources, is deemed too high.
+
+\vspace{-0.1cm}
+
+
+In this paper, we introduce a novel framework for constructing epistemic reject-option predictors that abstain when the learned predictor is expected to perform significantly worse than the Bayes-optimal predictor. We formalize this notion by extending the standard Bayesian learning framework to minimize expected regret rather than expected loss. Expected regret, which we use as a measure of epistemic uncertainty, is defined as the performance gap between the learned predictor and the Bayes-optimal predictor with full knowledge of the data-generating distribution. The resulting predictor abstains whenever this regret for a given input exceeds a user-specified rejection cost.
+
+%In this paper, we introduce a novel framework for constructing epistemic reject-option predictors that abstain when the learned predictor is expected to perform significantly worse than the Bayes-optimal predictor. To formalize this notion, we extend the standard Bayesian learning framework by replacing the conventional objective of minimizing expected loss with the minimization of expected regret. The regret, which we use as a measure of epistemic uncertainty, is defined as the performance gap between the learned predictor and the Bayes-optimal predictor, which has full knowledge of the true data-generating distribution. The resulting predictor abstains whenever the regret for a given input exceeds a user-specified rejection cost.
+
+To illustrate the distinction between existing reject-option strategies and the proposed approach, we consider the following example.
+
+\begin{example}
+Imagine a system trained to predict house prices from their location. The training data comes primarily from the city center, which has many past sales, so the model is well informed in this region. However, prices in the center vary widely due to unobserved factors, representing aleatoric uncertainty.
+\vspace{-0.08cm}
+
+An \textit{aleatoric reject-option} predictor abstains in \textit{locations where prices are highly variable} and predicts where prices are stable. It is reliable only for locations drawn from the city center that are well covered by the training data.
+\vspace{-0.08cm}
+
+A \textit{Bayesian reject-option} predictor rejects predictions both in \textit{unfamiliar suburbs}, due to limited training data, and in \textit{well-sampled neighborhoods where prices are volatile}.
+
+\vspace{-0.08cm}
+
+The proposed \textit{epistemic reject-option} predictor \textit{abstains in unfamiliar suburbs}, explicitly signaling that the available training data is insufficient. It continues to predict in the city center despite high price volatility; since it has sufficient data to claim that no predictor can perform substantially better there.
+\end{example}
+
+\vspace{-0.05cm}
+
+
+The main contributions of this work are:
+\vspace{-0.3cm}
+\begin{enumerate}[leftmargin=1.1em,itemsep=1pt]
+\item We propose a principled framework for constructing reject-option predictors whose accept–reject decisions are based solely on epistemic uncertainty. We formulate epistemic reject-option prediction as a decision-making problem with a clear and interpretable objective. To our knowledge, this is the first framework that systematically enables predictors to identify inputs for which the available training data is insufficient to support well-informed predictions.
+%
+\item We provide a decision-theoretic justification for entropy-based and variance-based measures of epistemic uncertainty commonly used in Bayesian neural networks~\cite{Depeweg-Decompos-ICML2018}. Specifically, we show that these widely used uncertainty measures correspond to conditional regret—instantiated for different loss functions—which governs the accept–reject decisions of the theoretically optimal epistemic reject-option predictor.
+%
+\item We empirically evaluate the proposed approach alongside existing reject-option predictors in a controlled setting where data are generated from known distributions, allowing the optimal predictors to be constructed and fairly evaluated. The experimental results support our theoretical findings.
+
+\vspace{-0.2cm}
+
+\end{enumerate}
+

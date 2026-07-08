@@ -1,0 +1,21 @@
+- Can the authors provide examples of applications where epistemic-only reject-option prediction is necessary and can actually be implemented, i.e., when the aleatoric uncertainty is completely absent?
+
+Our framework does not require aleatoric uncertainty to be absent; such an assumption would indeed be overly restrictive. The epistemic reject option predictor is useful whenever one wishes to determine whether the available training data are sufficient to guarantee nearly optimal prediction for a given input, which we believe is very useful in manby applications.
+
+As a prototypical example, consider tumor grading from brain MRI. If the epistemic reject option predictor (EROP) abstains on a given MRI, this indicates that the input is not sufficiently covered by the current training data, and that annotating such cases could be valuable for extending the training set. If, on the other hand, EROP outputs a prediction (e.g., low-grade vs. high-grade glioma), then it guarantees that no better prediction can be obtained from that MRI within the considered statistical framework.
+
+Importantly, this guarantee does not require low aleatoric uncertainty. The MRI itself may still be noisy or ambiguous, for example due to limited image quality. In that case, aleatoric uncertainty may remain high, yet EROP still certifies that no predictor using only the same MRI can substantially improve upon the output. By contrast, if a standard Bayesian reject-option predictor abstains, it is generally unclear whether this is due to insufficient training data or to irreducible ambiguity in the input.
+
+- How does the reject-option prediction relate to the **learning-to-defer** literature (see, e.g., [1] and references therein)? The problem formulation of this problem in Section 2 looks similar to that of the learning-to-defer problem.
+
+In reject-option prediction, including our framework, the fallback after rejection is typically abstracted as either a fixed rejection cost or a coverage constraint. In learning to defer, by contrast, the fallback decision-maker (e.g., a human expert) is modeled explicitly. The goal is then to allocate cases between the predictor and the expert so as to optimize the performance of the combined system. Thus, while the formulations are related, the emphasis is different: reject-option prediction focuses on when the model should abstain, whereas learning to defer focuses on when the model or the expert should handle a given case.
+
+- How does one set a rejection cost in practice? Any theory to support the right choice of this parameter?
+
+This issue is common to all reject-option predictors, including aleatoric, Bayesian, and epistemic variants. In practice, there are two main possibilities. First, in some applications both the prediction loss and the rejection cost can be expressed in the same physical or operational units, which allows the rejection cost to be specified directly. Second, one can train predictors for a range of rejection costs and then select the most suitable operating point based on the resulting risk–coverage tradeoff (or regret–coverage tradeoff in our setting).
+
+- What if we have no access to the ground-truth data-generating process? How realistic is it to reject the prediction based solely on the epistemic uncertainty, given that in most practical applications one must often deal with both aleatoric and epistemic uncertainty?
+
+As noted above, our framework does not assume zero aleatoric uncertainty. It also does not require knowledge of the true data-generating process. Indeed, if the true data-generating process were known, there would be no need for learning, since the Bayes predictor could be constructed directly.
+Our assumption is only that the true distribution belongs to the considered model class. This is the same standard well-specifiedness assumption that underlies Bayesian learning and, more generally, other generative learning approaches.
+

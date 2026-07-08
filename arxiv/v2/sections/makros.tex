@@ -1,0 +1,166 @@
+% JP
+\def\Rscod{{\rm R_{\rm SCOD}}}
+\def\estRscod{\widehat{\rm R}} %_{\rm SCOD}
+\def\estRsel{\widehat{\rm R}_{\rm S}}
+\def\esttpr{\widehat{\tpr}}
+\def\estfpr{\widehat{\fpr}}
+\def\areaSCODTpr{{\rm AuSRT}}
+\def\areaRiskCoverage{{\rm AuRC}}
+\def\areaROC{{\rm AuROC}}
+
+% VF
+\def\det#1{{\rm det(#1)}}
+\def\Algo{{POSCOD}}
+\def\tpr{{\rm tpr}}
+\def\fpr{{\rm fpr}}
+\def\Pout{\pi_{\rm O}}
+\def\Pood{\pi_{\rm O}}
+\def\relCost{\alpha}
+\def\tprMin{{\rm tpr}_{\rm min}}
+\def\covMin{\rho_{\rm min}}
+\def\Rsel{{\rm R_{\rm S}}}
+\def\reject{{\rm reject}}
+\def\tprSamp{{\rm tpr}_n}
+\def\fprSamp{{\rm fpr}_n}
+\def\precSamp{\kappa_n}
+\def\RselSamp{{\rm R_m^{S}}}
+\def\ExpRiskSamp{R_n}
+\def\ExpRisk{R}
+\def\ROC{{\rm ROC}}
+\def\RC{{\rm RC}}
+\def\PR{{\rm PR}}
+\def\at{\texttt{\symbol{64}}}
+
+\def\beq{\begin{equation}}
+\def\eeq{\end{equation}}
+\def\beqn{\begin{eqnarray}}
+\def\eeqn{\end{eqnarray}}
+\def\beqns{\begin{eqnarray*}}
+\def\eeqns{\end{eqnarray*}}
+\def\argmax{\mathop{\rm argmax}}
+\def\argmin{\mathop{\rm argmin}}
+\def\Argmax{\mathop{\rm Argmax}}
+\def\Argmin{\mathop{\rm Argmin}}
+\def\cvx{\mathop{\rm conv}}
+\def\ST{{\cal T}}
+\def\SE{{\cal E}}
+\def\EE{{\mathbb{E}}}
+\def\SA{{\cal A}}
+\def\SD{{\cal D}}
+\def\SI{{\cal I}}
+\def\SM{{\cal M}}
+\def\SP{{\cal P}}
+\def\SS{{\cal S}}
+\def\SQ{{\cal Q}}
+\def\SG{{\cal G}}
+\def\SB{{\cal B}}
+\def\SK{{\cal K}}
+\def\SX{{\cal X}}
+\def\SY{{\cal Y}}
+\def\BY{{\mathbb Y}}
+\def\SF{{\cal F}}
+\def\SN{{\cal N}}
+\def\SH{{\cal H}}
+\def\SV{{\cal V}}
+\def\SO{{\cal O}}
+\def\SC{{\cal C}}
+\def\SU{{\cal U}}
+\def\SD{{\cal D}}
+\def\pred{{\rm pred}}
+\def\col{{\rm col}}
+\def\NN{\mathbb{N}}
+\def\Prob{\mathbb{P}}
+\renewcommand{\Re}{\mathbb{R}}
+\def\veps{\varepsilon}
+\def\mycup{\mathop{\cup}}
+\def\equ#1{(\ref{#1})}
+\def\lz{\langle}
+\def\pz{\rangle}
+\def\PDelta{{\Delta^{\rm p}}}
+\def\PDeltaDec{{\Delta_t^{\rm p}}}
+\def\onehot#1{\mathbf{1}_{#1}}
+\def\parv{\lambda}
+\def\one#1{\mathbf{1}{\{ {#1}\}}}
+\def\entropy#1{{\mathbb{H}\left ( {#1} \right ) }}
+\def\kl#1{{{\rm D}_{\rm KL}\left ( {#1}\right )}}
+
+\def\proxyadv{{\psi_{\rm adv}}}
+\def\proxyadvmn{{\psi_{\rm mana}}}
+\def\pproxyadvmn{{\psi^p_{\rm mana}}}
+%\def\proxymrub{{\psi_{\rm MR}^{\rm UB}}}
+\def\proxymrub{{\psi_{\rm lp}}}
+\def\proxy{{\psi}}
+\def\proxymr{{\psi_{\rm mr}}}
+\def\pproxy{{\psi^p}}
+\def\pproxyramp{{\psi^p_{\rm ramp}}}
+\def\pproxymrub{{\psi^p_{\rm lp}}}
+
+%\def\Rpproxyadvmn{{R^{\pproxyadvmn}}}
+\def\Rtarget{{R_\ell}}
+\def\RtargetBayes{{R_\ell^*}}
+\def\Rproxy{{R_\psi}}
+\def\Rpproxy{{R_{\psi^p}}}
+\def\Rpproxyadvmn{{R^p_{\rm mana}}}
+\def\Rproxyadvmn{{R_{\rm mana}}}
+\def\Rproxyadv{{R_{\rm adv}}}
+\def\reject{{\rm reject}}
+
+
+%\def\tpr{\phi}
+%\def\fpr{\rho}
+\def\prec{\kappa}
+%\def\Rsel{{\rm R^{S}}}
+
+%\DeclareFontFamily{U}{mathx}{\hyphenchar\font45}
+%\DeclareFontShape{U}{mathx}{m}{n}{
+%      <5> <6> <7> <8> <9> <10>
+%      <10.95> <12> <14.4> <17.28> <20.74> <24.88>
+%      mathx10
+%      }{}
+%\DeclareSymbolFont{mathx}{U}{mathx}{m}{n}
+%\DeclareFontSubstitution{U}{mathx}{m}{n}
+%\DeclareMathSymbol{\bigplus}        {1}{mathx}{"90}
+%\DeclareMathSymbol{\bigtimes}       {1}{mathx}{"91}
+
+%\def\bigtimes{\times}
+
+
+
+%-- MMMakro ------------------                                                  
+\def\##1{\relax\ifmmode\mathchoice      % italic bold vector, e.g. $\#{x}$
+{\mbox{\boldmath$\displaystyle#1$}}
+ {\mbox{\boldmath$\textstyle#1$}}
+{\mbox{\boldmath$\scriptstyle#1$}}
+{\mbox{\boldmath$\scriptscriptstyle#1$}}\else
+\hbox{\boldmath$\textstyle#1$}\fi}
+\def\m#1{\mathbf{#1}}                  % bold matrix, e.g. $\m{A}$
+%---------------------------------------
+\def\leftbb{\mathopen{\rlap{$[$}\hskip1.3pt[}}
+\def\rightbb{\mathclose{\rlap{$]$}\hskip1.3pt]}}
+\def\ass{\mathrel {:=}}
+\newcommand{\vphi}{\varphi}
+\newcommand{\boldvphi}{\#\varphi}
+
+\newcommand{\bbar}[1]{\bar{\bar{#1}}}
+
+\def\odda{{\rho}}
+
+\def\phimin{\phi_{\rm min}}
+\def\rhomax{\rho_{\rm max}}
+\def\kappamin{\kappa_{\rm min}}
+
+%\newtheorem{proof}{Proof}
+
+%\newtheorem{definition}{Definition}
+%\newtheorem{corollary}{Corollary}
+%\newtheorem{theorem}{Theorem}
+%\newtheorem{corollary}{Corollary}
+%\newtheorem{problem}{Problem}
+%\newtheorem{lemma}{Lemma}
+\newtheorem{example}{Example}
+
+%\theoremsymbol{$\square$}
+%\newtheorem{proof}{Proof}
+
+%\newtheorem{claim}{Claim}[theorem]
+%\newtheorem{claimproof}{Proof of claim}[claim]

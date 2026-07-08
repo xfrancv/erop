@@ -1,0 +1,110 @@
+\section{Proposed epistemic reject-option predictor}
+\label{sec:ProposedEpistemRejOption}
+
+The goal of our framework is to construct a reject-option predictor that bases its accept–reject decisions solely on epistemic uncertainty. We define this predictor as the solution to a well-posed optimization problem. The central idea is to depart from standard Bayesian learning, which minimizes expected loss, and instead minimize expected regret, defined as the performance gap between the predictor inferred from data and the Bayes-optimal predictor with full knowledge of the underlying parameters. The predictor abstains when the regret for a given input exceeds a specified rejection cost.
+
+Following the Bayesian learning paradigm, our aim is to construct a reject-option predictor $Q \colon \mathcal{X} \times (\mathcal{X} \times \mathcal{Y})^m \rightarrow \mathcal{Y} \cup \{ \text{reject} \}$,  which, given training data $D \in \mathcal{D}$ and an input $x \in \mathcal{X}$, either outputs a predicted label $Q(x, D) \in \mathcal{Y}$ or opts to reject the prediction, i.e., $Q(x, D) = \text{reject}$.
+
+Given a prediction loss $\ell\colon\SY\times\SY\rightarrow\Re_+$ and a rejection cost $\delta\in\Re_+$, we define the regret-based reject loss $\ell^\delta\colon\{\SY\cup \text{reject}\}\times\SY\times\SY\rightarrow\Re_+$ as
+\[
+ \ell^{\delta}(d,y',y) = \begin{cases}
+    \ell(d,y)-\ell(y',y) & \text{if }\, d\in\SY \,,\\
+    \delta & \text{if }\, d=\text{reject} \:.
+ \end{cases}
+\]
+%
+Let $h(x,\theta)$ denote the Bayes-optimal predictor given the true parameter $\theta$, as defined in~\equ{equ:PluginBayesPredictor}.
+Given a full sample $(\theta, D, x, y)$ drawn from $p(\theta,D,x,y)$, the performance of the predictor $Q(x, D)$ is evaluated using the regret-based reject loss $\ell^\delta(Q(x, D), h(x, \theta), y)$. Specifically:
+\begin{itemize}
+\item If the predictor decides to make a prediction, i.e., $Q(x, D) \in \mathcal{Y}$, the loss is defined as the regret with respect to the best possible prediction: $\ell^\delta(Q(x, D), h(x, \theta), y) = \ell(Q(x, D), y) - \ell(h(x, \theta), y)$.
+\item If the predictor rejects, the loss is set to a fixed rejection cost:
+$\ell^\delta(Q(x, D), h(x, \theta), y) = \delta$.
+\end{itemize}
+%
+The overall performance of the reject-option predictor $Q$ is assessed by the Bayesian expected regret-based reject loss:
+\begin{equation}
+  \label{equ:ExpectedRejectRegret}
+ R_B^\delta(Q)=
+ \EE_{(\theta,D,x,y)\sim p(\theta,D,x,y)} \big [
+ \ell^\delta(Q(x,D),h(x,\theta),y)\big ] \:.
+ %\int_{\theta}\int_{D}\int_{x}\int_{y}p(x,y,D,\theta)\,
+ %\ell^\delta(y,Q(x,D),h^*(x,\theta)) \:.
+\end{equation}
+%
+The following theorem characterizes the minimizer of $R_B^\delta(Q)$, which we refer to as the epistemic reject-option predictor.
+%
+\begin{theorem}Let $Q_E\colon\SX\times(\SX\times\SY)^m\rightarrow\SY\cup \{\text{reject}\}$ 
+be the epistemic reject-option predictor defined as:
+\begin{equation}
+\label{equ:OptEpistRejOptPred}
+   Q_E(x,D) = \begin{cases}
+       H_B(x,D) & \text{if }\, E(x,D) \leq \delta\,,\\
+       \text{reject} & \text{if }\, E(x,D) > \delta \:,
+   \end{cases}    
+\end{equation}
+%
+where $H_B(x,D)$ is the Bayesian predictor~\equ{equ:LernPredictorBayes}, and $E(x,D)$ is the  conditional regret, given by:
+\begin{multline}
+  \label{equ:ConditionalRegret}
+  E(x,D) = \\\EE_{(\theta,y)\sim p(\theta,y|x,D)}\big [ \ell(y,H_B(x,D)) - \ell(y,h(x,\theta)) \big ]\:.
+\end{multline}
+%
+Then, $Q_E$ in~\equ{equ:OptEpistRejOptPred} minimizes  $R_B^\delta(Q)$ defined in~\equ{equ:ExpectedRejectRegret}. 
+\end{theorem}
+We defer the proof to the appendix.
+
+The conditional regret $E(x, D)$ serves as the basis for the accept–reject decisions of the epistemic reject-option predictor $Q_E(x, D)$. It has a clear interpretation: for a given input $x$ and training data $D$, it quantifies the expected performance gap between the learned predictor and the Bayes-optimal predictor with full knowledge of the data-generating process. This makes $E(x, D)$ a natural measure of epistemic uncertainty, and we refer to it as such in the following text.
+
+%\section{Uncertainty decomposition}
+%
+%The Bayesian reject-option predictor $H^*(x,D)$ (Equ~\equ{equ:TotalRejectBL})
+%makes the reject-accept decision based on the Bayesian conditional risk $T^*(x,D)$ (Equ~\equ{}). 
+
+
+
+%We express $Q(x,D)$ using a selective learning predictor, defined by a pair of learning functions: 
+%\begin{itemize}
+%    \item a learning predictor $H\colon\SX\times(\SX\times\SY)^m\rightarrow\SY$, and 
+%    \item a learning selector $S\colon\SX\times(\SX\times\SY)^m\rightarrow\{0,1\}$. 
+%\end{itemize}   
+%
+%Given this pair $(H,S)$, the reject-option learning predictor $H_\veps$ is defined as:
+%\[
+%   Q(x,D) = \begin{cases}
+%   H(x,D) & \text{if } S(x,D) = 1\,, \\
+%   {\rm reject} & \text{if } S(x,D) = 0 \:.
+%   \end{cases} 
+%\]
+%
+%
+%Let $h^*(x,\theta)$ denote the Bayes-optimal predictor given the parameter $\theta$, defined by:
+%\[
+%  h^*(x,\theta)=\argmin_{\hat{y}\in\SY}\int_{\SY}p(y|x,\theta) \ell(y,\hat{y})\:.
+%\]
+%
+%
+%We define the expected conditional regret of the predictor $H(x,D)$ relative to the Bayes-optimal prediction $h^*(x,\theta)$, conditined on $x$ and $D$, as:
+%\begin{multline}
+%\label{equ:ConditionalRegret}
+%\Delta(H|x, D) = \\ \int_{\Theta} \int_{\SY} p(y,\theta|x,D) \Big[\ell(y,H(x,D)) - \ell(y,h^*(x,\theta))\Big]\:.
+%\end{multline}
+%
+%This quantity $\Delta(H|x,D)$ captures, in expectation, how much worse the learning predictor $H(x,D)$ performs compared to the oracle predictor, i.e. Bayes-optimal predictor $h^*(x,\theta)$ which has access to the true model parameters. 
+%
+%Let $\veps\in\Re_+$ denote the cost associated with the rejecting a prediction (i.e., when $S(x,D)=0)$. We evaluate the performance of the  selective learning predictor $(H,S)$ using the expected regret:
+%\begin{multline}
+%\label{equ:expectedRegret}
+%R_{R}(H,S) = \\ \int_{\SX}\int_{\SD}p(x,D) \bigg[ S(x,D)\Delta(H|x,D) +\Big(1-S(x,D)\Big )\,\veps\bigg] \:.
+%\end{multline}
+%
+%\begin{theorem}Let $H^*(x,D)$ denote the Bayes-optimal learning predictor given in~\equ{equ:LernPredictorBayes}. Define the corresponding learning selector $S(x,D)$ by:
+%\begin{equation}
+%\label{equ:OptLearnSelector}
+%   S^*(x,D) =\begin{cases}
+%    1 & \text{if } \Delta(H|x,D) \leq \epsilon\\
+%    0 & \text{if } \Delta(H|x,D) > \epsilon\\
+%\end{cases}    
+%\end{equation}
+%
+%Then, the pair $(H^*,S^*)$ minimizes the expected regret $R_R(H,S)$ defined in~\equ{equ:expectedRegret}.
+%\end{theorem}

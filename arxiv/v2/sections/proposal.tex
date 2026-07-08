@@ -1,0 +1,44 @@
+\section{Proposed epistemic reject-option predictor}
+\label{sec:ProposedEpistemRejOption}
+The goal of our framework is to construct a reject-option predictor whose accept–reject decisions are based solely on epistemic uncertainty. We formulate this predictor as the solution to a well-posed decision-making problem by departing from standard Bayesian learning, which minimizes expected loss~\eqref{equ:BaysianRejOptObj}, and instead minimizing expected regret. Regret is defined as the performance gap between the predictor inferred from data and the Bayes-optimal predictor with full knowledge of the underlying parameters. The resulting predictor abstains whenever the expected regret for a given input exceeds a specified rejection cost, which determines the maximum performance degradation, relative to the optimal predictor, that we are willing to accept.
+
+%The goal of our framework is to construct a reject-option predictor whose accept–reject decisions are based solely on epistemic uncertainty. We formulate this predictor as the solution to a well-posed decision-making problem. We depart from standard Bayesian learning, which minimizes expected loss~\eqref{equ:BaysianRejOptObj}, and instead we minimize expected regret, defined as the performance gap between the predictor inferred from data and the Bayes-optimal predictor with full knowledge of the underlying parameters. The resulting predictor abstains whenever the expected regret for a given input exceeds a specified rejection cost. This rejection cost therefore determines the maximum performance degradation, relative to the optimal predictor, that we are willing to accept.
+
+%The goal of our framework is to construct a reject-option predictor that bases its accept–reject decisions solely on epistemic uncertainty. We define this predictor as the solution to a well-posed decision-making problem. The central idea is to depart from standard BL, which minimizes expected loss~\equ{equ:BaysianRejOptObj}, and instead minimize expected regret, defined as the performance gap between the predictor inferred from data and the Bayes-optimal predictor with full knowledge of the underlying parameters. The predictor abstains when the expected regret for a given input data exceeds a specified rejection cost. The reject cost thus specifies how much performance decrease, relative to the optimal predictor, we are willing to still accept.
+
+Following the BL paradigm, our aim is to construct a reject-option predictor $Q \colon \mathcal{X} \times (\mathcal{X} \times \mathcal{Y})^m \rightarrow \mathcal{Y} \cup \{ \text{reject} \}$,  which, given training data $D \in \mathcal{D}$ and an input $x \in \mathcal{X}$, either predicts $Q(x, D) \in \mathcal{Y}$ or opts to reject, $Q(x, D) = \text{reject}$. Again, we use~\equ{equ:BLRejectOptionPred} to represent $Q$ by a pair $(H,C)$, where  $H\colon \mathcal{X} \times (\mathcal{X} \times \mathcal{Y})^m \rightarrow \mathcal{Y}$ is a predictor and $C\colon \mathcal{X} \times (\mathcal{X} \times \mathcal{Y})^m \rightarrow \{0,1\}$ is a selector.
+
+Let $\ell\colon\SY\times\SY\rightarrow\Re_+$ be a prediction loss and $\delta\in\Re_+$ a rejection cost. Then, the decision of the epistemic reject-option predictor $Q=(H,C)$ on a data sample $(x,D)\sim p(x,D)$ is penalized as follows:
+
+\noindent 1. If it predicts, $C(x,D)=1$, the penalty equals to the expected conditional regret
+  \[
+    E(x,D) = \EE_{(\theta,y)\sim p(\theta,y|x,D)}\big [ \ell(y,H(x,D)) - \ell(y,h(x,\theta)) \big ]\:,
+  \]
+  i.e. the expected performance gap between the predictor $H(x,D)$ and the Bayes-optimal predictor $h(x,\theta)$ knowing the true parameter $\theta$.
+
+\noindent 2. If it rejects, $C(x,D)=0$, the penalty equals $\delta$.
+
+The overall performance of the epistemic reject-option predictor $Q=(H,C)$ is then evaluated by:
+\begin{multline}
+\label{equ:EpistemicRejOptObj}
+   R_\delta(H,C)=\\ \EE_{(x,D)\sim p(x,D)} \Big [C(x,D)\, E(x,D)+ \neg C(x,D)\,\delta 
+       \Big ]    \:.
+\end{multline}
+
+The following theorem characterizes the minimizer of $R_\delta(H,C)$, which we refer to as the optimal epistemic reject-option predictor.
+%
+\begin{theorem}\label{thm:EpistemicRejOpt} Let $Q_E=(H_*,C_E)$ be a reject-option predictor represented by the optimal Bayesian predictor $H_*$, defined in~\equ{equ:BLOptBayes}, and the selector $C_E(x,D) = \one{ E_*(x,D) \leq \delta }$
+where 
+\begin{multline}
+  \label{equ:ConditionalRegret}
+  E_*(x,D) = \\\EE_{(\theta,y)\sim p(\theta,y|x,D)}\big [ \ell(y,H_*(x,D)) - \ell(y,h(x,\theta)) \big ]\:.
+\end{multline}
+%
+Then, $Q_E$ is a minimizer of $R_\delta(H,C)$ defined in~\equ{equ:EpistemicRejOptObj}. 
+We refer to \(Q_E\) as the \emph{optimal epistemic reject-option predictor}.
+
+\end{theorem}
+%
+We defer the proof to Appendix~\ref{appendix:ProofOfEpistemicTheorem}.
+
+The expected conditional regret $E_*(x, D)$ forms a basis of the accept–reject decisions of the epistemic reject-option predictor $Q_E(x, D)$. The value of $E_*(x, D)$ admits a clear interpretation: for a given input $x$ and training set $D$, it quantifies the expected performance gap between the learned predictor and the Bayes-optimal predictor with full knowledge of the data-generating process. This makes $E_*(x, D)$ a natural measure of epistemic uncertainty, and we refer to it as such in the following. Consequently, the epistemic reject-option predictor accepts inputs for which the predictions of the learned predictor are sufficiently close, where closeness is controlled by $\delta$, to those of the theoretically optimal Bayes predictor.

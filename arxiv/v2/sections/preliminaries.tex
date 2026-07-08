@@ -1,0 +1,244 @@
+\section{Preliminaries}
+
+In this section, we review existing methods for constructing reject-option predictors, illustrating them with a simple running example. 
+%We cover standard approaches, including maximum likelihood and Bayesian learning, and show how they apply to reject-option prediction. 
+While the material is well established (e.g.,~\cite{Bishop-PRML-2006}), we present it using consistent notation and terminology to provide the necessary context for our novel framework of epistemic reject-option predictors.%, which builds upon these foundations.
+
+\subsection{Aleatoric Reject-Option Prediction}
+\label{sec:AleatorRejectOption}
+
+Let $\mathcal{X}$ denote the input space and $\mathcal{Y}$ the target space. Assume that input-target pairs $(x,y)$ are i.i.d. samples from a distribution $p(x,y)$ defined over $\mathcal{X}\times\mathcal{Y}$.
+The classical reject-option prediction framework~\cite{Chow-RejectOpt-TIT1970} aims to construct a predictor
+$q\colon \mathcal{X}\to \mathcal{Y}\cup\{\text{reject}\}$
+that for given $x\in\SX$ either outputs a prediction of the target $q(x)\in\mathcal{Y}$ or abstains from predicting, $q(x)=\text{reject}$, on inputs $x\in\mathcal{X}$ that are likely to be predicted incorrectly.
+We represent a reject-option predictor $q$ by a pair of functions $(h,c)$, where
+$h\colon \mathcal{X}\to\mathcal{Y}$ is a base predictor and
+$c\colon \mathcal{X}\to\{0,1\}$ is a selector, such that
+\[
+   q(x) = (h,c)(x) =
+   \begin{cases}
+     h(x), & \text{if }\;\; c(x)=1 \:,\\
+     \text{reject}, & \text{if }\;\; c(x)=0 \:.
+   \end{cases}
+\]
+%
+Let $\ell\colon\SY\times\SY\rightarrow\Re_+$ be a prediction loss and $\veps\in\Re_+$ a rejection cost. Then, the decision of a reject-option predictor $q=(h,c)$ on a sample $x\sim p(x)$ is penalized as follows:
+%\noindent 1. 
+\begin{enumerate}
+    \item If it predicts, $c(x)=1$, the penalty equals the conditional risk incurred by predicting $h(x)$ at $x$:
+  \[
+    a(x) = \EE_{y\sim p(y|x)}\big [ \ell(y,h(x)) \big ]\:,
+  \]
+%\noindent 2. 
+\item If it rejects, $c(x)=0$, the penalty equals $\veps$.
+\end{enumerate}
+
+The overall performance of the reject-option predictor $q=(h,c)$ is then evaluated by:
+\[
+   r_{\varepsilon}(h,c) =
+   \mathbb{E}_{x\sim p(x)}
+   \Big[
+      c(x)\, a(x) + \neg c(x)\,\varepsilon
+   \Big] \:,
+\]
+%
+where we use shortcut $\neg c(x) = 1 - c(x)$. The optimal aleatoric reject-option predictor $q_a=(h_*,c_a)$ that minimizes $r_{\varepsilon}(h,c)$ consists of the Bayes-optimal predictor 
+\begin{equation}
+  \label{equ:BayesPredictor}
+  h_*(x) = \argmin_{\hat{y}\in\SY}\EE_{y\sim p(y\mid x)}\big [ \ell(y,\hat{y})\big ]
+\end{equation}
+and the selector $c_a(x) =\one{a_*(x) \leq \varepsilon}$ where
+\begin{equation}
+  \label{equ:TrueAleatorUncertainty}
+    a_*(x) = \mathbb{E}_{y\sim p(y\mid x)} \big[ \ell(y,h_*(x) ) \big]\:.
+\end{equation}
+%
+The conditional risk $a_*(x)$ serves here as a measure of the aleatoric uncertainty of the Bayes-optimal predictor $h_*(x)$ with full knowledge of the data distribution $p(x,y)$. We refer to $a_*(x)$ as the true aleatoric uncertainty.
+
+\begin{example}
+\label{example:1}
+Let $\mathcal{X} = \mathbb{R}$ and $\mathcal{Y}=\Re$. Assume $(x, y) \in \mathcal{X} \times \mathcal{Y}$ is a sample from $p(x, y) = p(x)\, p(y \mid x)$, where
+$p(x) = \mathcal{N}(x \mid 0,\, 1)$ is a standard normal distribution and $p(y \mid x) = \mathcal{N}(y \mid \mu(x),\ v(x))$ is normal with input-dependent mean $\mu(x)=0.5x + 1$ and variance $v(x) = 0.1 + 0.04(x + 8)^2$. 
+Assume the squared loss $\ell(y, \hat{y}) = (y - \hat{y})^2$. Then, the Bayes-optimal predictor~\equ{equ:BayesPredictor} equals the conditional mean:
+$$
+h_*(x) = \mathbb{E}_{y \sim p(y \mid x)}[y] = \mu(x)=0.5x + 1.
+$$
+Accordingly, the true aleatoric uncertainty~\equ{equ:TrueAleatorUncertainty} is equal to the conditional variance of $y$ given $x$:
+$$
+a_*(x) = \mathrm{Var}_{y \sim p(y \mid x)}[y] = v(x) = 0.1 + 0.04(x + 8)^2.
+$$
+Figure~\ref{fig:aleatoricRejectOption} illustrates the optimal aleatoric reject-option $q_a=(h_*,c_a)$ using $h_*(x)$ and $a_*(x)$ from this example. %Note that the resulting predictor is independent of the marginal distribution $p(x)$; however, $p(x)$ influences learned predictors, as demonstrated in following examples.
+\end{example}
+
+
+\begin{figure}[ht!]
+    \centering
+    % --- Left Column (contains the single figure on the left) ---
+    % The [c] option vertically centers this minipage relative to the right one.
+    \begin{minipage}[l]{\linewidth}
+        \centering
+        % This is FIGURE 1
+        \includegraphics[width=\linewidth]{figures/figure_1_aleatoric_uncertainty.pdf}
+        \captionof{figure}{The aleatoric reject-option predictor outputs the prediction $h_*(x)$ in regions where the conditional risk $a_*(x)$ does not exceed the rejection cost $\varepsilon$, and abstains otherwise. This example considers the squared loss $\ell(y, \hat{y}) = (y - \hat{y})^2$, the reject cost $\veps=1$ and full knowledge of data distribution $p(x, y)$ defined in Example~\ref{example:1}. Under this loss, the Bayes optimal predictor $h_*(x)$ returns the conditional mean $\mu(x)$, and the aleatoric uncertainty $a_*(x)$ equals the conditional variance $v(x)$.
+        }
+        \label{fig:aleatoricRejectOption}
+    \end{minipage}
+\end{figure}
+
+\begin{figure*}[ht!]
+    \begin{subfigure}[b]{0.47\linewidth}        
+      \includegraphics[width=\linewidth]{figures/figure_3_total_uncertainty.pdf}
+      \caption{Bayesian reject-option predictor}
+      \label{fig:BayesianRejectOpt}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.47\linewidth}
+       \includegraphics[width=\linewidth]{figures/figure_2_epistemic_uncertainty.pdf}
+       \caption{Epistemic reject-option predictor}
+      \label{fig:EpistemicRejectOpt}
+    \end{subfigure}
+    %
+    \caption{Fig~\ref{fig:BayesianRejectOpt} illustrates the Bayesian reject-option predictor $Q_B=(H_*,C_T)$, which outputs the prediction $H_*(x, D)$ in regions where the total uncertainty $T_*(x, D)$ does not exceed the rejection cost $\varepsilon = 2$, and abstains otherwise. Fig~\ref{fig:EpistemicRejectOpt} shows the epistemic reject-option predictor $Q_E=(H_*,C_E)$, which outputs the prediction $H_*(x,D)$ in regions where the epistemic uncertainty $E_*(x,D)$ does not exceed the rejection cost $\delta=1$, and abstains elsewhere. This example considers the setting of Example~\ref{example:BayesianRejectOption}, with training set $D$ consisting of $m = 10$ examples drawn from $p(x,y)$ specified in Example~\ref{example:1}. Under this setup, the predictor is given by $H_*(x, D) = \#\phi(x)^T \#\mu_m$, where $\#\mu_m$ denotes the mean of the predictive distribution, serving as an estimate of the true mean $\mu(x)$. The total uncertainty is computed as $T_*(x, D) = \#\phi(x)^T \#\Sigma_m \#\phi(x) + v(x)$, which decomposes into the sum of aleatoric and epistemic uncertainties: $T_*(x, D) = A_*(x, D) + E_*(x, D)$, where $A_*(x, D) = v(x)$ and $E_*(x, D) = \#\phi(x)^T \#\Sigma_m \#\phi(x)$. 
+    }
+    \label{fig:BayesEpistemicRejOpt}
+\end{figure*}
+
+
+\subsection{Maximum-Likelihood learning}
+\label{sec:MLLearning}
+
+The aleatoric reject-option framework (c.f. Sec~\ref{sec:AleatorRejectOption}) assumes that the true data distribution $p(x,y)$ is known, which is usually not the case. Instead, we are often given a training set $D=((x_i,y_i)\in\SX\times\SY\mid i=1,\ldots,m)$ assumed to be i.i.d. drawn from $p(x,y)$. 
+
+In this setup, a common approach to approximate the optimal aleatoric reject-option predictor $q_a=(h_*,c_a)$ is based on the Maximum-Likelihood (ML) learning. It requires to define parametric family of distributions $\{p(x,y\mid \theta )\mid \theta \in \Theta \}$ assumed to contain the data distribution $p(x,y)$. We further use an assumption common in supervised learning that the marginal distribution $p(x)$ is not parametric, i.e. $p(x,y\mid \theta)=p(x)\,p(y\mid x,\theta)$.
+
+Given the training set $D$, the ML learning outputs parameter estimate $\hat{\theta}\in\Theta$ by maximizing the log-likelihood:
+\[
+  l(\theta) = \log p(D\mid \theta)\quad\text{where}\quad p(D\mid \theta) = \prod_{i=1}^m p(x_i,y_i\mid \theta) \:. 
+\]
+%
+For example, training classification neural networks with soft-max output layer and cross-entropy loss can be interpreted as special instances of ML learning. The output layer of the trained NN then represents $p(y\mid x,\hat{\theta})$. 
+
+The optimal aleatoric reject-option predictor $(h_*,c_a)$ is then approximated by $(\hat{h},\hat{c})$ where $\hat{h}=h(x,\hat{\theta})$ and $\hat{c}=c(x,\hat{\theta})$ are the plug-in optimal predictor and selector, respectively:
+\begin{eqnarray}
+   \label{equ:BayesOptimalGivenTheta}
+    h(x,\theta) & = &\argmin_{\hat{y}\in\SY} \EE_{y\sim p(y\mid x,\theta)}[\ell(y,\hat{y})] \,,\\
+    c(x,\theta) &= &\one{a(x,\theta) \leq \veps}\:.\\
+    a(x,\theta) &= &\min_{\hat{y}\in\SY} \EE_{y\sim p(y\mid x,\theta)}[\ell(y,\hat{y})] \,.
+\end{eqnarray}
+
+ML learning yields a point estimate $(\hat{h},\hat{c})$ inferred from the training data $D$. This approach accounts only for aleatoric uncertainty which is justifiable when the epistemic uncertainty is negligible. This assumption is reasonable when the training set size $m$ is sufficiently large, as the ML estimate is under some regularity conditions statistically consistent (e.g.~\cite{Wackerly-2002}), i.e. $\hat{\theta}$ converges in probability to $\theta_*$ defining the true distribution $p(x,y\mid \theta_*)=p(x,y)$. 
+
+\begin{example}Assume $p(x,y|\#\theta)=p(x)\,p(y|x,\#\theta)$
+and $p(y|x,\#\theta)=\SN\big (y|x\theta_1+\theta_0,v(x)\big )$, where $\#\theta=(\theta_0,\theta_1)\in\Theta=\Re^2$ are unknown parameters to be learned and $v(x)=0.1 + 0.04(x + 8)^2$ is a known variance.  Given i.i.d. training set $D=((x_i,y_i)\in\Re^2|i=1,\ldots,m)$, the ML estimate of the parameters reads:
+\[
+   \hat{\#\theta}= \big (\#X^T\#\Sigma^{-1}\#X\big )^{-1} \#X\#\Sigma^{-1}\#y \:,
+\]
+%
+where 
+\begin{equation}
+\label{equ:DataXy}
+\#X=\left [ \begin{array}{cc}x_1& 1\\ \vdots&\vdots \\ x_m&1\\ \end{array}\right]\in\Re^{m\times 2}\,, \quad\#y=\left [ \begin{array}{c} y_1\\ \vdots \\ y_m \end{array}\right ]\in\Re^{m}\,, 
+\end{equation}
+%
+represent the training data and 
+\begin{equation}\label{equ:DataNoise}
+\#\Sigma = {\rm diag}\big( [v(x_1),\ldots,v(x_m)]\big )\in\Re_{+}^{m\times m}
+\end{equation}
+%
+the known heteroscedastic noise at the training inputs.
+
+\end{example}
+
+
+\subsection{Bayesian Learning}
+
+Bayesian learning (BL)~\cite{Bishop-PRML-2006,Gelman-Bayesian-2013} is an established framework to infer predictors from data while modeling both the aleatoric and the epistemic uncertainty. It relies on a parametric generative model in which the model parameters are treated as random variables. Let $\theta \in \Theta$ denote the parameter, $D \in \SD = (\SX \times \SY)^m$ the training data, $x \in \SX$ an input observation, and $y \in \SY$ its associated target. The tuple $(\theta,D,x,y)$ is considered a sample from a joint distribution $p(\theta,D,x,y)$ defined over $\Theta\times\SD\times\SX\times\SY$. 
+
+The goal of BL is to construct a predictor $H \colon \SX \times (\SX \times \SY)^m \rightarrow \SY$ that, given data $(x,D)$ composed of a training set $D$ and a new input $x$, outputs a prediction $H(x, D) \in \SY$. The performance of such a predictor is evaluated by:
+\begin{multline}
+\label{equ:BayesLearnExpRisk}
+R(H) = 
+ \EE_{(\theta,D,x,y)\sim p(\theta,D,x,y)} \big[\ell(y, H(x, D))\big]\;.
+\end{multline}
+%
+The optimal Bayesian predictor which minimizes $R(H)$ is:
+\begin{equation}
+\label{equ:BLOptBayes}
+H_*(x, D) = \argmin_{\hat{y} \in \SY} \EE_{y\sim p(y|x,D)}\big [ \ell(y, \hat{y}) \big ] \:,
+\end{equation}
+%
+where $p(y\mid x,D)$ is called the predictive distribution. 
+
+
+\begin{example}
+\label{example:BLregression}Assume $p(x,y|\#\theta)=p(x)\,p(y|x,\#\theta)$
+and $p(y|x,\#\theta)=\SN(y|x\theta_1+\theta_0,v(x))$, with unknown parameters $\#\theta=(\theta_0,\theta_1)\in\Re^2$, and known variance $v(x)=0.1+0.04(x+8)^2$. Let prior distribution over the parameters be 2D normal distribution $p(\#\theta)=\SN(\#\theta|\#0,\#\Lambda)$, where $\#\Lambda={\rm diag}([\lambda_1,\lambda_2])$ is a diagonal covariance matrix. Let the training set be $D=((x_i,y_i)\in\Re^2)|i=1,\ldots,m)$, drawn i.i.d.  
+%
+Under this setup, the predictive distribution is normal $p(y|x,D)=\SN\big(y|\#\phi(x)^T\#\mu_m,\#\phi(x)^T\#\Sigma_m\#\phi(x)+v(x)\big)$, where $\#\phi(x)=[x,1]^T$, and the posterior parameters are given by
+\[
+\#\Sigma_m=\big(\#X^T\#\Sigma^{-1}\#X+\#\Lambda^{-1} )^{-1}\,,\quad \#\mu_m=\#\Sigma_m\#X^T\#\Sigma^{-1}\#y \:.
+\]
+Here, $\#X$, $\#y$ and $\#\Sigma$ are defined in equations~\equ{equ:DataXy} and~\equ{equ:DataNoise}.
+%, and $\#\Lambda={\rm diag([\lambda_1^{-2},\lambda_2^{-2}])}$. 
+Assuming the squared loss $\ell(y,\hat{y})=(y-\hat{y})^2$, the optimal Bayesian predictor corresponds to the mean of the predictive distribution $p(y|x,D)$:
+\begin{equation}
+\label{equ:BLpredLinReg}
+   H_*(x,D) = \EE_{y\sim p(y|x,D)}[y]=\#\phi(x)^T\#\mu_m \:.
+\end{equation}
+\end{example}
+
+
+
+\subsection{Bayesian Reject-Option Prediction}
+
+The predictive distribution inferred by BL can be readily used to construct the reject-option predictor. Specifically, let us consider reject-option predictor $Q\colon\SX\times(\SX\times\SY)^m\rightarrow\SY\cup \{\rm reject\}$, that we parametrize by a pair of functions $(H,C)$, where $H\colon
+\SX \times (\SX \times \SY)^m \rightarrow \SY$ is a predictor and $C\colon\SX \times (\SX \times \SY)^m \rightarrow \{0,1\}$ a selector defining $Q$ via
+\begin{equation}
+  \label{equ:BLRejectOptionPred}
+   Q(x,D) = \left \{ \begin{array}{rcl}
+      H(x,D) & \text{if} & C(x,D) = 1 \,,\\
+      \text{reject} & \text{if} & C(x,D) = 0\:.
+   \end{array}
+   \right .
+\end{equation}
+%
+Let $\ell\colon\SY\times\SY\rightarrow\Re_+$ be a prediction loss and  $\veps\in\Re_+$ a rejection cost. Then, the output of the Bayesian reject-option predictor $Q=(H,C)$ on a data sample $(x,D)\sim p(x,D)$ is penalized as follows:
+
+\noindent 1. If it predicts, $C(x,D)=1$, the penalty equals the expected loss incurred by predicting $H(x,D)$:
+  \[
+    T(x,D) = \EE_{y\sim p(y|x,D)}\big [ \ell(y,H(x,D)) \big ]\:.
+  \]
+
+\noindent 2. If it rejects, $C(x,D)=0$, the penalty equals $\veps$.
+
+The overall performance of the Bayesian reject-option predictor $Q=(H,B)$ is then evaluated by:
+\begin{multline}
+\label{equ:BaysianRejOptObj}
+   R_\veps(H,C)=\\ \EE_{(x,D)\sim p(x,D)} \Big [C(x,D)\, T(x,D)+ \neg C(x,D)\,\veps 
+       \Big ]    \:.
+\end{multline}
+%
+\begin{theorem}\label{equ:BayesianRejOpt} Let $Q_B=(H_*,C_T)$ be a reject-option predictor represented by the optimal Bayesian predictor $H_*$, defined in~\equ{equ:BLOptBayes}, and the selector $C_T(x,D) = \one{ T_*(x,D) \leq \veps }$ where 
+\begin{equation}
+\label{equ:TotalUncertainty}
+   T_*(x,D) = \EE_{y\sim p(y\mid x,D)} \big [\ell(y,H_*(x,D))\big ] \:.
+\end{equation}
+%
+Then \(Q_B\) is a minimizer of \(R_{\varepsilon}(H,C)\) defined in~\eqref{equ:BaysianRejOptObj}. We refer to \(Q_B\) as the \emph{optimal Bayesian reject-option predictor}.
+
+\end{theorem}
+%
+As we discuss below in more details, the value of $T_*(x,D)$ accounts for both aleatoric and epistemic uncertainty connected to the optimal prediction $H_*(x,D)$ and we therefore referred to it as the total uncertainty.
+
+
+\begin{example}
+\label{example:BayesianRejectOption}
+Consider the setup from Example~\ref{example:BLregression}. The optimal Bayesian reject-option predictor $Q_B=(H_*,C_T)$ consists of $H_*(x, D)$ defined in~\equ{equ:BLpredLinReg}, and the total uncertainty~\equ{equ:TotalUncertainty}, which in this setting takes the form
+\begin{equation}
+\label{equ:TotalCondRiskLinReg}
+  T_*(x, D) = \mathrm{Var}_{y \sim p(y \mid x, D)}[y] = \#\phi(x)^T\, \#\Sigma_m\, \#\phi(x) + v(x) \:.
+\end{equation}
+%
+%This expression corresponds to the total variance of the predicted target.
+Figure~\ref{fig:BayesianRejectOpt} illustrates the resulting optimal Bayesian reject-option predictor.
+\end{example}

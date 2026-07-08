@@ -1,0 +1,236 @@
+
+
+\section{Introduction}
+\paragraph{Reject Option Prediction}
+
+The reject-option predictor $q: \mathcal{X} \rightarrow \mathcal{Y} \cup \{ \text{reject} \}$ outputs either a prediction $q(x)\in\mathcal{Y}$ or rejects the sample $q(x)=\text{reject}$. The loss $\ell: \mathcal{Y}\times\mathcal{Y}\rightarrow \mathbb{R}$ is then extended to include the rejection option, defined as:
+\begin{align}
+\ell^\epsilon(q(x), y) = 
+\begin{cases}
+\ell(q(x), y) & \text{if } q(x)\in\mathcal{Y},\\
+\epsilon & \text{if } q(x)=\text{reject},
+\end{cases}
+\end{align}
+where $\epsilon \in\mathbb{R}_+$ is a cost incurred when rejecting a sample. The objective of the framework is to minimize the expected risk $\mathbb{E}_{x,y\sim p(x,y)}[\ell^\epsilon(q(x), y)]$ under this reformulated loss function. 
+
+The reject-option predictor $q$ is represented as a selective predictor $(h,c)$, where $h\in \mathcal{H}$ is the predictor, and $c: \mathcal{X}\rightarrow [0, 1]$ is a selector that specifies the probability of accepting a sample. The objective then becomes to find $h(x)$ and $c(x)$ to minimize the augmented expected risk
+\begin{align}
+R_{1} = \int_{x,y}p(x,y) \bigg[ c(x)\ \ell\big(y, h(x)\big) + \big(1-c(x)\big)\ \epsilon\bigg]
+\end{align}
+
+The optimal strategy for rejection involves thresholding the conditional risk $r(x)=\int_{y}p(y\mid x)\ell\big(h(x), y\big)$.
+
+\paragraph{Bayesian Learning}
+In Bayesian learning, the expected risk of a prediction strategy $h(x,\mathcal{D})$ can be expressed as:
+\begin{align}
+R_{2} &= \int_{\theta} p(\theta) \int_{\mathcal{D}} p(\mathcal{D}|\theta)\int_{x,y} p(x,y|\theta)\  \ell\big(y,h(x,\mathcal{D})\big).
+\end{align}
+If we extend Bayesian learning with the option of rejecting a sample, and minimize the regret, we obtain:
+\begin{align}
+\label{align:bayesian_epistemic_risk}
+R_{3} &= \underbrace{\int_{\theta} p(\theta) 
+\int_{\mathcal{D}} p(\mathcal{D}|\theta)
+\int_{x,y} p(x,y|\theta)}_{\text{integral over }p(x,y,\theta,\mathcal{D})} \Bigg[\underbrace{c(x,\mathcal{D})}_{\text{probability of accepting}} \\
+& \bigg[ \underbrace{\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))}_{\text{regret, i.e. cost of accepting}} \bigg] \nonumber
++ \big(\underbrace{1 - c(x,\mathcal{D})}_{\text{probability of rejecting}}\big)\ \underbrace{\epsilon}_{\text{cost of rejecting}} 
+\Bigg]
+\end{align}
+By finding a prediction strategy $(h, c)$ that minimizes \eqref{align:bayesian_epistemic_risk}, we analyze how should the predictor $h$ and rejector $c$ look to minimize losses due to high epistemic risk.
+
+\subsection{Optimal Rejection Score}
+The objective is to minimize $R_3$. We rewrite the integrand by factoring out $c(x,\mathcal{D})$
+\begin{align}
+&c(x,\mathcal{D}) \big[ \ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta)) \big]
++ \big(1 - c(x,\mathcal{D})\big)\ \epsilon = \nonumber \\
+&c(x,\mathcal{D})\big[\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))\big] + \epsilon - c(x,\mathcal{D})\ \epsilon = \nonumber \\
+&c(x,\mathcal{D})\Big(\big[\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))\big] - \epsilon\Big) + \epsilon
+\end{align}
+Substituting this back into $R_3$:
+\begin{align}
+R_{3} &= \int_{\theta} p(\theta) \int_{\mathcal{D}} p(\mathcal{D}|\theta)\int_{x,y} p(x,y|\theta) \Bigg[ c(x,\mathcal{D})\Big(\ell\big(y,h(x,\mathcal{D})\big) - \ell\big(y,h^*(x,\theta)\big) - \epsilon\Big) + \epsilon \Bigg]\nonumber \\
+&= \int_{\theta} \int_{\mathcal{D}} \int_{x,y} p(x,y|\theta)\ p(\mathcal{D}|\theta) \ p(\theta) \Bigg[ c(x,\mathcal{D})\Big(\ell\big(y,h(x,\mathcal{D})\big) - \ell\big(y,h^*(x,\theta)\big) - \epsilon\Big) + \epsilon \Bigg] \nonumber \\
+&= \int_{x, \mathcal{D}} p(x,\mathcal{D}) \int_{y, \theta} p(y,\theta|x,\mathcal{D}) \Bigg[ c(x,\mathcal{D})\Big(\ell\big(y,h(x,\mathcal{D})\big) - \ell\big(y,h^*(x,\theta)\big) - \epsilon\Big) + \epsilon \Bigg]
+\end{align}
+To minimize the overall integral, we need to choose $c(x,\mathcal{D})$ to minimize the expression it multiplies for each $(x, \mathcal{D})$ pair, averaged over the remaining variables $y$ and $\theta$. The quantity to minimize for a specific $x$ and $\mathcal{D}$ is:
+\begin{align}
+\int_{y,\theta} p(y,\theta|x,\mathcal{D}) \left[ c(x,\mathcal{D})\left(\big[\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))\big] - \epsilon\right) + \epsilon \right]
+\end{align}
+
+\noindent\textbf{Assumptions}
+\begin{itemize}
+    \item $p(y \mid x, \theta, \mathcal{D}) = p(y \mid x, \theta)$
+    \item $p(\theta \mid x, \mathcal{D}) = p(\theta \mid \mathcal{D})$\footnote{We are considering the common scenario where $\theta$ models $p(y|x, \theta)$ and $p(x)$ is either fixed or not parameterized by $\theta$. If $x$ \textit{does} inform $\theta$, then $p(\theta|D)$ in our subsequent results would be replaced by $p(\theta|x,D)$}.
+    \item $\implies p(y,\theta \mid x, \mathcal{D}) = p(y \mid x, \theta) p(\theta \mid \mathcal{D})$.
+\end{itemize}
+
+\begin{align}
+&\int_{y,\theta} p(y,\theta|x,\mathcal{D}) \left[ c(x,\mathcal{D})\left(\big[\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))\big] - \epsilon\right) + \epsilon \right] \nonumber = \\
+&\int_{y, \theta} p(y|x,\theta,\mathcal{D})\ p(\theta| x,\mathcal{D}) \Bigg[ c(x,\mathcal{D})\left(\big[\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))\big] - \epsilon\right) + \epsilon \Bigg] = \nonumber \\
+&\int_{y, \theta} p(y|x,\theta)\ p(\theta| \mathcal{D}) \Bigg[ c(x,\mathcal{D})\left(\big[\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))\big] - \epsilon\right) + \epsilon \Bigg] = \nonumber \\
+&\int_{\theta} p(\theta|\mathcal{D}) \int_{y} p(y|x,\theta) \Bigg[ c(x,\mathcal{D})\left(\big[\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))\big] - \epsilon\right) + \epsilon \Bigg] = \nonumber \\
+& \Bigg[c(x,\mathcal{D}) \cdot \int_{\theta} p(\theta|\mathcal{D}) \int_{y} p(y|x,\theta) \left(\big[\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))\big] - \epsilon\right)\Bigg] + \epsilon
+\end{align}
+
+Let $\mathcal{R}(x, \mathcal{D})$ be the expected conditional regret of predicting with $h(x,\mathcal{D})$ compared to the oracle $h^*(x,\theta)$, given $x$ and $\mathcal{D}$:
+\begin{align}
+\mathcal{R}(x, \mathcal{D}) = \int_{\theta} p(\theta|\mathcal{D}) \int_{y} p(y|x,\theta) \Big[\ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x,\theta))\Big]
+\end{align}
+
+Rewriting the minimization problem for a fixed $x, \mathcal{D}$ using $\mathcal{R}(x, \mathcal{D})$:
+\begin{align}
+\min_{x,\mathcal{D}} c(x,\mathcal{D}) \big[ \mathcal{R}(x, \mathcal{D}) - \epsilon \big] + \epsilon
+\end{align}
+
+Discarding the constant $\epsilon$ and solving the linear minimization problem for $c(x, \mathcal{D})$
+\begin{align}
+c^*(x,\mathcal{D}) = \begin{cases}
+    1 & \text{if } \mathcal{R}(x, \mathcal{D}) < \epsilon\\
+    0 & \text{if } \mathcal{R}(x, \mathcal{D}) > \epsilon\\
+    \text{any }z\in[0,1] & \text{if } \mathcal{R}(x, \mathcal{D}) = \epsilon
+\end{cases}    
+\end{align}
+
+
+\subsubsection{Optimal Rejection Score - Squared Loss}
+Let $\ell(y, \hat{y}) = (y - \hat{y})^2$ be the squared loss function. The quantity to derive is:
+\begin{align}
+\mathcal{R}(x, \mathcal{D}) = \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ \mathbb{E}_{y \sim p(y|x, \theta)} \left[ \ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x, \theta)) \right] \right].
+\end{align}
+
+\paragraph{Oracle}
+$h^*(x, \theta)$ is the optimal predictor for $y$ if we knew the true parameter $\theta$. For squared loss, the optimal predictor is the conditional expectation of $y$ given $x$ and $\theta$, $h^*(x, \theta) = \mathbb{E}_{y \sim p(y|x, \theta)}[y]$. We will denote this as $\mu_{y|x,\theta}$ for brevity.
+
+\paragraph{Predictor}
+$h(x, \mathcal{D})$ is the predictor learned from the data $\mathcal{D}$, $h(x, \mathcal{D}) = \mathbb{E}_{y \sim p(y|x,\mathcal{D})}[y] = \mathbb{E}_{\theta\sim p(\theta|\mathcal{D})}\left[ \mathbb{E}_{y \sim p(y|x, \theta)}[y] \right]$. We will denote this as $\mu_{y|x,\mathcal{D}}$ for brevity.
+
+\paragraph{Derivation}
+Inner expectation in the definition of $\mathcal{R}(x, \mathcal{D})$ is
+\begin{align}
+L_{\text{inner}}&= \mathbb{E}_{y \sim p(y|x, \theta)} \left[ \ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x, \theta)) \right] \nonumber \\
+&= \mathbb{E}_{y \sim p(y|x, \theta)} \left[ (y - h(x,\mathcal{D}))^2 - (y - h^*(x, \theta))^2 \right] \nonumber \\
+&= \mathbb{E}_{y \sim p(y|x, \theta)} \left[ (y - \mu_{y|x,\mathcal{D}})^2 - (y - \mu_{y|x,\theta})^2 \right] \nonumber \\
+&= \mathbb{E}_{y \sim p(y|x, \theta)} \left[ (y - \mu_{y|x,\mathcal{D}})^2\right] - \mathbb{E}_{y \sim p(y|x, \theta)} \left[(y - \mu_{y|x,\theta})^2 \right]
+\end{align}
+
+We will analyze the first term $\mathbb{E}_{y \sim p(y|x, \theta)}[(y - \mu_{y|x,\mathcal{D}})^2]$. Add and subtract $\mu_{y|x,\theta}$ inside the square:
+\begin{align}
+(y - \mu_{y|x,\mathcal{D}})^2 &= (\underbrace{y - \mu_{y|x,\theta}}_{a} + \underbrace{\mu_{y|x,\theta} - \mu_{y|x,\mathcal{D}}}_{b})^2 \\
+&= (\underbrace{y - \mu_{y|x,\theta}}_{a^2})^2 + \underbrace{2(y - \mu_{y|x,\theta})(\mu_{y|x,\theta} - \mu_{y|x,\mathcal{D}})}_{2ab} + (\underbrace{\mu_{y|x,\theta} - \mu_{y|x,\mathcal{D}}}_{b^2})^2
+\nonumber
+\end{align}
+Taking the expectation with respect to $y \sim p(y|x, \theta)$
+\begin{align}
+\mathbb{E}_{y \sim p(y|x, \theta)}[(y - \mu_{y|x,\mathcal{D}})^2] &= \mathbb{E}_{y \sim p(y|x, \theta)}[(y - \mu_{y|x,\theta})^2] \\
+&+ 2(\mu_{y|x,\theta} - \mu_{y|x,\mathcal{D}})\underbrace{\mathbb{E}_{y \sim p(y|x, \theta)}[y - \mu_{y|x,\theta}]}_{0} \nonumber \\
+&+ (\mu_{y|x,\theta} - \mu_{y|x,\mathcal{D}})^2 \nonumber
+\end{align}
+Substituting into $L_{\text{inner}}$
+\begin{align}
+L_{\text{inner}}&= \mathbb{E}_{y \sim p(y|x, \theta)} \left[ (y - \mu_{y|x,\mathcal{D}})^2\right] - \mathbb{E}_{y \sim p(y|x, \theta)} \left[(y - \mu_{y|x,\theta})^2 \right] \\
+&= \mathbb{E}_{y \sim p(y|x, \theta)}[(y - \mu_{y|x,\theta})^2] + (\mu_{y|x,\theta} - \mu_{y|x,\mathcal{D}})^2 - \mathbb{E}_{y \sim p(y|x, \theta)} \left[(y - \mu_{y|x,\theta})^2 \right] \nonumber \\ 
+&=(\mu_{y|x,\theta} - \mu_{y|x,\mathcal{D}})^2 \nonumber
+\end{align}
+Now, we need to compute the outer expectation with respect to $\theta \sim p(\theta|\mathcal{D})$:
+\begin{align}
+\mathcal{R}(x, \mathcal{D}) &= \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[(\mu_{y|x,\theta} - \mu_{y|x,\mathcal{D}})^2 \right] \\
+&= \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ \left( \mathbb{E}_{y \sim p(y|x, \theta)}[y] - \mathbb{E}_{\theta'\sim p(\theta'|\mathcal{D})}\left[ \mathbb{E}_{y \sim p(y|x, \theta')}[y] \right]\right)^2 \right] \nonumber\\
+&= \text{Var}_{\theta \sim p(\theta|\mathcal{D})} \left[ \mathbb{E}_{y \sim p(y|x,\theta)}[y] \right] = \boxed{\text{Var}_{\theta \sim p(\theta|\mathcal{D})}  \left[ \mu_{y|x,\theta} \right]} \nonumber
+\end{align}
+
+\subsubsection{Optimal Rejection Score - Log Loss}
+Assume $y$ can take one of $K$ class labels, $\{1, 2, \ldots, K\}$. The output of a predictor is a probability vector $\mathbf{p} = (p_1, \ldots, p_K)$ where $p_k = p(y=k)$. For an observed class $y\in\{1, 2, \ldots, K\}$ and a predicted probability vector $\mathbf{p}=(p_1, \dots, p_K)$, the log loss is $\ell(y, \mathbf{p}) = -\log p_{y}$
+
+\paragraph{Oracle}
+$h^*(x, \theta) = \mathbf{\pi}_\theta(x) = \begin{bmatrix}p(y=1|x,\theta), & \ldots, & p(y=K|x,\theta)\end{bmatrix}$ outputs the true conditional probabilities given $\theta$. By $h_k^*(x, \theta) = p(y=k|x,\theta) = \pi_{\theta,k}(x)$ we denote the k-th element of the vector.
+
+\paragraph{Predictor}
+$h(x, \mathcal{D}) = \mathbf{\pi}_{\mathcal{D}}(x) = \begin{bmatrix}p(y=1|x,\mathcal{D}), & \ldots, & p(y=K|x,\mathcal{D})\end{bmatrix}$ outputs the posterior predictive probabilities. By $h_k(x, \mathcal{D}) = \mathbb{E}_{\theta' \sim p(\theta'|\mathcal{D})}[p(y=k|x,\theta')] = p(y=k|x,\mathcal{D}) = \pi_{\mathcal{D},k}(x)$ we denote the k-th element of the vector.
+
+\paragraph{Derivation}
+Inner expectation in the definition of $\mathcal{R}(x, \mathcal{D})$ is
+\begin{align}
+L_{\text{inner}}&= \mathbb{E}_{y \sim p(y|x, \theta)} \left[ \ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x, \theta)) \right] \nonumber \\
+&=\mathbb{E}_{y\sim p(y|x, \theta)} \left[ (-\log \pi_{\mathcal{D},y}(x)) - (-\log \pi_{\theta,y}(x)) \right] \nonumber \\
+&=\mathbb{E}_{y\sim p(y|x, \theta)} \left[ \log \pi_{\theta,y}(x) -\log \pi_{\mathcal{D},y}(x) \right] \nonumber \\
+&= \sum_{k=1}^K p(y=k|x, \theta) \left[ \log \pi_{\theta,k}(x) - \log \pi_{\mathcal{D},k}(x) \right] \nonumber \\
+&= \sum_{k=1}^K \pi_{\theta,k}(x) \left[ \log \pi_{\theta,k}(x) - \log \pi_{\mathcal{D},k}(x) \right]  \nonumber \\
+&= \sum_{k=1}^K \pi_{\theta,k}(x) \log \frac{\pi_{\theta,k}(x)}{\pi_{\mathcal{D},k}(x)} \nonumber \\
+&= D_{KL}(p(y|x,\theta) \,||\, p(y|x,\mathcal{D}))
+\end{align}
+Now we need to compute the outer expectation
+\begin{align}
+\mathcal{R}(x, \mathcal{D}) = \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} [L_{\text{inner}}] = \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ D_{KL}(p(y|x,\theta) \,||\, p(y|x,\mathcal{D})) \right]
+\end{align}
+Expanding the KL divergence, we get
+\begin{align}
+D_{KL}(p(y|x,\theta) \,||\, p(y|x,\mathcal{D})) = \sum_{k=1}^K \pi_{\theta,k}(x) \log \pi_{\theta,k}(x) - \sum_{k=1}^K \pi_{\theta,k}(x) \log \pi_{\mathcal{D},k}(x)
+\end{align}
+The first part, $\sum_{k=1}^K \pi_{\theta,k}(x) \log \pi_{\theta,k}(x) = -H(y|x,\theta)$ is the negative entropy of $p(y|x,\theta)$. Using linearity of expectation
+\begin{align}
+\mathcal{R}(x, \mathcal{D}) = \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} [-H(y|x,\theta)] - \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ \sum_{k=1}^K \pi_{\theta,k}(x) \log \pi_{\mathcal{D},k}(x) \right]
+\end{align}
+The second part is:
+\begin{align}
+\mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ -\sum_{k=1}^K \pi_{\theta,k}(x) \log \pi_{\mathcal{D},k}(x) \right] &= - \sum_{k=1}^K \left( \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} [\pi_{\theta,k}(x)] \right) \log \pi_{\mathcal{D},k}(x) \nonumber \\
+&= - \sum_{k=1}^K \pi_{\mathcal{D},k}(x) \log \pi_{\mathcal{D},k}(x) \nonumber \\
+&= H(y|x,\mathcal{D})
+\end{align}
+where $H(y|x,\mathcal{D})$ is the entropy of the posterior predictive distribution $p(y|x,\mathcal{D})$. Combining the terms, we get
+\begin{align}
+\mathcal{R}(x, \mathcal{D}) &= \left( - \sum_{k=1}^K \pi_{\mathcal{D},k}(x) \log \pi_{\mathcal{D},k}(x) \right) - \left( \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} [H(y|x,\theta)] \right) \nonumber \\
+&= H(y|x,\mathcal{D}) - \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} [H(y|x,\theta)] \nonumber \\
+&= \boxed{I(y; \theta | x, \mathcal{D})}
+\end{align}
+
+
+\subsubsection{Optimal Rejection Score - 0/1 Loss}
+Let $\ell(y, \hat{y}) = \mathbbm{1}(y \neq \hat{y})$, be the 0/1 loss where $\mathbbm{1}(\cdot)$ is the indicator function and $y\in\{1, \ldots, K\}$.
+
+\paragraph{Oracle}
+$h^*(x, \theta) = \arg\min_{\hat{y}} \mathbb{E}_{y \sim p(y|x, \theta)}[\mathbbm{1}(y \neq \hat{y})]$ minimizes the expected 0/1 loss given $x$ and the true parameter $\theta$. Equivalently $h^*(x, \theta) = \arg\max_{j \in \{1, \ldots, K\}} p(y=j|x,\theta)$. Let $\pi_{\theta,k}(x) = p(y=k|x,\theta)$.
+
+\paragraph{Predictor}
+$h(x, \mathcal{D}) = \arg\min_{\hat{y}} \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ \mathbb{E}_{y \sim p(y|x, \theta)} [\mathbbm{1}(y \neq \hat{y})] \right]$ minimizes the posterior expected 0/1 loss. Equivalently $h(x, \mathcal{D}) = \arg\max_{c_j \in \{c_1, \ldots, c_K\}} p(y=c_j|x,\mathcal{D})$ Let $\pi_{\mathcal{D},k}(x) = p(y=c_k|x,\mathcal{D})$.
+
+\paragraph{Derivation}
+Inner expectation in the definition of $\mathcal{R}(x, \mathcal{D})$ is
+\begin{align}
+L_{\text{inner}}&= \mathbb{E}_{y \sim p(y|x, \theta)} \left[ \ell(y,h(x,\mathcal{D})) - \ell(y,h^*(x, \theta)) \right] \nonumber \\
+&= \mathbb{E}_{y \sim p(y|x, \theta)} [\mathbbm{1}(y \neq h(x,\mathcal{D}))] - \mathbb{E}_{y \sim p(y|x, \theta)} [\mathbbm{1}(y \neq h^*(x, \theta))] \nonumber \\
+&= (1 - p(y = h(x,\mathcal{D}) | x, \theta)) - (1 - p(y = h^*(x, \theta) | x, \theta)) \nonumber \\
+&= p(y = h^*(x, \theta) | x, \theta) - p(y = h(x,\mathcal{D}) | x, \theta) \nonumber \\
+&= \max_{j} \pi_{\theta,j}(x) - \pi_{\theta, h(x,\mathcal{D})}(x)
+\end{align}
+Now we need to compute the outer expectation
+\begin{align}
+\mathcal{R}(x, \mathcal{D}) &= \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} [L_{\text{inner}}(\theta)] \nonumber \\
+&= \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ \max_{j} \pi_{\theta,j}(x) - \pi_{\theta, h(x,\mathcal{D})}(x) \right] \nonumber \\
+&= \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ \max_{j} \pi_{\theta,j}(x) \right] - \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ \pi_{\theta, h(x,\mathcal{D})}(x) \right]
+\end{align}
+The second term simplifies as
+\begin{align}
+\mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ \pi_{\theta, h(x,\mathcal{D})}(x) \right] &= \mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \big[ p(y=h(x,\mathcal{D}) | x, \theta) \big] \nonumber \\
+&= p(y=h(x,\mathcal{D}) | x, \mathcal{D}) \nonumber \\
+&= \max_{j} \pi_{\mathcal{D},j}(x)
+\end{align}
+resulting in
+\begin{align}
+\mathcal{R}(x, \mathcal{D}) = \boxed{\mathbb{E}_{\theta \sim p(\theta|\mathcal{D})} \left[ \max_{j} p(y=j|x,\theta) \right] - \max_{j} p(y=j|x,\mathcal{D})}
+\end{align}
+The score is non-negative due to Jensen inequality and can be interpreted as the expected improvement in optimal prediction probability if we were to learn the true $\theta$, compared to using the posterior predictive distribution. 
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{AnonymousSubmission/LaTeX/figures/bayesian_linear_regression_homoscedatic.pdf}
+    \caption{Homoscedatic noise}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{AnonymousSubmission/LaTeX/figures/bayesian_linear_regression_heteroscedatic.pdf}
+    \caption{Heteroscedatic noise}
+    \label{fig:enter-label}
+\end{figure}
+
+% TODO: 

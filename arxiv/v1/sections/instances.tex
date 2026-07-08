@@ -1,0 +1,103 @@
+\section{Summary}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%
+
+\subsection{Quadratic loss}
+Let $\ell(y,\hat{y})=(y-\hat{y})^2$ be the squared loss defined on the label space $\SY=\Re$. 
+%
+The Bayes predictor for given parameter $\theta$ in case of the squared loss predicts the expected value of the label conditioned on $(x,\theta)$, i.e.:
+\[
+  h^*(x,\theta) = 
+  \argmin_{\hat{y}\in\SY}\EE_{y\sim p(y\mid x,\theta)} (y-\hat{y})^2 = \EE_{y\sim p(y|x,\theta)}\big[ y\big ]\:.  %\argmin_{\hat{y}\in\SY}\int_{\SY}p(y\mid x,\theta) (y-\hat{y})^2 = \mu_{y|x,\theta}\:.
+\]
+The Bayesian predictor $H^*(x,D)$ and the conditinal regret $E^*(x,D)$ required to construct the optimal reject-option learning predictor~\equ{equ:OptEpistRejOptPred} are given by the following theorem.
+
+\begin{theorem}
+Let $\ell(y,\hat{y})=(y-\hat{y})^2$ be the squared loss. Assume $p(x,y|\#\theta)=p(x)\,p(y|x,\#\theta)$ and i.i.d. training data $D=((x_i,y_i)\in\SX\times\Re\mid i=1,\ldots,m)$. Then, the Bayes-optimal learning predictor reads~\equ{equ:BayesLearnExpRisk} reads
+\[
+   H^*(x,D) = \EE_{y\sim p(y|x,D)}[y] 
+   = \EE_{\theta\sim p(\theta|D)}\Big[\EE_{y\sim p(y|x,\theta)}[y] \Big ]\:,
+%   \mu_{y|x,D}\:.
+\]
+and the conditional regret~\equ{equ:ConditionalRegret} reads:
+\begin{equation}
+\label{equ:CondRegretSquare}
+   E^*(x,D) = 
+   {\rm Var}_{\theta\sim p(\theta|D)} \Big [ \EE_{y\sim p(y|x,\theta)}[y] \Big ] \:.   
+   %{\rm Var}_{\theta\sim p(\theta|D)} \Big [ \mu_{y|x,\theta} \Big ] \:.
+\end{equation}
+
+\end{theorem}
+
+\begin{example} 
+Consider the setup of Example~\ref{example:BLregression}. The optimal epistemic reject-option learning predictor~\equ{equ:OptEpistRejOptPred} is given by the predictor $H^*(x,D)$ given by~\equ{equ:BLpredLinReg} and the epistemic uncertainty $E^*(x,D)$ given by
+\[
+    E^*(x,D) = \#x^T \#\Sigma_m\#x \:.
+\]
+    
+\end{example}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%
+
+\subsection{0/1-loss} 
+Let $\SY=\{1,2,\ldots,Y\}$ be a finite set of labels and let the predictor $h\colon\SX\rightarrow \SY$ output a prediction of the trule label $y\in\SY$. Let $\ell(y,\hat{y})=\leftbb y\neq \hat{y}\rightbb$ be the 0/1-loss equal to $1$ if $y\neq\hat{y}$ and $0$ otherwise.
+
+The Bayes-optimal predictor outputs the label with the maximal posterior probability, i.e.,
+\begin{multline}
+  h^*(x,\theta) = 
+  \argmin_{\hat{y}\in\SY} \EE_{y\sim p(y|x,\theta)}\big [\leftbb y\neq \hat{y}\rightbb\big ] \\= \argmax_{y\in\SY} p(y|x,\theta )\:.  %\argmin_{\hat{y}\in\SY} \sum_{y\in\SY} p(y|x,\theta)\, \leftbb y\neq \hat{y}\rightbb = \argmax_{y\in\SY} p(y|x,\theta )\:.    
+\end{multline}
+
+
+The Bayes-optimal learning predictor $H^*(x,D)$ and the conditinal regret $E^*(x,D)$ required to construct the optimal reject-option learning predictor~\equ{equ:OptEpistRejOptPred} are given by the following theorem.
+
+
+\begin{theorem}
+Let $\ell(y,\hat{y})=\leftbb y\neq \hat{y}\rightbb$ be the 0/1-loss. 
+Assume $p(x,y|\#\theta)=p(x)\,p(y|x,\#\theta)$ and i.i.d. training data $D=((x_i,y_i)\in\SX\times\Re\mid i=1,\ldots,m)$. Then, the Bayes-optimal learning predictor~\equ{equ:BayesLearnExpRisk} reads
+\[
+   H^*(x,D) = \argmax_{y\in\SY} p(y|x,D) \:,
+\]
+and the conditional regret~\equ{equ:ConditionalRegret} reads:
+\[
+   E^*(x,D) = \EE_{\theta\sim p(\theta|x,D)}\Big[ \max_{y\in\SY} p(y|x,\theta)\Big ] - \max_{y\in\SY} p(y|x,D) \:.
+\]
+\end{theorem}
+The score is non-negative due to Jensen inequality and can be interpreted as the expected improvement in optimal prediction probability if we were to learn the true $\theta$, compared to using the posterior predictive distribution. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%
+
+\subsection{Cross-entropy loss}
+
+Let $\SY=\{1,2,\ldots,Y\}$ be a finite set of labels and let the predictor $h\colon\SX\rightarrow \SP=\{\#p\in\Re_+^Y\mid \sum_{y\in\SY}p_y=1\}$ output a distribution over $\SY$. Let $\ell(y,\#p)=-\log p_y$ denote the cross-entropy loss. 
+
+The Bayes-optimal predictor given the true parameter $\theta$ in case of the cross-entropy loss outputs the posterior distribution of $y$, i.e.
+\[
+   h^*(x,\theta) = \argmin_{\#p\in\SP} \EE_{y\sim p(y|x,\theta)} \big [-\log p_y \big ] = p(y|x,\theta) \:.
+   %\argmin_{\#p\in\SP} \sum_{y\in\SY} p(y|x,\theta) (-\log p_y) = p(y|x,\theta) \:.
+\]
+%
+
+The Bayes-optimal learning predictor $H^*(x,D)$ and the conditional regret $E^*(x,D)$ required to construct the optimal reject-option learning predictor~\equ{equ:OptEpistRejOptPred} are given by the following theorem.
+
+\begin{theorem}
+Let $\ell(y,\#p)=-\log p_y$ be the cross-entropy loss. 
+Assume $p(x,y|\#\theta)=p(x)\,p(y|x,\#\theta)$ and i.i.d. training data $D=((x_i,y_i)\in\SX\times\Re\mid i=1,\ldots,m)$. Then, the Bayes-optimal learning predictor~\equ{equ:BayesLearnExpRisk} reads
+\[
+   H^*(x,D) = p(y|x,D)\:.
+\]
+and the conditional regret~\equ{equ:ConditionalRegret} reads:
+\begin{equation}
+  \label{equ:CondRegretEntropy}
+   E^*(x,D) = \EE_{\theta\sim p(\theta|x,D)} \Big [{\rm D}_{\rm KL}\big (p(y|x,\theta)\, \|\, p(y|x,D)\big ) \Big ]
+   \:,
+\end{equation}
+%
+where ${\rm D}_{\rm KL}(p\| q)=\sum_{y\in\SY} p(y)\log \frac{p(y)}{q(y)}$ denotes the Kulback-Laibler divergence beween distribution $p$ and $q$.
+
+\end{theorem}

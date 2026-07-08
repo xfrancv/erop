@@ -1,0 +1,374 @@
+[
+  {
+    "id": "hcqLmGBury",
+    "number": 1,
+    "cdate": 1777565401812,
+    "tcdate": 1777565401812,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/-/Decision",
+      "ICML.cc/2026/Conference/-/Edit"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Program_Chairs"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "title": "Paper Decision",
+      "decision": "Reject",
+      "comment": "This paper proposes a novel method for reject-option prediction. Unlike existing approaches that rely on either aleatoric uncertainty or total predictive uncertainty, the proposed method utilizes only epistemic uncertainty. To quantify epistemic uncertainty, this paper proposes using the expected conditional regret as a penalty on the prediction, defined as the expected performance gap between the predictor and the Bayesian optimal predictor. This paper also demonstrates empirical comparisons between the proposed epistemic reject-option method and existing approaches based on aleatoric or total uncertainty, using synthetic data where the ground-truth data-generating process is known.\n\nThis paper is borderline and has received mixed reviews. Reject option prediction and uncertainty-aware decision-making are clearly important topics, and this paper is technically well grounded and provides a very elegant decision-theoretic formulation of epistemic uncertainty-focused reject option prediction. However, this paper has some limitations:\n\n- As Reviewer ARiq has pointed out, the contribution seems to be mainly conceptual, especially for researchers who are familiar with the Bayesian decision theory. Though elegant, the derivations in Section 3 are relatively straightforward. This limits the novelty of this paper.\n\n- More importantly, the empirical evaluations in this paper are limited to synthetic data. I think more experiment results, especially those on real datasets, are needed to further strengthen the paper.\n\nThus, unfortunately, I have to recommend rejecting this paper. This is a tough decision."
+    }
+  },
+  {
+    "id": "yPd4i1Qdhi",
+    "number": 1,
+    "cdate": 1775639530934,
+    "tcdate": 1775639530934,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/Official_Review1/Rebuttal1/Rebuttal_Acknowledgement1/-/Reply_Rebuttal_Comment"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "comment": "**Reviewer:** \"For example, the authors note that the Bayesian optimal predictor remains available even when the model abstains, but this makes it less clear what additional support the proposed reject-option mechanism provides beyond the Bayesian predictor itself. \"\n\n**Authors:**  As illustrated in the example application above, the added value of the proposed EROP beyond the Bayesian predictor is that it helps distinguish whether the Bayesian predictor’s uncertainty is due to insufficient training data (reducible uncertainty) or to uncertainty inherent in the task itself (irreducible uncertainty). Thus, the reject-option mechanism provides practical support by indicating whether abstention reflects a potentially improvable lack of knowledge or unavoidable ambiguity."
+    }
+  },
+  {
+    "id": "mPMBXm4NqV",
+    "number": 1,
+    "cdate": 1775225939660,
+    "tcdate": 1775225939660,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/Official_Review3/Rebuttal1/-/Rebuttal_Acknowledgement"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_EcZt"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "acknowledgement": "partially_resolved",
+      "reasons": "I thank the authors for answering some of my questions. Some of my concerns have been addressed, except **Q1** that may require a follow-up discussion. My reservation about the paper's contribution relative to the existing literature still remain."
+    }
+  },
+  {
+    "id": "3OBAjAH685",
+    "number": 1,
+    "cdate": 1775142661048,
+    "tcdate": 1775142661048,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/Official_Review1/Rebuttal1/-/Rebuttal_Acknowledgement"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_ARiq"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "acknowledgement": "partially_resolved_or_unresolved",
+      "reasons": "I appreciate the author's response. It helps clarify the paper's intended application, but I'm still not convinced that the proposed objective is the right one for reject-option prediction. The rebuttal reinforces my opinion that the contribution is mainly conceptual. The experiments are only in controlled settings where true regret can be computed. It is unclear whether this approach leads to better decision support. For example, the authors note that the Bayesian optimal predictor remains available even when the model abstains, but this makes it less clear what additional support the proposed reject-option mechanism provides beyond the Bayesian predictor itself. More generally, it is unclear how this framework should be used in settings with multiple competing predictors, where the relevant question is not only whether the current predictor has good prediction quality, but also how its output should be combined with other available sources of information."
+    }
+  },
+  {
+    "id": "YcaXG44Ikt",
+    "number": 1,
+    "cdate": 1775073841279,
+    "tcdate": 1775073841279,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/Official_Review2/Rebuttal1/-/Rebuttal_Acknowledgement"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_DNAi"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "acknowledgement": "fully_resolved",
+      "reasons": "Thank you for your response, I don't have any open major questions and I will adjust my score."
+    }
+  },
+  {
+    "id": "DXUb2Pmqbg",
+    "number": 1,
+    "cdate": 1775021224807,
+    "tcdate": 1775021224807,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/Official_Review4/Rebuttal1/-/Rebuttal_Acknowledgement"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_2imE"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "acknowledgement": "fully_resolved",
+      "reasons": "I didn't have too many questions in the first place, and the author's reply on model mispecification cases makes sense to me. I will keep my scores as it is."
+    }
+  },
+  {
+    "id": "23IxsNJeR0",
+    "number": 1,
+    "cdate": 1774866118146,
+    "tcdate": 1774866118146,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/Official_Review1/-/Rebuttal",
+      "ICML.cc/2026/Conference/-/Edit"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "rebuttal": "**Q1:** Since the paper proposes to separate epistemic abstention from aleatoric abstention, why not allow a fourth output option that the model says \"even a Bayesian predictor is unsure\"?\n\n**A1:** Authors: We interpret the reviewer’s suggestion as proposing a predictor with four possible decisions: (1) predict, (2) aleatoric abstain, (3) epistemic abstain, and (4) abstain due to total uncertainty. At an intuitive level, this indeed appears to be a very appealing framework. The main difficulty, however, is how to formulate an objective function that meaningfully captures all four decisions while remaining interpretable and operationally well motivated. At present, we do not have a satisfactory formulation of such a decision problem. Nevertheless, we agree that this is an interesting direction for future research.\n\n---\n\nPlease allow us to comment on the issues raised in the review:\n\n**Reviewer:** The empirical section mainly focuses on synthetic data, where the ground truth distribution is known. \n\n**Authors:**  We use synthetic data in order to compare the performance of the learned predictor directly with that of the optimal predictor, since the gap between the learned and optimal predictors is precisely the quantity our approach aims to minimize. In other words, direct evaluation of the proposed objective requires access to the optimal solution. We do have in mind alternative, more indirect ways of evaluating the proposed epistemic reject-option predictor (EROP). For example, EROP could be used as an example-selection strategy in active learning. However, we chose to keep the paper focused on a single topic that is already somewhat nonstandard.\n\n---\n\n**Reviewer:** From a decision-theoretic perspective, in cases where even the Bayesian predictor is uncertain, it seems still helpful if the model could abstain from outputting an answer or tell the decision maker that it is uncertain. \n\n**Authors:**  All reject-option predictors considered in our paper (aleatoric, Bayesian, and epistemic) separate the base predictor from the selector (i.e., the rejection strategy). Therefore, even when any of these predictors abstains, the output of the underlying base predictor remains available as the reviewer suggests.\n\n---\n\n**Reviewer:** The paper would benefit from a broader discussion on why this regret notion is helpful in the context of uncertainty quantification. I'm not fully convinced that this regret notion is useful. It might be helpful if the paper includes real human experiments to show that this benchmark is useful in improving real decision making.\n\n**Authors:** To clarify why we base the reject option solely on epistemic uncertainty, and how this differs from a Bayesian reject-option predictor based on total uncertainty, let us describe a prototypical application of the epistemic reject-option predictor (EROP).\n\nConsider **tumor grading from brain MRI**. If EROP abstains on a given MRI, this indicates that the input is not sufficiently covered by the current training data, and that annotating such cases could be valuable for extending the training set. If, on the other hand, EROP outputs a prediction (e.g., low-grade versus high-grade glioma), it guarantees that, within the considered statistical framework, no better prediction can be obtained from that MRI alone.\n\nImportantly, this guarantee does not require aleatoric uncertainty to be low. The MRI may still be noisy or ambiguous, for example because of limited image quality. In such cases, aleatoric uncertainty may remain high, yet EROP still certifies that no predictor (neither human expert) using only the same MRI can substantially improve upon the output. Improving the prediction would then require additional information, such as acquiring further MRI sequences or using another imaging modality. By contrast, if a standard Bayesian reject-option predictor abstains, it is generally unclear whether this is due to insufficient training data or to irreducible ambiguity in the input. As a result, when a Bayesian reject-option predictor abstains, the appropriate course of action is often unclear."
+    }
+  },
+  {
+    "id": "gw061JnbyH",
+    "number": 1,
+    "cdate": 1774865179357,
+    "tcdate": 1774865179357,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/Official_Review2/-/Rebuttal",
+      "ICML.cc/2026/Conference/-/Edit"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "rebuttal": "**Q1:** Why the explicit focus on epistemic rather than total uncertainty? Do you have a specific setting in mind?\n\n**A1:** To clarify why we base the reject option solely on epistemic uncertainty, and how this differs from a Bayesian reject-option predictor based on total uncertainty, let us describe a prototypical application of the epistemic reject-option predictor (EROP).\n\nConsider **tumor grading from brain MRI**. If EROP abstains on a given MRI, this indicates that the input is not sufficiently covered by the current training data, and that annotating such cases could be valuable for extending the training set. If, on the other hand, EROP outputs a prediction (e.g., low-grade versus high-grade glioma), it guarantees that, within the considered statistical framework, no better prediction can be obtained from that MRI alone.\n\nImportantly, this guarantee does not require aleatoric uncertainty to be low. The MRI may still be noisy or ambiguous, for example because of limited image quality. In such cases, aleatoric uncertainty may remain high, yet EROP still certifies that no predictor (neither human expert) using only the same MRI can substantially improve upon the output. Improving the prediction would then require additional information, such as acquiring further MRI sequences or using another imaging modality. By contrast, if a standard Bayesian reject-option predictor abstains, it is generally unclear whether this is due to insufficient training data or to irreducible ambiguity in the input. As a result, when a Bayesian reject-option predictor abstains, the appropriate course of action is often unclear.\n\n---\n\n**Q2:** How do you see this framework situated against non-Bayesian methods for rejection, for example conformal prediction?\n\n**A2:** In reject-option prediction, the predictor either outputs a prediction or abstains. In conformal prediction, by contrast, the predictor outputs a prediction set whose size reflects uncertainty. Standard conformal prediction is designed to provide distribution-free coverage guarantees for prediction sets or intervals. These guarantees concern coverage, rather than the decomposition of uncertainty into aleatoric and epistemic components. Therefore, standard conformal prediction does not explicitly account for epistemic uncertainty.\n\n---\n\n**Q3:** How sensitive is the reject-predictor to the prior choice?\n\n**A3:** Our current framework assumes a well-specified model, i.e., that the data-generating distribution lies within the model class. We do not yet have theoretical results for the misspecified setting, where the approximation error remains non-zero. This issue is not specific to our approach: standard Bayesian inference, and more generally generative learning approaches, face the same difficulty. At present, we do not have a principled extension that accounts for approximation error, but we are actively investigating this setting empirically in order to understand the sensitivity of the approach to different forms of model misspecification."
+    }
+  },
+  {
+    "id": "5IAM1lVRdd",
+    "number": 1,
+    "cdate": 1774864576281,
+    "tcdate": 1774864576281,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/Official_Review3/-/Rebuttal",
+      "ICML.cc/2026/Conference/-/Edit"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "rebuttal": "**Q1:** Can the authors provide examples of applications where epistemic-only reject-option prediction is necessary and can actually be implemented, i.e., when the aleatoric uncertainty is completely absent?\n\n**A1:**\nOur framework does not require aleatoric uncertainty to be absent; such an assumption would indeed be overly restrictive. The epistemic reject option predictor is useful whenever one wants to determine whether the available training data are sufficient to guarantee nearly optimal prediction for a given input, which we believe is valuable in many applications.\n\nAs a prototypical example, consider **tumor grading from brain MRI**. If the epistemic reject option predictor (EROP) abstains on a given MRI, this indicates that the input is not sufficiently covered by the current training data, and that annotating such cases could be valuable for extending the training set. If, on the other hand, EROP outputs a prediction (e.g., low-grade versus high-grade glioma), it guarantees that, within the considered statistical framework, no better prediction can be obtained from that MRI alone.\n\nImportantly, this guarantee does not require aleatoric uncertainty to be low. The MRI may still be noisy or ambiguous, for example because of limited image quality. In such cases, aleatoric uncertainty may remain high, yet EROP still certifies that no predictor (neither human expert) using only the same MRI can substantially improve upon the output. Improving the prediction would then require additional information, such as acquiring further MRI sequences or using another imaging modality. By contrast, if a standard Bayesian reject-option predictor abstains, it is generally unclear whether this is due to insufficient training data or to irreducible ambiguity in the input. As a result, when a Bayesian reject-option predictor abstains, the appropriate course of action is often unclear.\n\n---\n\n**Q2:** \nHow does the reject-option prediction relate to the learning-to-defer literature (see, e.g., [1] and references therein)? The problem formulation of this problem in Section 2 looks similar to that of the learning-to-defer problem.\n\n**A2:** \nIn reject-option prediction, including our framework, the fallback after rejection is typically abstracted as either a fixed rejection cost or a coverage constraint. In learning to defer, by contrast, the fallback decision-maker (e.g., a human expert) is modeled explicitly. The goal is then to allocate cases between the predictor and the expert so as to optimize the performance of the combined system. Thus, while the formulations are related, the emphasis is different: reject-option prediction focuses on when the model should abstain, whereas learning to defer focuses on when the model or the expert should handle a given case.\n\n---\n\n**Q3:** How does one set a rejection cost in practice? Any theory to support the right choice of this parameter?\n\n**A3:** This issue is common to all reject-option predictors, including aleatoric, Bayesian, and epistemic variants. In practice, there are two main possibilities. First, in some applications both the prediction loss and the rejection cost can be expressed in the same physical or operational units, which allows the rejection cost to be specified directly. Second, one can train predictors for a range of rejection costs and then select the most suitable operating point based on the resulting risk-coverage tradeoff (or regret-coverage tradeoff in our setting).\n\n---\n\n**Q4:** What if we have no access to the ground-truth data-generating process? How realistic is it to reject the prediction based solely on the epistemic uncertainty, given that in most practical applications one must often deal with both aleatoric and epistemic uncertainty?\n\n**A4:** As noted above, our framework does not assume zero aleatoric uncertainty. It also does not require knowledge of the true data-generating process. Indeed, if the true data-generating process were known, there would be no need for learning, since the Bayes predictor could be constructed directly.\n\nPlease note that we use the ground-truth data-generating process only for the purpose of fair evaluation of the reject-option predictors in our experiments; it is not required in practical deployment.\n\nOur only assumption is that the true distribution belongs to the considered model class. This is the same standard well-specifiedness assumption that underlies Bayesian learning and, more generally, other generative learning approaches."
+    }
+  },
+  {
+    "id": "MRPXnEeFw0",
+    "number": 1,
+    "cdate": 1774864002568,
+    "tcdate": 1774864002568,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/Official_Review4/-/Rebuttal",
+      "ICML.cc/2026/Conference/-/Edit"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors"
+    ],
+    "content": {
+      "rebuttal": "**Reviewer:** The appendix briefly discusses the case of model misspecification, where epistemic uncertainty vanishes while regret remains non-zero due to approximation error. Could the authors elaborate on how the proposed epistemic reject option predictor should behave in such settings? In particular, are there principled extensions that could account for approximation error in addition to estimation error?\n\n**Authors:** Our current framework assumes a well-specified model, i.e., that the data-generating distribution lies within the model class. We do not yet have theoretical results for the misspecified setting, where the approximation error remains non-zero. This issue is not specific to our approach: standard Bayesian inference, and more generally generative learning approaches, face the same difficulty. At present, we do not have a principled extension that accounts for approximation error, but we are actively investigating this setting empirically in order to understand the sensitivity of the approach to different forms of model misspecification."
+    }
+  },
+  {
+    "id": "sFN4oBc3N6",
+    "number": 4,
+    "cdate": 1773387608875,
+    "tcdate": 1773387608875,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/-/Official_Review",
+      "ICML.cc/2026/Conference/-/Edit"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_2imE"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors",
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_2imE"
+    ],
+    "content": {
+      "summary": "This paper studies reject option prediction under epistemic uncertainty through the lens of Bayesian models. They provided mathematical frameworks to study when a predictive model should abstain when the available training data is not enough to support reliable predictions. \n\nThey put emphasis on rejection based on epistemic uncertainty, in contrast to prevoius approaches that focus soley on (estimation of) aleatoric uncertainties. \n\nTheir approach reformulated the standard Bayesian reject option prediction using expected regret, and subsequently allow them to decompose the total uncertainty into epistemic and aleatoric components.",
+      "strengths_and_weaknesses": "# Soundness\n(Stength) The paper is technically well grounded and provides a very nice decision-theoretic formulation of epistemic uncertainty-focused reject option prediction. The main theoretical insights characterises the optimal epistemic reject option predictor as the minimiser of some intuitively understandable expected regret. Theoretical claims are supported with formal statements and proofs, and the empirical evaluation in controlled synthetic settings provides evidence consistent with the theoretical predictions.\n\n(Weakeness) Perhaps there could be more empirical evaluations because right now things in the main text are based on synthetic settings. While I understand computing regret requires the full data population, but perhaps would also be nice to perform some empirical experiments where you modify the rejection cost and look at the prediction performance at each cost, to give a more holistic view of how your set up differs across different cost setting. \n\n# Presentation\n(Strength) The paper is clearly written, easy to understand, and well structured. Various levels of concepts are introduced carefully and progressively. \n\n(Weakness) The strength in presentation can become a weakness too, given how conference papers have limited pages, quite a lot of spaces are used to explain the low level ideas.. which leaves the innovation part a bit short and under-explained. If I were you, I would leave some of the basics to the appendix. But this is only a personal choice really. \n\n# Signifiance \nReject option prediction and uncertainty-aware decision-making are important topics, especially in high-stakes applications where abstention mechanisms can improve reliability :) \n\n# Originality\nThe main novelty lies in formulating reject option prediction explicitly in terms of expected regret relative to the Bayes-optimal predictor and deriving a corresponding epistemic rejection rule. It is, to me, a new conceptual framework well positioned in the growing work of epistemic uncertainty centric machine learning community.",
+      "soundness": 3,
+      "presentation": 4,
+      "significance": 3,
+      "originality": 3,
+      "key_questions_for_authors": "The appendix briefly discusses the case of model misspecification, where epistemic uncertainty vanishes while regret remains non-zero due to approximation error. Could the authors elaborate on how the proposed epistemic reject option predictor should behave in such settings? In particular, are there principled extensions that could account for approximation error in addition to estimation error?",
+      "limitations": "Yes.",
+      "overall_recommendation": 5,
+      "confidence": 3,
+      "compliance_with_LLM_reviewing_policy": "Affirmed.",
+      "code_of_conduct_acknowledgement": "Affirmed.",
+      "final_justification": "I didn't have too many questions in the first place, and the author's reply on model mispecification cases makes sense to me. I will keep my scores as it is."
+    }
+  },
+  {
+    "id": "pciohuEKgu",
+    "number": 3,
+    "cdate": 1773386990821,
+    "tcdate": 1773386990821,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/-/Official_Review",
+      "ICML.cc/2026/Conference/-/Edit"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_EcZt"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors",
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_EcZt"
+    ],
+    "content": {
+      "summary": "This paper proposes a novel method for reject-option prediction, in which a model can abstain from making a prediction when uncertainty is deemed too high. Unlike existing approaches that rely on either aleatoric uncertainty or total predictive uncertainty, the proposed method utilises only epistemic uncertainty. The idea is to enable the model to abstain when it lacks sufficient evidence to make a reliable prediction, rather than in situations where the predictive variance is inherently high. \n\nTo quantify epistemic uncertainty, the paper proposes using the expected conditional regret as a penalty on the prediction, defined as the expected performance gap between the predictor and the Bayes-optimal predictor. Finally, the paper presents empirical comparisons between the proposed epistemic reject-option method and existing approaches based on aleatoric or total uncertainty, using synthetic data where the ground-truth data-generating process is known.",
+      "strengths_and_weaknesses": "**Strengths**\n- The paper is clearly written and easy to follow. The overall presentation is reasonably well structured.\n- The topic is timely and relevant to the broader ML community. In particular, it highlights the importance of clearly distinguishing between aleatoric and epistemic uncertainty.\n\n**Weaknesses**\n- The justification for an epistemic-only reject-option prediction remains unclear (see discussion below).\n- The empirical evaluation relies on the unrealistic assumption that the ground-truth data-generating process is known, which limits the practical significance of the proposed method (see discussion below).",
+      "soundness": 3,
+      "presentation": 3,
+      "significance": 2,
+      "originality": 3,
+      "key_questions_for_authors": "- Can the authors provide examples of applications where epistemic-only reject-option prediction is necessary and can actually be implemented, i.e., when the aleatoric uncertainty is completely absent?\n- How does the reject-option prediction relate to the **learning-to-defer** literature (see, e.g., [1] and references therein)? The problem formulation of this problem in Section 2 looks similar to that of the learning-to-defer problem. \n- How does one set a rejection cost in practice? Any theory to support the right choice of this parameter?\n- What if we have no access to the ground-truth data-generating process? How realistic is it to reject the prediction based solely on the epistemic uncertainty, given that in most practical applications one must often deal with both aleatoric and epistemic uncertainty? \n\n[1] **Calibrated Learning to Defer with One-vs-All Classifiers**. Proceedings of the 39th International Conference on Machine Learning, PMLR 162:22184-22202, 2022.",
+      "limitations": "From my point of view, there are *two* major limitations:\n\n1. **Weak justification on epistemic-only reject option**: It remains unclear why an *epistemic-only* reject-option prediction is necessary, especially when the ground-truth data-generating process is not directly accessible. I can understand the motivation that rejecting based solely on the epistemic uncertainty focuses on situations where the predictor lacks sufficient evidence, rather than where the predictive variance is intrinsically high. However, in practice, it seems that both sources of uncertainty may be relevant. For example, when the predictive variance is high, a model might reasonably abstain from making a prediction in order to defer the decision to a human expert. In practice, a model is typically subject to both types of risk: one arising from high predictive variance and the other from a lack of sufficient evidence. It therefore remains unclear in which realistic settings an epistemic-only reject option would be necessary, and whether it can be meaningfully implemented when only finite data are available.\n\n2. **Lack of thorough theoretical and empirical analyses**: The authors devote a substantial portion of the paper to preliminaries (Section 2), which spans nearly three pages. In contrast, the main contribution presented in Section 3 occupies less than a page, with only one theoretical result. This imbalance seems to reflect the paper's contribution relative to the existing literature. The empirical evaluation requires knowledge of the ground-truth data-generating process and assumes that all predictors admit closed-form solutions, making the setting highly unrealistic. Moreover, the advantages of the epistemic reject-option prediction over its Bayesian counterpart remain unclear. For instance, the results in Figure 3 suggest that the epistemic and Bayesian approaches are largely comparable in terms of both the area under the regret–coverage curve and the area under the risk–coverage curve, particularly in the small-sample regime, precisely the regime in which the paper claims the epistemic reject option should matter most.\n\nTaken together, these two limitations diminish the significance of the proposed method.",
+      "overall_recommendation": 3,
+      "confidence": 3,
+      "compliance_with_LLM_reviewing_policy": "Affirmed.",
+      "code_of_conduct_acknowledgement": "Affirmed.",
+      "final_justification": "The rebuttal partially addresses my concerns in general. I chose to maintain my score at **weak reject** because I still have some doubts about the justification and the relative contributions of this work in comparison to the existing literature, as noted in my review."
+    }
+  },
+  {
+    "id": "vkuFxdVVei",
+    "number": 2,
+    "cdate": 1773351896350,
+    "tcdate": 1773351896350,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/-/Official_Review",
+      "ICML.cc/2026/Conference/-/Edit"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_DNAi"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors",
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_DNAi"
+    ],
+    "content": {
+      "summary": "The authors propose a reject-option predictor that abstains based on epistemic uncertainty alone, rather than total or aleatoric uncertainty. The idea is to replace the standard expected loss of a Bayesian learner with an expected regret objective, where the regret measures the performance gap relative to the Bayes-optimal predictor. They also show how different epistemic uncertainty measures can be found as instantiations of their framework under specific loss functions. They provide simple experiments with synthetic data to validate their approach.",
+      "strengths_and_weaknesses": "Overall, I think this is a well-written and technically sound paper. The presentation can be followed along nicely and the figures distinguish well between aleatoric, total and epistemic uncertainty. It is also satisfying how different epistemic uncertainty measures follow from minimizing the regret and plugging in different loss function. \n\nHowever, I am unsure why we would want to reject based on epistemic uncertainty alone rather than total uncertainty. If I am concerned about prediction errors, I may not necessarily care whether the uncertainty is aleatoric or epistemic. \n\nThe experiments are also quite limited. They use a synthetic dataset and the results (as the authors note) simply show what the theory already guarantees. It would be interesting to see more realistic evaluations that also deal with posterior inference, misspecification and choosing a good prior. \n\nThe related work section is narrow and I would like to see more discussion of other lines of work on uncertainty quantification and reject prediction. For example, conformal prediction and the learning to defer literature.",
+      "soundness": 3,
+      "presentation": 3,
+      "significance": 2,
+      "originality": 2,
+      "key_questions_for_authors": "- Why the explicit focus on epistemic rather than total uncertainty? Do you have a specific setting in mind?\n- How do you see this framework situated against non-Bayesian methods for rejection, for example conformal prediction?\n- How sensitive is the reject-predictor to the prior choice?",
+      "limitations": "yes",
+      "overall_recommendation": 5,
+      "confidence": 3,
+      "compliance_with_LLM_reviewing_policy": "Affirmed.",
+      "code_of_conduct_acknowledgement": "Affirmed.",
+      "final_justification": "The authors rebuttal was well-structured and addressed my main concerns, which were primarily conceptual. I found their responses convincing. I am only concered about the limited scope, e.g. the evaluations are limited to synthetic settings, and the paper does not consider misspecification. However, I believe the merits outweigh these limitations. The paper maintains a clear focus, does not overclaim, and presents its contributions clearly and honestly."
+    }
+  },
+  {
+    "id": "UAmcyDvMCl",
+    "number": 1,
+    "cdate": 1773166058965,
+    "tcdate": 1773166058965,
+    "invitations": [
+      "ICML.cc/2026/Conference/Submission22311/-/Official_Review",
+      "ICML.cc/2026/Conference/-/Edit"
+    ],
+    "signatures": [
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_ARiq"
+    ],
+    "readers": [
+      "ICML.cc/2026/Conference/Program_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Senior_Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Area_Chairs",
+      "ICML.cc/2026/Conference/Submission22311/Reviewers/Submitted",
+      "ICML.cc/2026/Conference/Submission22311/Authors",
+      "ICML.cc/2026/Conference/Submission22311/Reviewer_ARiq"
+    ],
+    "content": {
+      "summary": "The paper proposes an epistemic reject-option predictor that abstains when the expected regret relative to a Bayes-optimal predictor exceeds a threshold. It proposes to separate epistemic abstention from aleatoric abstention. Particularly, the main difference from aleatoric reject-option predictor is that, aleatoric predictor abstains in cases where the prediction has a high variance, which could come from both unavoidable variance and lack of data observations; while the proposed predictor only abstains in cases where there is a lack of data.",
+      "strengths_and_weaknesses": "The main contribution is the conceptual proposal of a regret-based objective for abstention. The paper connects to a decision-theoretic framework. The connection to standard uncertainty measures is useful, e.g. to squared loss and KL divergence. \n\nHowever, the novelty is somewhat limited above the standard Bayesian uncertainty decompositions. The empirical section mainly focuses on synthetic data, where the ground truth distribution is known. From a decision-theoretic perspective, in cases where even the Bayesian predictor is uncertain, it seems still helpful if the model could abstain from outputting an answer or tell the decision maker that it is uncertain. The paper would benefit from a broader discussion on why this regret notion is helpful in the context of uncertainty quantification. I'm not fully convinced that this regret notion is useful. It might be helpful if the paper includes real human experiments to show that this benchmark is useful in improving real decision making.",
+      "soundness": 2,
+      "presentation": 4,
+      "significance": 2,
+      "originality": 2,
+      "key_questions_for_authors": "Since the paper proposes to separate epistemic abstention from aleatoric abstention, why not allow a fourth output option that the model says \"even a Bayesian predictor is unsure\"?",
+      "limitations": "yes",
+      "overall_recommendation": 3,
+      "confidence": 4,
+      "compliance_with_LLM_reviewing_policy": "Affirmed.",
+      "code_of_conduct_acknowledgement": "Affirmed.",
+      "final_justification": "I keep my assessment of the paper due to the reasons in the acknowledgement."
+    }
+  }
+]

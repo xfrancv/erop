@@ -1,0 +1,248 @@
+\onecolumn
+\appendix
+\section*{Proof of Theorem 1}
+
+
+\begin{proof}
+We will express reject-option predictor $Q\colon\SX\times(\SX\times\SY)^m\rightarrow\SY\cup\{\text{reject}\}$ using a selective predictor, defined by a pair of functions: 
+\begin{itemize}
+    \item a predictor $H\colon\SX\times(\SX\times\SY)^m\rightarrow\SY$, and 
+    \item a selector $S\colon\SX\times(\SX\times\SY)^m\rightarrow\{0,1\}$. 
+\end{itemize}   
+%
+Given this pair $(H,S)$, the reject-option predictor $Q$ is defined as:
+\begin{equation}
+\label{equ:QviaSelPred}
+   Q(x,D) = \begin{cases}
+   H(x,D) & \text{if } S(x,D) = 1\,, \\
+   {\rm reject} & \text{if } S(x,D) = 0 \:.
+   \end{cases}     
+\end{equation}
+%
+Note that any reject-option predictor $Q$ can be expressed as a corresponding selective predictor, defined by a pair $(H,S)$. The objective $R_B^\delta(Q)$ can then be expressed as a function of $(H,S)$ as follows:
+\begin{equation}
+  \label{equ:riskAsFunHS}
+R^\delta_B(H,S)  =  \EE_{(\theta,D,x,y)\sim p(\theta,D,x,y)}\bigg [ S(x,D)\Big( \ell(H(x,D),y)-\ell(h(x,\theta),y) \Big )+\Big(1-S(x,D)\Big )\delta \bigg ]\:.\\
+\end{equation}
+%
+Let us now fix $S$ and minimize $R^\delta_B(H,S)$ with respect to $H$. To this end, we decompose~\equ{equ:riskAsFunHS} into the part that depends on $H$ and a constant:
+\begin{multline*}
+R^\delta_B(H,S)  =  \EE_{(\theta,D,x,y)\sim p(\theta,D,x,y)}\bigg [ S(x,D)\ell(H(x,D),y) \bigg ] + \text{const} \\
+=  \EE_{(x,D)\sim p(x,D)} \bigg [ S(x,D)\, \EE_{y\sim p(y|x,D)} \Big [ \ell(H(x,D),y) \Big] \bigg ] + \text{const} \:.
+\end{multline*}
+%
+Therefore, the minimizer of $R^\delta_B(H,S)$ with respect to $H(x,D)$, for each pair $(x,D)$, is given by:
+\begin{equation}
+\label{equ:OptH}
+  H^*(x,D) = \argmin_{\hat{y}\in\SY} \EE_{y\sim p(y|x,D)} \Big [ \ell(\hat{y},y) \Big] \:,
+\end{equation}
+%
+which coincides with the Bayesian predictor $H_B(x,D)$.
+%
+We now fix $H(x,D)$ and minimize $R^\delta_B(H,S)$ with respect to selection function $S$. To this end, we rewrite~\equ{equ:riskAsFunHS} as follows:
+\begin{multline}
+R^\delta_B(H,S)  =  \EE_{(x,D)\sim p(x,D)} \bigg [ 
+\EE_{(\theta,y)\sim p(\theta,y|x,D)} \Big[ 
+S(x,D)\,\big(\ell(H(x,D),y)-\ell(h(x,\theta),y)\big) + \big(1-S(x,D)\big ) \delta \Big] \bigg]\\
+ =  \EE_{(x,D)\sim p(x,D)} \bigg [ S(x,D)\,
+\underbrace{\EE_{(\theta,y)\sim p(\theta,y|x,D)} \Big[ 
+\ell(H(x,D),y)-\ell(h(x,\theta),y)\Big]}_{\text{conditional regret  (=epistemic uncertainty)}\,E(x,D)} + \big(1-S(x,D)\big ) \delta  \bigg]\\
+=  \EE_{(x,D)\sim p(x,D)} \bigg [ S(x,D)\, E(x,D) + \big(1-S(x,D)\big ) \delta  \bigg] \:.\\
+\end{multline}
+%
+Therefore, for given pair $(x,D)$, the quantity $$S(x,D)\, E(x,D) + \big(1-S(x,D)\big ) \delta$$ 
+is minimized with respect to $S(x,D)$ by:
+\begin{equation}
+\label{equ:OptS}
+  S^*(x,D) = \begin{cases}
+       1 & \text{if }\, E(x,D) \leq \delta\,,\\
+       0 & \text{if }\, E(x,D) > \delta \:,
+   \end{cases}    
+\end{equation}
+%
+Substituting the optimal predictor $H^*(x,D)$ and selector $S^*(x,D)$, which define the optimal selective predictor, into~\equ{equ:QviaSelPred} recovers the optimal epistemic reject-option predictor given in~\equ{equ:OptEpistRejOptPred}.
+\end{proof}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\section*{Derivation of Epistemic Uncertainty for Specific Loss Functions}
+
+
+\begin{table*}[]
+    \centering
+    \begin{tabular}{l|c|c|c}
+          \multicolumn{1}{c|}{Loss}& Bayesian predictor & Total uncertainty & Epistemic uncertainty\\
+          \multicolumn{1}{c|}{$\ell(y,\hat{y})$} & $H_B(x,D)$        & $T(x,D)$          & $E(x,D)$ \\
+       \hline%\hline
+       %
+       \hline
+       $\begin{array}{c}\text{Squared} \\ (y-\hat{y})^2\end{array}$ &
+       $\EE_{\theta\sim p(\theta|D)}\Big[\EE_{y\sim p(y|x,\theta)}[y] \Big ]$  &
+       ${\rm Var}_{y\sim p(y|x,D)} [y]$&
+       ${\rm Var}_{\theta\sim p(\theta|D)} \Big [ \EE_{y\sim p(y|x,\theta)}[y] \Big ]$\\
+       %
+       \hline
+       %\multicolumn{5}{l}{0/1 loss $\ell(y,\hat{y})=\leftbb y\neq \hat{y}\rightbb$} \\
+       $\begin{array}{c}\text{0/1} \\ \leftbb y\neq \hat{y}\rightbb\end{array}$ & 
+       $\argmax\limits_{y\in\SY} p(y|x,D)$  &
+       $1-\max_{y\in\SY} p(y|x,D)$ &
+       $\EE_{\theta\sim p(\theta|D)}\Big[ \max\limits_{y\in\SY} p(y|x,\theta)\Big ] - \max\limits_{y\in\SY} p(y|x,D)$ \\
+       \hline
+       $\begin{array}{c}CE\\  -\log p_y\end{array}$ & $p(y|x,D)$ & $H[p(y|x,D)]$ &
+       $\EE_{\theta\sim p(\theta|D)} \Big [{\rm D}_{\rm KL}\big (p(y|x,\theta)\, \|\, p(y|x,D)\big ) \Big ]$ \\       
+    \end{tabular}
+    \caption{Specific instances of the Bayesian (using $H_B(x,D)$ and $T(x,D)$) and epistemic (using $H_B(x,D)$ and $E(x,D)$) reject-option predictors for three commonly used loss functions: squared loss, 0/1 loss, and cross-entropy (CE) loss. These instances are derived under the assumption that the conditional model factorizes as $p(x,y|\theta)=p(x)\,p(y|x,\theta)$
+    %, and that training data $D=((x_i,y_i)\in\SX\times\Re\mid i=1,\ldots,m)$ are i.i.d, 
+    so the predictive distribution takes the form $p(y|x,D)=\EE_{\theta\sim p(\theta|D)}[p(y|x,\theta)]$.
+    In case of the cross-entropy loss $\ell(y,\#p)=-\log p_y$, the set of target space is finite, $\SY=\{1,2,\ldots,Y\}$, while the base predictor $H\colon\SX\times(\SX\times\SY)^m\rightarrow\SP=\{\#p\in\Re_+^Y\mid \sum_{y\in\SY}p_y=1\}$ outputs a distribution over $\SY$. We use $H[p(y)] = -\mathbb{E}_{y \sim p(y)}[\log_2 p(y)]$ to denote the entropy of a discrete distribution.}
+    \label{tab:Summary}
+\end{table*}
+
+Table~1 summarizes special instances of the Bayesian predictor $H_B(x,D)$, the total uncertainty $T(x,D)$ and the epistemic uncertainty $E(x,D)$ for three common loss functions: squared, 0/1-loss and the cross-entropy loss. Assuming that the conditional model factorizes as $p(x,y|\theta)=p(x)\,p(y|x,\theta)$, the predictive distribution takes the form 
+\[p(y|x,D)=\EE_{\theta\sim p(\theta|D)}[p(y|x,\theta)]\:,
+\]
+which yields the Bayesian predictor:
+\[
+ H_B(x,D)=\argmin_{\hat{y}\in\SY} \EE_{\theta\sim p(\theta|D)} \Big [\EE_{y\sim p(y|x,\theta)}\big[ \ell(\hat{y},y) \big ]\Big ] \:,
+\]
+%
+The total uncertainty reads:
+\[
+ T(x,D)= \EE_{y\sim p(y|x,D)}\big[ \ell(H_B(x,D),y) \big ] =
+ \EE_{\theta\sim p(\theta|D)} \Big [\EE_{y\sim p(y|x,\theta)}\big[ \ell(H_B(x,D),y) \big ]\Big ] \:,
+\]
+and the epistemic uncertainty, measured via the conditional regret, is:
+\[
+ E(x,D) = \EE_{\theta\sim p(\theta|D)} \bigg [\EE_{y\sim p(y|x,\theta)}\Big[ \ell(H_B(x,D),y)-\ell(h(x,\theta),y) \Big ]\bigg ]\:.
+\]
+Finally, recall that the Bayes-optimal predictor for given parameters $\theta$ reads:
+\[
+  h(x,\theta) = \argmin_{\hat{y}\in\SY} \EE_{y\sim p(y|x,\theta)}\big [ \ell(\hat{y},y)\big ]\:.
+\]
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Squared loss}
+
+Let $\ell(y,\hat{y})=(y-\hat{y})^2$ denote the  squared loss defined over the target space $\SY=\Re$. 
+
+The Bayes-optimal predictor given the true parameter $\theta$ reads:
+\[ h^*(x,\theta) = 
+  \argmin_{\hat{y}\in\SY}\EE_{y\sim p(y\mid x,\theta)} (y-\hat{y})^2 = \EE_{y\sim p(y|x,\theta)}\big[ y\big ] = \mu_{y|x,\theta}\:.      
+\]
+The Bayesian predictor:
+\begin{eqnarray*}
+   H_B(x,D) &= &
+\argmin_{\hat{y}\in\SY} \EE_{\theta\sim p(\theta|D)} \Big [\EE_{y\sim p(y|x,\theta)}\big[ (\hat{y}-y)^2 \big ]\Big ]    \\
+   &=& \argmin_{\hat{y}\in\SY} \EE_{\theta\sim p(\theta|D)} \Big [
+   \hat{y}^2-2\,\hat{y}\,\EE_{y\sim p(y|x,\theta)}[y] + 
+   \EE_{y\sim p(y|x,\theta)}[y^2] \Big ]
+   \\
+  &= &\EE_{\theta\sim p(\theta|D)}\Big[\EE_{y\sim p(y|x,\theta)}[y] \Big ] =  \mu_{y|x,D}\:.
+\end{eqnarray*}
+%
+The total uncertainty:
+\begin{eqnarray*}
+   T(x,D) &= &\EE_{\theta\sim p(\theta|D)} \Big [\EE_{y\sim p(y|x,\theta)}\big[ (\mu_{y|x,D}-y)^2 \big ]\Big ] = {\rm Var}_{y\sim p(y|x,D)}\big [ y\big ]\:,
+\end{eqnarray*}
+%
+The epistemic uncertainty:
+\begin{eqnarray*}
+   E^*(x,D) &= &\EE_{\theta\sim p(\theta|D)} \bigg [\EE_{y\sim p(y|x,\theta)}\Big[ (H_B(x,D)-y)^2-(h(x,\theta)-y)^2 \Big ]\bigg ]\\
+   &= &\EE_{\theta\sim p(\theta|D)} \bigg [\EE_{y\sim p(y|x,\theta)}\Big[ y^2-2\,y\,\mu_{y|x,D} + \mu_{y|x,D}^2-y^2+
+   2\,y\,\mu_{y|x,\theta}+  \mu_{y|x,\theta}^2 \Big ]\bigg ]\\   
+   &= &\EE_{\theta\sim p(\theta|D)} \bigg [\EE_{y\sim p(y|x,\theta)}\Big[ 2\,y\,(\mu_{y|x,\theta} - \mu_{y|x,D})+
+   \mu_{y|x,D}^2-  \mu_{y|x,\theta}^2 \Big ]\bigg ]\\   
+   &= &\EE_{\theta\sim p(\theta|D)} \bigg [ -2\,\mu_{y|x,\theta}\,\mu_{y|x,D} + \mu_{y|x,D}^2+
+   \mu_{y|x,\theta}^2\bigg ]\\   
+   &= &\EE_{\theta\sim p(\theta|D)} \bigg [ \Big(\mu_{y|x,D}-\mu_{y|x,\theta}\Big)^2 \bigg ]\\   
+   &=& 
+   {\rm Var}_{\theta\sim p(\theta|D)} \Big [ \EE_{y\sim p(y|x,\theta)}[y] \Big ] \:.   
+   %{\rm Var}_{\theta\sim p(\theta|D)} \Big [ \mu_{y|x,\theta} \Big ] \:.
+\end{eqnarray*}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{0/1-loss}
+
+Let $\SY=\{1,2,\ldots,Y\}$ be a finite set of labels. Let $\ell(y,\hat{y})=\leftbb y\neq \hat{y}\rightbb$ be the 0/1-loss equal to $1$ if $y\neq\hat{y}$ and $0$ otherwise.
+
+
+The Bayes-optimal predictor given the true parameter $\theta$ outputs:
+\[
+  h^*(x,\theta) = 
+  \argmin_{\hat{y}\in\SY} \EE_{y\sim p(y|x,\theta)}\big [\leftbb y\neq \hat{y}\rightbb\big ] = \argmax_{y\in\SY} p(y|x,\theta )\:.  %\argmin_{\hat{y}\in\SY} \sum_{y\in\SY} p(y|x,\theta)\, \leftbb y\neq \hat{y}\rightbb = \argmax_{y\in\SY} p(y|x,\theta )\:.    
+\]
+%
+The Bayesian predictor:
+\[
+   H_B(x,D) = 
+  \argmin_{\hat{y}\in\SY} \EE_{y\sim p(y|x,D)}\big [\leftbb y\neq \hat{y}\rightbb\big ] =  
+  \argmax_{y\in\SY} p(y|x,D ) =
+  \argmax_{y\in\SY} \EE_{\theta\sim p(\theta|D)}\big[p(y|x,\theta )\big ]\:.  
+\]
+%
+The total uncertainty:
+\[
+ T(x,D)= \EE_{y\sim p(y|x,D)}\big[ \leftbb H_B(x,D)\neq y \rightbb  \Big ] = 1-\max_{\hat{y}\in\SY} p(y|x,D) = 1-\max_{\hat{y}\in\SY}\EE_{\theta\sim p(\theta|D)}\big[p(y|x,\theta )\big ] \:.
+\]
+%
+The epistemic uncertainty:
+\begin{eqnarray*}
+  E(x,D) & = & \EE_{\theta \sim p(\theta|D)}\bigg [
+  \EE_{y\sim p(y|x,\theta)} \Big [ 
+  \leftbb y\neq H_B(x,D)\rightbb 
+  - \leftbb y\neq h^*(x,\theta)\rightbb 
+  \Big ]
+  \bigg ] \\
+  &=& \EE_{y\sim p(y|x,D)}\Big[ \leftbb y\neq H_B(x,D) \rightbb \Big ]
+  - \EE_{\theta\sim p(\theta|D)}\bigg[ 
+  \EE_{y\sim p(y|x,\theta)} \Big [ \leftbb y \neq h^*(x,\theta)\rightbb \Big ]
+  \bigg ] \\
+  &=& \bigg (1- p\Big(y=H_B(x,D)\mid x,D\Big ) \bigg ) - \EE_{\theta\sim p(\theta|D)}\bigg ( 1- p\Big (y=h^*(x,\theta) \mid x,\theta\Big )\bigg )\\
+  & = & p\Big (y=h^*(x,\theta) \mid x,\theta\Big ) - p\Big(y=H_B(x,D)\mid x,D\Big ) \\
+  & = & \EE_{\theta\sim p(\theta|D)}\bigg [\max_{y\in\SY} p(y\mid x,\theta) \bigg ] - \max_{y\in\SY} p(y|x,D) \:.
+\end{eqnarray*}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection*{Cross-entropy loss}
+
+Let $\SY=\{1,2,\ldots,Y\}$ be a finite set of labels.
+Let the predictors $h\colon\SX\rightarrow \SP$ and $H\colon \SX\times(\SX\times\SY)^m\rightarrow\SP$ output a distribution over labels $\SY$, where $\SP=\{\#p\in\Re_+^Y\mid \sum_{y\in\SY}p_y=1\}$ denotes the probability simplex. Let $\ell(y,\#p)=-\log p_y$ denote the cross-entropy loss.
+
+The Bayes-optimal predictor given the true parameter $\theta$ reads:
+\[
+   h^*(x,\theta) = \argmin_{\#p\in\SP} \EE_{y\sim p(y|x,\theta)} \big [-\log p_y \big ] = p(y|x,\theta) \:.
+   %\argmin_{\#p\in\SP} \sum_{y\in\SY} p(y|x,\theta) (-\log p_y) = p(y|x,\theta) \:.
+\]
+%
+The Bayesian predictor:
+\[
+   H_B(x,D) =\argmin_{\#p\in\SP} \EE_{y\sim p(y|x,D)} \big [-\log p_y \big ] = p(y|x,D)\:.
+\]
+%
+The total uncertainty:
+\[
+  T(x,D) = \EE_{y\sim p(y\mid x,D)}\Big [-\log \big (p(y\mid x,D)\big) \Big] = {\rm H}\Big [ p(y\mid x,D)\Big ]\:.
+\]
+%
+The epistemic uncertainty:
+\begin{eqnarray*}
+  E(x,D) & = & \EE_{\theta \sim p(\theta|D)} \bigg [\EE_{y\sim p(y | x,\theta)} 
+    \Big [
+       -\log p(y\mid x,D) + \log p(y\mid x,\theta )
+    \Big ]
+  \bigg ]\\
+  & = & \EE_{\theta \sim p(\theta|D)} \bigg [\EE_{y\sim p(y | x,\theta)} 
+    \Big [ \log \Big ( \frac{p(y\mid x,\theta )}{p(y\mid x,D)} \Big )
+    \Big ] \bigg ]\\
+    & =& \EE_{\theta \sim p(\theta|D)} \bigg [
+    {\rm D}_{\rm KL}\Big (p(y\mid x,\theta ) \,\|\,p(y\mid x,D) \Big )
+    \bigg ]\:.
+\end{eqnarray*}
