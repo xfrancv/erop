@@ -231,6 +231,19 @@ Figures are written to `figures/`:
 
 ## Setup
 
+**conda (recommended):**
+
+```bash
+conda create -n distr_shift python=3.11
+conda activate distr_shift
+python -m pip install -r requirements.txt
+```
+
+> Use `python -m pip` (not bare `pip`) so packages install into the active
+> conda environment rather than the user-level site-packages.
+
+**venv:**
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
