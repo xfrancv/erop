@@ -114,6 +114,13 @@ from the same `n` test examples, but only this one is allowed to see their
 labels — so it bounds how well the unsupervised learner could hope to do at a
 given `n`.
 
+One caveat on how it is scored in the single-size experiment: there the prior is
+counted from `y_te`, the same labels the accuracy is then measured against, so
+the estimate is in-sample and the baseline is mildly optimistic. At `n_test =
+2000` with four classes the bias is small, but it is not zero. `--sweep` does
+not share this defect — the supervised prior is counted from a pool of `n` test
+labels while every predictor is scored on a disjoint fixed evaluation set.
+
 ### Results (20 trials, m_train = n_test = 2000)
 
 ```
@@ -229,6 +236,234 @@ Figures are written to `figures/`:
 `data_and_prior.png`, `mcmc_diagnostics.png`, `accuracy_comparison.png`, and
 (from `--sweep`) `accuracy_vs_n_test.png`.
 
+Every run also records its argument setting next to the figures, as
+`run_experiment_args.txt` or `run_experiment_sweep_args.txt`. The file holds the
+command line, a timestamp, the arguments the mode actually reads (the one it
+ignores — `--sizes` in single mode, `--n-test` in `--sweep` — is left out rather
+than shown at an unused default), and the config's name and priors.
+
+## Reject-option predictors
+
+`run_reject_option_experiment.py` extends the same setting with **selective
+prediction**: the predictor may abstain on inputs it is unsure about. A
+reject-option predictor is a pair of a base predictor `h(x)` and an uncertainty
+score `u(x)`; it emits `h(x)` when `u(x)` is below a threshold and rejects
+otherwise. Sweeping the threshold traces out a curve, so no threshold has to be
+fixed in advance.
+
+Three predictors are compared. All are scored under the 0/1 loss, so the
+conditional risk of a decision is one minus its posterior probability.
+
+| Reject-option predictor | Base predictor `h(x)` | Uncertainty `u(x)` |
+| --- | --- | --- |
+| Bayesian, total uncertainty | Bayesian, learned prior | $\hat T(x,D)$ |
+| Bayesian, epistemic uncertainty | Bayesian, learned prior | $\hat T(x,D)-\hat A(x,D)$ |
+| Plugin, supervised prior (reference) | plugin, prior from **labeled** test data | conditional risk under $\hat p_{te}(y\mid x)$ |
+
+The **total** uncertainty is the conditional risk of the committed decision
+under the posterior-averaged label distribution,
+
+$$\hat T(x,D) = \frac1N\sum_{i=1}^N \sum_y p(y\mid x,\theta_i)\,\ell(y, h(x,D)),$$
+
+and the **aleatoric** part is the risk that would remain if each posterior draw
+$\theta_i$ were the true prior, i.e. the per-draw *minimal* conditional risk,
+
+$$\hat A(x,D) = \frac1N\sum_{i=1}^N \min_{\hat y}\sum_y p(y\mid x,\theta_i)\,\ell(y, \hat y).$$
+
+Their difference $\hat T - \hat A \ge 0$ is the **epistemic** uncertainty: the
+excess risk incurred by having to commit to one decision before the prior is
+known. It is large exactly where the posterior draws of $\alpha$ *disagree*
+about the label, and it vanishes where they agree — even if that agreed-upon
+label is itself uncertain. This distinction is what the two Bayesian scores
+measure, and it is why they rank inputs very differently (see below).
+
+### Evaluation: risk-coverage and regret-coverage
+
+Rank the evaluation examples by ascending `u` and let $\pi$ be that order. At
+rank `k` the predictor accepts the `k` least uncertain examples:
+
+$$coverage(k)=\frac kn,\qquad risk(k)=\frac1k\sum_{i=1}^k \ell(y_{\pi(i)}, h(x_{\pi(i)}))$$
+
+$$regret(k)=\frac1k\sum_{i=1}^k\Big(\ell(y_{\pi(i)}, h(x_{\pi(i)})) - \ell(y_{\pi(i)}, \hat h_{true\text{-}prior}(x_{\pi(i)}))\Big)$$
+
+**Selective risk** is the error rate on the accepted examples; a good
+uncertainty score makes it fall as coverage shrinks. **Selective regret**
+measures the same examples against the plugin predictor *given the true test
+prior* — it isolates the cost of not knowing the prior, and unlike the risk it
+can be **negative** (the adapted predictor sometimes beats the true-prior
+plugin, since both share the same imperfect logistic posterior). Each curve is
+summarised by its area, $\text{AuRC}=\frac1n\sum_{k=1}^n metric(k)$, and both
+curves are averaged over trials.
+
+**No in-sample bias.** Unlike `run_experiment.py`'s single-size mode, *both*
+modes here score on a **fixed labeled evaluation set** that is disjoint from the
+`n_test` examples used to adapt the prior. The supervised plugin reference
+counts its prior from the *labels of the adaptation set*, never from the
+evaluation set, so the caveat noted above does not apply to this script.
+
+### Results (20 trials, m_train = n_test = n_eval = 2000)
+
+```
+configs/three_gaussians.json            AuRC risk        AuRC regret
+Bayesian, total uncertainty          0.0033 ± 0.0007   0.0000 ± 0.0000
+Bayesian, epistemic uncertainty      0.0601 ± 0.0097   0.0000 ± 0.0000
+Plugin, supervised prior (reference) 0.0033 ± 0.0007   0.0000 ± 0.0000
+
+configs/model1.json                     AuRC risk        AuRC regret
+Bayesian, total uncertainty          0.0639 ± 0.0089   0.0000 ± 0.0002
+Bayesian, epistemic uncertainty      0.1464 ± 0.0151   0.0001 ± 0.0001
+Plugin, supervised prior (reference) 0.0631 ± 0.0085  -0.0000 ± 0.0001
+```
+
+**Total uncertainty ranks for risk; epistemic uncertainty does not.** Under 0/1
+loss $\hat T(x,D)$ is one minus the posterior probability of the predicted
+label, i.e. the estimated probability of erring on `x` — the optimal quantity to
+reject by. Ranking by it drives selective risk to ~0 at low coverage, and it
+matches the supervised plugin reference to within noise (0.0033 vs 0.0033 on
+`three_gaussians`), so learning the prior from unlabeled data costs nothing for
+selective prediction either.
+
+Ranking by **epistemic** uncertainty *inverts* the curve: selective risk
+**rises** as coverage shrinks — to ≈0.45 on `three_gaussians` and ≈0.40 on
+`model1`, against full-coverage error rates of 0.041 and 0.153. Rejecting at
+random would give a flat curve at exactly those error rates, so at low coverage
+the epistemic score is worse than useless. (Integrated over all coverages it
+comes out worse than random on `three_gaussians`, 0.0601 vs ≈0.041, and roughly
+on par on `model1`, 0.1464 vs ≈0.153, where its mid-coverage dip compensates.)
+
+This is not a bug — it is what the score measures. Inputs deep inside a
+class-overlap region draw the same label distribution from *every* posterior
+draw of $\alpha$, so their epistemic uncertainty is ≈0 even though they are
+exactly the inputs the classifier gets wrong. Epistemic uncertainty flags
+inputs whose label is *sensitive to the prior*, not inputs that are hard. It is
+the wrong score for minimizing selective risk, and the right one for asking
+where the residual prior uncertainty still matters.
+
+**The regret curve is degenerate on both shipped configs.** The adapted
+predictor makes the *same decisions* as the plugin given the true prior on all
+but the ~15% most uncertain inputs, so `regret(k) = 0` exactly for coverage
+below ≈0.85 and the AuRC is zero to four decimals. This is not only an
+artifact of large `n`: the sweep below (on `three_gaussians`) gives
+`|AuRC regret| < 5·10⁻⁵` with error bars straddling zero at **every** `n` from
+50 up — the generator is well-conditioned enough that even a prior learned from
+50 unlabeled examples induces the same argmin as the true prior almost
+everywhere. Regret would
+become informative only where the learned prior is bad enough to flip
+decisions — the weakly-identifiable regime described above, which neither
+`three_gaussians.json` nor the current `model1.json` exhibits.
+
+### When epistemic rejection wins: `epistemic_showcase.json`
+
+For the epistemic score to beat the total score on *regret*, the data must
+satisfy two conditions at once — and on their intersection the two scores must
+disagree:
+
+1. **regret must exist**: a class pair with *identical* conditionals (split
+   unidentifiable from unlabeled data) and a strongly asymmetric true split,
+   so the learned split is prior-dominated and flips decisions on the whole
+   pair region;
+2. **total uncertainty must be misled**: a *decoy* region of regret-free
+   examples with **higher** conditional risk than the pair region. Two-class
+   ambiguity caps total uncertainty at ~0.5, so the decoy must be a
+   **three-way overlap** of well-identified classes: total ≈ 2/3, epistemic
+   ≈ 0.
+
+[configs/epistemic_showcase.json](configs/epistemic_showcase.json) builds
+exactly this: five classes — a tight triangle of three identifiable Gaussians
+(the decoy) far from two *coincident* Gaussians with true split 0.05 / 0.35.
+Run with little unlabeled data and a well-fit base model so the pair split
+stays genuinely flat (a logistic posterior fit on few training samples breaks
+the tie between the coincident classes by noise, and enough unlabeled data
+lets MCMC latch onto that spurious signal):
+
+```bash
+python run_reject_option_experiment.py --config configs/epistemic_showcase.json \
+    --m-train 10000 --n-test 500
+```
+
+Results (20 trials): the identifiability warning fires in 20/20 trials
+(ident ratio ≈ 5x for the coincident pair), and the regret-coverage curves
+finally separate:
+
+```
+reject-option predictor                    AuRC risk         AuRC regret
+Bayesian, total uncertainty            0.2789 ± 0.0881   0.0801 ± 0.0825
+Bayesian, epistemic uncertainty        0.3172 ± 0.0393   0.0372 ± 0.0366
+Plugin, supervised prior (reference)   0.1471 ± 0.0079   0.0000 ± 0.0002
+```
+
+Epistemic ranking holds `regret(k) = 0` up to coverage ≈ 0.60 — exactly
+`1 − (α₃+α₄)`, i.e. it defers the *entire* unidentifiable region to the last
+ranks — while total ranking starts paying regret from coverage ≈ 0.28 because
+its top ranks are spent rejecting the three-way-overlap decoys, which carry no
+regret at all. Both curves meet at the same full-coverage regret (same base
+predictor); the supervised reference has none, since labels resolve the split.
+The price is unchanged: on selective *risk* the epistemic ranking remains the
+worst of the three. The two curves ask different questions, and this generator
+is one where they give opposite answers.
+
+**A consequence of *exactly* identical conditionals**: under `--sweep` the
+AuRC-regret of the two Bayesian reject-option predictors never decays to zero
+— only the supervised plugin's does. No amount of unlabeled data adds
+information along an exactly flat likelihood ridge (in fact the posterior
+concentrates on the *spurious* split direction contributed by the base
+model's finite-training noise), so the base predictor keeps paying regret at
+full coverage no matter how well the epistemic score ranks.
+[configs/epistemic_showcase_near.json](configs/epistemic_showcase_near.json)
+repairs this by separating the pair means by 0.3σ: the split becomes
+identifiable *in the limit* but stays weakly identified at small `n`
+(posterior width ≈ 8–10× label counting). Sweeping `n` (10 trials,
+`--m-train 10000`):
+
+```
+n_test    AuRC regret:  total   epistemic   plugin(sup)
+    50                 0.0621      0.0320        0.0006
+   100                 0.0774      0.0341        0.0003
+   200                 0.0162      0.0083        0.0000
+   500                 0.0147      0.0078        0.0000
+  1000                 0.0001      0.0001        0.0001
+```
+
+The epistemic predictor now dominates the total-uncertainty predictor by ~2×
+at every `n` where regret exists, *and* both decay to zero once the split
+posterior concentrates on the truth (`n ≥ 1000`) — the regime transition is
+visible in the `warn` column, which switches on at `n = 200` and stays on
+while the posterior remains wide relative to label counting.
+
+### Sweep: AuRC vs. number of unlabeled examples
+
+`--sweep` varies the `n` unlabeled examples the prior is adapted from, scoring
+every point on the same fixed labeled evaluation set (10 trials,
+`three_gaussians.json`, `n_eval = 2000`):
+
+```
+n_test   AuRC risk: total   epistemic   plugin(sup)      AuRC regret (all three)
+    50              0.0036      0.0226       0.0036              < 5e-5, ~0
+   100              0.0034      0.0333       0.0034              < 5e-5, ~0
+   200              0.0033      0.0391       0.0033              < 5e-5, ~0
+   500              0.0034      0.0516       0.0034              < 5e-5, ~0
+  1000              0.0034      0.0533       0.0034              < 5e-5, ~0
+  2000              0.0034      0.0602       0.0034              < 5e-5, ~0
+```
+
+The total-uncertainty score is already at its floor by `n = 50` and flat
+thereafter: selective prediction needs far less unlabeled data than the
+accuracy curve above, because rejecting by conditional risk depends on the
+*posterior*, which the prior barely perturbs once it is roughly right.
+
+Counter-intuitively the epistemic AuRC gets **worse** as `n` grows (0.023 →
+0.060). As the posterior of $\alpha$ concentrates, $\hat T - \hat A \to 0$ for
+every input, so the score degenerates toward numerical noise and its ranking
+toward arbitrary. At small `n` it retains enough signal to correlate weakly
+with genuine ambiguity. The lesson is the same as before: this quantity is not
+a proxy for error probability.
+
+Figures are written to the `--out-dir`: `risk_coverage.png`,
+`regret_coverage.png`, and (from `--sweep`) `aurc_vs_n_test.png`. The argument
+setting is saved alongside them as `run_reject_option_experiment_args.txt` or
+`run_reject_option_experiment_sweep_args.txt` — named so that the two scripts
+can share one `--out-dir` without overwriting each other's record.
+
 ## Setup
 
 **conda (recommended):**
@@ -260,6 +495,51 @@ python run_experiment.py --sweep --sizes 100 1000 10000 --n-eval 4000
 python run_experiment.py --config configs/three_gaussians.json   # other generator
 ```
 
+Reject-option predictors (same flags, plus `--n-eval` in both modes):
+
+```bash
+python run_reject_option_experiment.py            # risk/regret-coverage curves + AuRC
+python run_reject_option_experiment.py --sweep    # AuRC vs. #unlabeled examples
+python run_reject_option_experiment.py --trials 5 --n-test 500 --n-eval 1000
+```
+
+## Real datasets
+
+The synthetic experiments above are self-contained. To validate the
+epistemic reject-option story on real data (see
+[`tasks/datataset_proposal.md`](tasks/datataset_proposal.md)), two scripts
+download and inspect the candidate datasets. They use only the standard
+library plus NumPy/matplotlib/tqdm — no torch/torchvision/medmnist.
+
+| Dataset | key | shape | classes | source |
+|---------|-----|-------|---------|--------|
+| Fashion-MNIST | `fashion_mnist` | 28×28 grayscale | 10 | Zalando IDX files |
+| CIFAR-10 | `cifar10` | 32×32 RGB | 10 | fast.ai PNG-folder mirror |
+| DermaMNIST | `dermamnist` | 28×28 RGB | 7 | MedMNIST v2 `.npz` (Zenodo) |
+| BloodMNIST | `bloodmnist` | 28×28 RGB | 8 | MedMNIST v2 `.npz` (Zenodo) |
+
+```bash
+python download_datasets.py                 # fetch all four into data/
+python download_datasets.py cifar10 bloodmnist   # or a subset
+python download_datasets.py --list          # list dataset keys
+
+python analyze_datasets.py                   # download (if needed) + build reports
+python analyze_datasets.py fashion_mnist     # one dataset
+python analyze_datasets.py --per-class 12    # examples per class in the montage
+```
+
+`analyze_datasets.py` writes a **self-contained HTML report** per dataset to
+`data/reports/<key>.html` (plus an `index.html`), with all images embedded as
+base64. Each report gives the split sizes (train/val/test), the input
+dimensionality and flattened feature count, the number of classes and their
+per-split balance, and a grid of example images for every class. The class
+rows are tagged with each dataset's proposed *confusable pair* (e.g. cat/dog,
+melanoma/nevus), linking the data back to the reject-option motivation.
+
+Downloaded data and generated reports live under `data/` (gitignored). CIFAR-10
+is decoded once from PNGs and cached as an `.npz`, so re-analysis is a few
+seconds rather than ~100 s.
+
 ## Layout
 
 ```
@@ -272,7 +552,15 @@ prior_shift/
 configs/
   default.json          the original 4-Gaussian setting (used by default)
   three_gaussians.json  3-class example with different priors
-run_experiment.py  end-to-end experiment, metrics, and figures
+data_tools/
+  registry.py    per-dataset metadata: download URLs, class names, confusable pair
+  download.py    stream files into data/<key>/ (skip-if-present, progress bars)
+  loaders.py     load each source into a common uint8-image / int-label Dataset
+  report.py      render the self-contained HTML analysis report
+run_experiment.py               end-to-end experiment, metrics, and figures
+run_reject_option_experiment.py reject-option predictors, risk/regret-coverage curves
+download_datasets.py            download the real candidate datasets into data/
+analyze_datasets.py             build a self-contained HTML report per dataset
 ```
 
 Requires `numpy`, `scipy`, `scikit-learn`, `matplotlib`.
