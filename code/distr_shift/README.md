@@ -237,14 +237,15 @@ Figures are written to `figures/`:
 (from `--sweep`) `accuracy_vs_n_test.png`.
 
 Every run also records its argument setting next to the figures, as
-`run_experiment_args.txt` or `run_experiment_sweep_args.txt`. The file holds the
+`run_synth_bayesian_learning_exp_args.txt` or
+`run_synth_bayesian_learning_exp_sweep_args.txt`. The file holds the
 command line, a timestamp, the arguments the mode actually reads (the one it
 ignores — `--sizes` in single mode, `--n-test` in `--sweep` — is left out rather
 than shown at an unused default), and the config's name and priors.
 
 ## Reject-option predictors
 
-`run_reject_option_experiment.py` extends the same setting with **selective
+`run_synth_reject_option_exp.py` extends the same setting with **selective
 prediction**: the predictor may abstain on inputs it is unsure about. A
 reject-option predictor is a pair of a base predictor `h(x)` and an uncertainty
 score `u(x)`; it emits `h(x)` when `u(x)` is below a threshold and rejects
@@ -295,7 +296,7 @@ plugin, since both share the same imperfect logistic posterior). Each curve is
 summarised by its area, $\text{AuRC}=\frac1n\sum_{k=1}^n metric(k)$, and both
 curves are averaged over trials.
 
-**No in-sample bias.** Unlike `run_experiment.py`'s single-size mode, *both*
+**No in-sample bias.** Unlike `run_synth_bayesian_learning_exp.py`'s single-size mode, *both*
 modes here score on a **fixed labeled evaluation set** that is disjoint from the
 `n_test` examples used to adapt the prior. The supervised plugin reference
 counts its prior from the *labels of the adaptation set*, never from the
@@ -377,7 +378,7 @@ the tie between the coincident classes by noise, and enough unlabeled data
 lets MCMC latch onto that spurious signal):
 
 ```bash
-python run_reject_option_experiment.py --config configs/epistemic_showcase.json \
+python run_synth_reject_option_exp.py --config configs/epistemic_showcase.json \
     --m-train 10000 --n-test 500
 ```
 
@@ -460,8 +461,8 @@ a proxy for error probability.
 
 Figures are written to the `--out-dir`: `risk_coverage.png`,
 `regret_coverage.png`, and (from `--sweep`) `aurc_vs_n_test.png`. The argument
-setting is saved alongside them as `run_reject_option_experiment_args.txt` or
-`run_reject_option_experiment_sweep_args.txt` — named so that the two scripts
+setting is saved alongside them as `run_synth_reject_option_exp_args.txt` or
+`run_synth_reject_option_exp_sweep_args.txt` — named so that the two scripts
 can share one `--out-dir` without overwriting each other's record.
 
 ## Setup
@@ -488,19 +489,19 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python run_experiment.py                 # 20 trials, writes figures + table
-python run_experiment.py --trials 5 --n-test 1000 --seed 1
-python run_experiment.py --sweep         # accuracy vs. #unlabeled examples
-python run_experiment.py --sweep --sizes 100 1000 10000 --n-eval 4000
-python run_experiment.py --config configs/three_gaussians.json   # other generator
+python run_synth_bayesian_learning_exp.py                 # 20 trials, writes figures + table
+python run_synth_bayesian_learning_exp.py --trials 5 --n-test 1000 --seed 1
+python run_synth_bayesian_learning_exp.py --sweep         # accuracy vs. #unlabeled examples
+python run_synth_bayesian_learning_exp.py --sweep --sizes 100 1000 10000 --n-eval 4000
+python run_synth_bayesian_learning_exp.py --config configs/three_gaussians.json   # other generator
 ```
 
 Reject-option predictors (same flags, plus `--n-eval` in both modes):
 
 ```bash
-python run_reject_option_experiment.py            # risk/regret-coverage curves + AuRC
-python run_reject_option_experiment.py --sweep    # AuRC vs. #unlabeled examples
-python run_reject_option_experiment.py --trials 5 --n-test 500 --n-eval 1000
+python run_synth_reject_option_exp.py            # risk/regret-coverage curves + AuRC
+python run_synth_reject_option_exp.py --sweep    # AuRC vs. #unlabeled examples
+python run_synth_reject_option_exp.py --trials 5 --n-test 500 --n-eval 1000
 ```
 
 ## Real datasets
@@ -540,6 +541,52 @@ Downloaded data and generated reports live under `data/` (gitignored). CIFAR-10
 is decoded once from PNGs and cached as an `.npz`, so re-analysis is a few
 seconds rather than ~100 s.
 
+### Running the adaptation experiment on real data
+
+Two further scripts carry the reject-option story onto the real datasets. These
+require **torch/torchvision** (unlike the download/analysis tools above).
+
+1. **`run_base_predictor_exp.py`** trains and calibrates a neural-network base
+   predictor. It splits the training subset (class-stratified) into a fit part
+   and a model-selection part, selects the best epoch by validation error, fits
+   one temperature `T` on the model-selection part, and saves a `model.pt`
+   bundle (best-epoch weights + `T` + estimated training prior + normalization).
+   Architectures default per dataset: LeNet for Fashion-MNIST, a 32×32/28×28
+   small-input-adapted ResNet-18 (3×3 stem, no max-pool, trained from scratch)
+   for CIFAR-10 and the MedMNIST sets.
+
+   ```bash
+   python run_base_predictor_exp.py fashion_mnist runs/fashion
+   python run_base_predictor_exp.py bloodmnist runs/blood --epochs 30 --device cuda
+   ```
+
+2. **`run_real_reject_option_exp.py`** is the real-data counterpart of
+   `run_synth_reject_option_exp.py`: it loads a `model.pt` base predictor,
+   computes calibrated posteriors on the (val+test) pool, **simulates label
+   shift** by resampling that labeled pool to a target prior, and runs the same
+   predictors and reject-option curves. The target prior defaults to the
+   training prior with the dataset's confusable pair skewed asymmetrically (a
+   genuine, pair-targeted shift); pass `--test-prior` to set it explicitly.
+
+   ```bash
+   python run_real_reject_option_exp.py runs/blood/model.pt runs/blood
+   python run_real_reject_option_exp.py runs/blood/model.pt runs/blood \
+       --n-test 300 --test-prior 0.1 0.1 0.1 0.35 0.1 0.1 0.05 0.1
+   python run_real_reject_option_exp.py runs/blood/model.pt runs/blood --sweep
+   ```
+
+   `--sweep` mirrors the synthetic sweep: it varies the adaptation-set size
+   over `--sizes` (nested prefixes of one resampled pool per trial, scored on
+   a fixed evaluation set) and writes the AuRC-vs-n and epistemic-metrics
+   figures plus a sweep report.
+
+   It reports the four plugin/Bayesian predictors' accuracy (no optimal-Bayes
+   upper bound — the true conditionals are unknown for real data), the
+   reject-option AuRC and epistemic-uncertainty metrics, and writes the
+   risk/regret-coverage figures. The **supervised-prior plugin baseline** — the
+   prior counted from the adaptation-set labels — appears both as an accuracy
+   reference and as a reject-option predictor.
+
 ## Layout
 
 ```
@@ -557,8 +604,10 @@ data_tools/
   download.py    stream files into data/<key>/ (skip-if-present, progress bars)
   loaders.py     load each source into a common uint8-image / int-label Dataset
   report.py      render the self-contained HTML analysis report
-run_experiment.py               end-to-end experiment, metrics, and figures
-run_reject_option_experiment.py reject-option predictors, risk/regret-coverage curves
+run_synth_bayesian_learning_exp.py end-to-end synthetic experiment, metrics, figures
+run_synth_reject_option_exp.py     synthetic reject-option predictors + coverage curves
+run_base_predictor_exp.py          train + calibrate a NN base predictor on a real dataset
+run_real_reject_option_exp.py      real-data adaptation + reject-option experiment
 download_datasets.py            download the real candidate datasets into data/
 analyze_datasets.py             build a self-contained HTML report per dataset
 ```

@@ -3,3 +3,9 @@ scipy>=1.10
 scikit-learn>=1.3
 matplotlib>=3.7
 tqdm>=4.65
+
+# Only for the real-data NN scripts (run_base_predictor_exp.py,
+# run_real_reject_option_exp.py). The synthetic experiments and the
+# download/analysis tools do not need these.
+torch>=2.0
+torchvision>=0.15
