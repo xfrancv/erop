@@ -30,7 +30,9 @@ def main() -> None:
 
     if args.list:
         for key, spec in DATASETS.items():
-            print(f"  {key:<14} {spec.display_name}")
+            pair = (" / ".join(spec.confusable_pair)
+                    if spec.confusable_pair else "-")
+            print(f"  {key:<14} {spec.display_name:<26} confusable pair: {pair}")
         return
 
     keys = args.datasets or list(DATASETS)
