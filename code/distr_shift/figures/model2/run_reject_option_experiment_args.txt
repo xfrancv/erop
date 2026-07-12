@@ -1,0 +1,18 @@
+timestamp : 2026-07-12T14:59:33
+command   : run_reject_option_experiment.py --config configs/model2.json --out-dir figures/model2/ --n-test 50 --n-eval 2000
+
+[arguments]
+config        : configs/model2.json
+epi_threshold : 0.001
+m_train       : 2000
+n_eval        : 2000
+n_test        : 50
+out_dir       : figures/model2/
+seed          : 0
+sweep         : False
+trials        : 20
+
+[resolved from config]
+config_name   : model2
+train_prior   : [0.2 0.3 0.3 0.2]
+test_prior    : [0.3 0.2 0.2 0.3]

@@ -1,0 +1,18 @@
+timestamp : 2026-07-12T14:11:00
+command   : run_reject_option_experiment.py --config configs/model1.json --out-dir figures/model1/ --n-eval 2000 --sweep --sizes 50 100 200 500 1000 2000 5000 --trials 10
+
+[arguments]
+config        : configs/model1.json
+epi_threshold : 0.001
+m_train       : 2000
+n_eval        : 2000
+out_dir       : figures/model1/
+seed          : 0
+sizes         : [50, 100, 200, 500, 1000, 2000, 5000]
+sweep         : True
+trials        : 10
+
+[resolved from config]
+config_name   : model7
+train_prior   : [0.4 0.2 0.2 0.2]
+test_prior    : [0.1 0.3 0.3 0.3]
