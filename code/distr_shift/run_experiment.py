@@ -18,6 +18,8 @@ experiment. Figures are written to ``figures/`` and a results table is printed.
 from __future__ import annotations
 
 import argparse
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -63,6 +65,43 @@ def _progress(total: int, desc: str):
             return False
 
     return _NoBar()
+
+
+def save_run_args(
+    args,
+    filename: str,
+    extra: dict | None = None,
+    ignored: set[str] | None = None,
+) -> Path:
+    """Write the run's argument setting to ``args.out_dir / filename``.
+
+    ``filename`` differs per script *and* per mode (sweep vs. single), so runs
+    of the two experiment scripts into a shared ``--out-dir`` never overwrite
+    each other's record.  ``extra`` holds values resolved after parsing (the
+    config name, the priors it supplied) that are not argparse arguments.
+
+    ``ignored`` names the arguments the current mode does not read; they are
+    omitted rather than recorded at their (unused) defaults, which would invite
+    a reader to reconstruct the run wrongly.  Which arguments those are depends
+    on both the script and the mode, so the caller decides.
+    """
+    fields = {k: v for k, v in vars(args).items() if k not in (ignored or ())}
+    width = max(len(k) for k in (*fields, *(extra or ()))) + 1
+
+    path = Path(args.out_dir) / filename
+    lines = [
+        f"timestamp : {datetime.now().isoformat(timespec='seconds')}",
+        f"command   : {' '.join(sys.argv)}",
+        "",
+        "[arguments]",
+    ]
+    lines += [f"{k:<{width}}: {v}" for k, v in sorted(fields.items())]
+    if extra:
+        lines += ["", "[resolved from config]"]
+        lines += [f"{k:<{width}}: {v}" for k, v in extra.items()]
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
 
 # The generator setting (Gaussians + priors) comes from a JSON config; the
 # default reproduces the original experiment: uniform training prior, strongly
@@ -492,6 +531,20 @@ def main() -> None:
     # Create the output directory (including any parents) so figure saving does
     # not fail when a nested --out-dir does not yet exist.
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+
+    args_file = save_run_args(
+        args,
+        "run_experiment_sweep_args.txt" if args.sweep else "run_experiment_args.txt",
+        extra={
+            "config_name": cfg.name,
+            "train_prior": np.array2string(TRAIN_PRIOR, precision=4),
+            "test_prior": np.array2string(TEST_PRIOR, precision=4),
+        },
+        # The single-size mode scores on the test set itself: no --n-eval, and
+        # --sizes is the sweep's variable.
+        ignored={"n_test"} if args.sweep else {"sizes", "n_eval"},
+    )
+    print(f"arguments written to {args_file}")
 
     master_rng = np.random.default_rng(args.seed)
 
