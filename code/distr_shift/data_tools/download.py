@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from .registry import DATASETS, DatasetSpec
 
-# data/ lives next to the code directory (the repo root of run_experiment.py).
+# data/ lives next to the code directory (the repo root of run_synth_bayesian_learning_exp.py).
 DATA_ROOT = Path(__file__).resolve().parent.parent / "data"
 
 _USER_AGENT = "distr_shift-datasets/1.0 (+urllib)"
