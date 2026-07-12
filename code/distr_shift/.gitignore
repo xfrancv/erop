@@ -1,0 +1,3 @@
+# Downloaded datasets and generated analysis reports (large, reproducible).
+data/
+__pycache__/
