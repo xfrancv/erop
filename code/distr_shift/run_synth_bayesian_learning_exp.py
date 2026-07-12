@@ -7,7 +7,7 @@ against oracle Bayes predictors and plugin baselines.
 
 Run with::
 
-    python run_experiment.py
+    python run_synth_bayesian_learning_exp.py
 
 The synthetic-generator setting (number of Gaussians, their means and
 covariances, and the train/test label priors) is read from a JSON file given
@@ -534,7 +534,8 @@ def main() -> None:
 
     args_file = save_run_args(
         args,
-        "run_experiment_sweep_args.txt" if args.sweep else "run_experiment_args.txt",
+        "run_synth_bayesian_learning_exp_sweep_args.txt" if args.sweep
+        else "run_synth_bayesian_learning_exp_args.txt",
         extra={
             "config_name": cfg.name,
             "train_prior": np.array2string(TRAIN_PRIOR, precision=4),

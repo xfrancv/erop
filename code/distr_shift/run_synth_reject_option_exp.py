@@ -1,6 +1,6 @@
 """Reject-option experiment: selective prediction under Bayesian prior adaptation.
 
-Extends ``run_experiment.py`` (same setting: unsupervised test-prior adaptation
+Extends ``run_synth_bayesian_learning_exp.py`` (same setting: unsupervised test-prior adaptation
 under label shift) with three reject-option predictors, each a pair of a base
 predictor ``h(x)`` and an uncertainty score ``u(x)``:
 
@@ -14,7 +14,7 @@ predictor ``h(x)`` and an uncertainty score ``u(x)``:
    using the prior counted from the *labels* of the adaptation set, with
    ``u(x)`` its estimated conditional risk.  A supervised reference baseline.
 
-Unlike ``run_experiment.py``, both modes score on a **fixed labeled evaluation
+Unlike ``run_synth_bayesian_learning_exp.py``, both modes score on a **fixed labeled evaluation
 set** disjoint from the ``n_test`` adaptation examples, so the supervised prior
 baseline carries no in-sample bias.  Predictors are ranked by ``u`` on the
 evaluation set and judged by risk-coverage and regret-coverage curves (regret
@@ -23,8 +23,8 @@ areas under them, ``AuRC = (1/n) sum_k metric(k)``.
 
 Run with::
 
-    python run_reject_option_experiment.py                 # curves + AuRC table
-    python run_reject_option_experiment.py --sweep         # AuRC vs. n_test
+    python run_synth_reject_option_exp.py                 # curves + AuRC table
+    python run_synth_reject_option_exp.py --sweep         # AuRC vs. n_test
 
 Figures are written to ``figures/`` and result tables are printed.
 """
@@ -45,7 +45,7 @@ from prior_shift import (
     sample_prior_posterior,
     zero_one_loss_matrix,
 )
-from run_experiment import _progress, accuracy, save_run_args
+from run_synth_bayesian_learning_exp import _progress, accuracy, save_run_args
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent / "configs" / "default.json"
 TRAIN_PRIOR = np.array([0.25, 0.25, 0.25, 0.25])
@@ -556,8 +556,8 @@ def main() -> None:
 
     args_file = save_run_args(
         args,
-        "run_reject_option_experiment_sweep_args.txt" if args.sweep
-        else "run_reject_option_experiment_args.txt",
+        "run_synth_reject_option_exp_sweep_args.txt" if args.sweep
+        else "run_synth_reject_option_exp_args.txt",
         extra={
             "config_name": cfg.name,
             "train_prior": np.array2string(TRAIN_PRIOR, precision=4),
