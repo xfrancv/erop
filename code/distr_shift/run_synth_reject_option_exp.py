@@ -268,14 +268,20 @@ def run_single_experiment(model, args, master_rng) -> None:
     aurc_risk = {n: risk_curves[n].mean(axis=1) for n in names}
     aurc_regret = {n: regret_curves[n].mean(axis=1) for n in names}
     # Coverage-at-target per trial (computed per trial, then aggregated:
-    # threshold crossings are nonlinear, so the order matters).
-    rt = args.risk_target
-    cov_risk = {n: np.array([
-        coverage_at_target(risk_curves[n][t], ref_risks[t] if rt is None else rt)
-        for t in range(args.trials)]) for n in names}
-    cov_regret = {n: np.array([
-        coverage_at_target(regret_curves[n][t], args.regret_target)
-        for t in range(args.trials)]) for n in names}
+    # threshold crossings are nonlinear, so the order matters). One entry per
+    # requested target.
+    rts, rt_descs = _resolve_risk_targets(args.risk_target)
+    cov_risk = [
+        {n: np.array([
+            coverage_at_target(risk_curves[n][t],
+                               ref_risks[t] if rt is None else rt)
+            for t in range(args.trials)]) for n in names}
+        for rt in rts]
+    cov_regret = [
+        {n: np.array([
+            coverage_at_target(regret_curves[n][t], eps)
+            for t in range(args.trials)]) for n in names}
+        for eps in args.regret_target]
 
     # ---- report ----
     print("=" * 76)
@@ -305,14 +311,19 @@ def run_single_experiment(model, args, master_rng) -> None:
               f"{aurc_risk[name].mean():>8.4f} ± {aurc_risk[name].std():.4f}"
               f"{aurc_regret[name].mean():>8.4f} ± {aurc_regret[name].std():.4f}")
     print("-" * 76)
-    print(f"coverage at target ({_risk_target_desc(rt)}; "
-          f"regret <= {args.regret_target:g})")
-    print(f"{'reject-option predictor':<46}{'cov@risk':>14}{'cov@regret':>14}")
+    ref_note = ("  ('ref' = per-trial full-coverage risk of the true-prior "
+                "reference)" if args.risk_target is None else "")
+    print(f"coverage at target (mean±std over trials){ref_note}")
+    header = f"{'reject-option predictor':<46}"
+    header += "".join(f"{'risk<=' + d:>14}" for d in rt_descs)
+    header += "".join(f"{f'regret<={e:g}':>14}" for e in args.regret_target)
+    print(header)
     print("-" * 76)
     for name in names:
-        print(f"{REJECT_LABELS[name]:<46}"
-              f"{cov_risk[name].mean():>8.3f} ± {cov_risk[name].std():.3f}"
-              f"{cov_regret[name].mean():>8.3f} ± {cov_regret[name].std():.3f}")
+        row = f"{REJECT_LABELS[name]:<46}"
+        for cov in (*cov_risk, *cov_regret):
+            row += f"{cov[name].mean():>8.3f}±{cov[name].std():.3f}"
+        print(row)
     print("-" * 76)
     print("epistemic-uncertainty metrics of the Bayesian predictor "
           f"(threshold={args.epi_threshold:g})")
@@ -367,6 +378,54 @@ def make_curve_figures(
         plt.close(fig)
 
 
+def make_curves_at_n_figure(
+    risk_curves: dict, regret_curves: dict, n_test: int, out_dir: str,
+) -> str:
+    """Side-by-side risk- and regret-coverage curves for one adaptation-set
+    size of a sweep. ``risk_curves`` / ``regret_curves`` map predictor name to
+    a (trials, n_eval) array of per-trial curves at that size. The size
+    appears in the panel titles and in the file name; the written path is
+    returned.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    trials, n_eval = next(iter(risk_curves.values())).shape
+    coverage = np.arange(1, n_eval + 1) / n_eval
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    for ax, curves, metric in (
+        (axes[0], risk_curves, "selective risk"),
+        (axes[1], regret_curves, "selective regret"),
+    ):
+        for name in REJECT_LABELS:
+            mean = curves[name].mean(axis=0)
+            sem = curves[name].std(axis=0) / np.sqrt(trials)
+            aurc = curves[name].mean(axis=1)     # per-trial AuRC
+            ax.plot(coverage, mean, lw=1.8, color=REJECT_COLORS[name],
+                    label=f"{REJECT_LABELS[name]}  "
+                          f"(AuRC {aurc.mean():.4f} ± {aurc.std():.4f})")
+            ax.fill_between(coverage, mean - sem, mean + sem,
+                            color=REJECT_COLORS[name], alpha=0.2)
+        if metric == "selective regret":
+            ax.axhline(0.0, color="0.4", ls="--", lw=1)
+        ax.set_xlabel("coverage")
+        ax.set_ylabel(metric)
+        ax.set_title(f"{metric.capitalize()}-coverage curve, "
+                     f"$n_\\mathrm{{test}}$ = {n_test}")
+        ax.legend(fontsize=8, loc="upper left")
+        ax.grid(True, alpha=0.25)
+
+    fig.suptitle(f"Coverage curves at n_test = {n_test} "
+                 f"(mean ± s.e.m., {trials} trials)")
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    path = f"{out_dir}/coverage_curves_n{n_test}.png"
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+    return path
+
+
 # ---------------------------------------------------------------------------
 # Sweep mode: AuRC as a function of the adaptation-set size.
 # ---------------------------------------------------------------------------
@@ -381,8 +440,16 @@ def run_sweep_experiment(model, args, master_rng) -> None:
     aurc_regret = {n: np.zeros((len(sizes), args.trials)) for n in names}
     warned = np.zeros((len(sizes), args.trials), dtype=bool)
     epi_metrics = np.zeros((len(sizes), args.trials, 3))  # avg epi, avg regret, portion
-    cov_risk = {n: np.zeros((len(sizes), args.trials)) for n in names}
-    cov_regret = {n: np.zeros((len(sizes), args.trials)) for n in names}
+    rts, rt_descs = _resolve_risk_targets(args.risk_target)
+    cov_risk = [{n: np.zeros((len(sizes), args.trials)) for n in names}
+                for _ in rts]
+    cov_regret = [{n: np.zeros((len(sizes), args.trials)) for n in names}
+                  for _ in args.regret_target]
+    # Full per-size curves, kept for the per-n coverage-curve figures.
+    risk_curves = {n: np.zeros((len(sizes), args.trials, args.n_eval))
+                   for n in names}
+    regret_curves = {n: np.zeros((len(sizes), args.trials, args.n_eval))
+                     for n in names}
 
     with _progress(total=args.trials * len(sizes), desc="sweep") as bar:
         for t in range(args.trials):
@@ -402,8 +469,8 @@ def run_sweep_experiment(model, args, master_rng) -> None:
                 corrected_posterior(est_post_ev, base.train_prior, TEST_PRIOR),
                 loss)
             losses_ref = loss[h_true, y_ev]
-            risk_target = (args.risk_target if args.risk_target is not None
-                           else float(losses_ref.mean()))
+            resolved_rts = [float(losses_ref.mean()) if rt is None else rt
+                            for rt in rts]
 
             for i, n in enumerate(sizes):
                 mcmc = sample_prior_posterior(
@@ -431,11 +498,14 @@ def run_sweep_experiment(model, args, master_rng) -> None:
                 }
                 for name, (h, u) in predictors.items():
                     risk, regret = selective_curves(loss[h, y_ev], losses_ref, u)
+                    risk_curves[name][i, t] = risk
+                    regret_curves[name][i, t] = regret
                     aurc_risk[name][i, t] = risk.mean()
                     aurc_regret[name][i, t] = regret.mean()
-                    cov_risk[name][i, t] = coverage_at_target(risk, risk_target)
-                    cov_regret[name][i, t] = coverage_at_target(
-                        regret, args.regret_target)
+                    for ti, rt_val in enumerate(resolved_rts):
+                        cov_risk[ti][name][i, t] = coverage_at_target(risk, rt_val)
+                    for ei, eps in enumerate(args.regret_target):
+                        cov_regret[ei][name][i, t] = coverage_at_target(regret, eps)
                 epi_metrics[i, t] = epistemic_metrics(
                     total - aleatoric, loss[h_bayes, y_ev], losses_ref,
                     args.epi_threshold)
@@ -456,10 +526,15 @@ def run_sweep_experiment(model, args, master_rng) -> None:
             row = f"{n:>8}{warned[i].mean():>8.2f}"
             row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
             print(row)
-    risk_desc = _risk_target_desc(args.risk_target)
-    regret_desc = f"regret <= {args.regret_target:g}"
-    for label, cov in ((f"coverage @ {risk_desc}", cov_risk),
-                       (f"coverage @ {regret_desc}", cov_regret)):
+    risk_fig_descs = ["reference risk" if rt is None else d
+                      for rt, d in zip(rts, rt_descs)]
+    regret_fig_descs = [f"{e:g}" for e in args.regret_target]
+    blocks = [(f"coverage @ risk <= {d}"
+               + (" (per-trial reference full-coverage risk)" if rt is None else ""),
+               cov) for rt, d, cov in zip(rts, rt_descs, cov_risk)]
+    blocks += [(f"coverage @ regret <= {e:g}", cov)
+               for e, cov in zip(args.regret_target, cov_regret)]
+    for label, cov in blocks:
         print("-" * 76)
         print(label)
         print(f"{'n_test':>8}"
@@ -484,10 +559,16 @@ def run_sweep_experiment(model, args, master_rng) -> None:
     make_epistemic_metrics_figure(
         sizes, epi_metrics, args.epi_threshold, args.out_dir)
     make_cov_target_figure(sizes, cov_risk, cov_regret, args.trials,
-                           risk_desc, regret_desc, args.out_dir)
+                           risk_fig_descs, regret_fig_descs, args.out_dir)
+    for i, n in enumerate(sizes):
+        make_curves_at_n_figure(
+            {name: risk_curves[name][i] for name in names},
+            {name: regret_curves[name][i] for name in names},
+            n, args.out_dir)
     print(f"figures written to {args.out_dir}/aurc_vs_n_test.png, "
-          f"{args.out_dir}/epistemic_metrics_vs_n_test.png and "
-          f"{args.out_dir}/cov_at_target_vs_n_test.png")
+          f"{args.out_dir}/epistemic_metrics_vs_n_test.png, "
+          f"{args.out_dir}/cov_at_target_vs_n_test.png and "
+          f"{args.out_dir}/coverage_curves_n<n_test>.png (one per size)")
 
 
 def make_sweep_figure(
@@ -575,46 +656,67 @@ def make_epistemic_metrics_figure(
 
 
 def make_cov_target_figure(
-    sizes: list[int], cov_risk: dict, cov_regret: dict,
-    trials: int, risk_desc: str, regret_desc: str, out_dir: str,
+    sizes: list[int], cov_risk: list[dict], cov_regret: list[dict],
+    trials: int, risk_descs: list[str], regret_descs: list[str], out_dir: str,
 ) -> None:
-    """Two panels vs. n: coverage at the risk target and at the regret target."""
+    """Grid of panels vs. n: one column per target, risk targets on the top
+    row and regret targets on the bottom row.
+
+    ``cov_risk`` / ``cov_regret`` are lists (one entry per target) of dicts
+    mapping predictor name to a (len(sizes), trials) coverage array.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     x = np.asarray(sizes, dtype=float)
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    ncols = max(len(cov_risk), len(cov_regret))
+    fig, axes = plt.subplots(2, ncols, figsize=(5.8 * ncols, 9.2),
+                             squeeze=False)
 
-    for ax, cov, desc in (
-        (axes[0], cov_risk, risk_desc),
-        (axes[1], cov_regret, regret_desc),
+    for r, covs, descs, metric in (
+        (0, cov_risk, risk_descs, "risk"),
+        (1, cov_regret, regret_descs, "regret"),
     ):
-        for name in REJECT_LABELS:
-            mean = cov[name].mean(axis=1)
-            sem = cov[name].std(axis=1) / np.sqrt(trials)
-            ax.plot(x, mean, lw=1.8, marker="o", color=REJECT_COLORS[name],
-                    label=REJECT_LABELS[name])
-            ax.fill_between(x, mean - sem, mean + sem,
-                            color=REJECT_COLORS[name], alpha=0.2)
-        ax.set_ylim(-0.02, 1.05)
-        ax.set_xscale("log")
-        ax.set_xticks(sizes)
-        ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        ax.set_xlabel("number of unlabeled test examples $n$")
-        ax.set_ylabel("coverage at target")
-        ax.set_title(f"coverage @ {desc} (mean ± s.e.m., {trials} trials)")
-        ax.legend(fontsize=8, loc="lower right")
-        ax.grid(True, which="both", alpha=0.25)
+        for c in range(ncols):
+            ax = axes[r][c]
+            if c >= len(covs):
+                ax.axis("off")
+                continue
+            for name in REJECT_LABELS:
+                mean = covs[c][name].mean(axis=1)
+                sem = covs[c][name].std(axis=1) / np.sqrt(trials)
+                ax.plot(x, mean, lw=1.8, marker="o", color=REJECT_COLORS[name],
+                        label=REJECT_LABELS[name])
+                ax.fill_between(x, mean - sem, mean + sem,
+                                color=REJECT_COLORS[name], alpha=0.2)
+            ax.set_ylim(-0.02, 1.05)
+            ax.set_xscale("log")
+            ax.set_xticks(sizes)
+            ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+            ax.set_xlabel("number of unlabeled test examples $n$")
+            ax.set_ylabel("coverage at target")
+            ax.set_title(f"coverage @ {metric} <= {descs[c]}")
+            ax.legend(fontsize=8, loc="lower right")
+            ax.grid(True, which="both", alpha=0.25)
 
-    fig.tight_layout()
+    fig.suptitle("Coverage at target vs. test-set size "
+                 f"(mean ± s.e.m., {trials} trials)")
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
     fig.savefig(f"{out_dir}/cov_at_target_vs_n_test.png", dpi=130)
     plt.close(fig)
 
 
-def _risk_target_desc(risk_target: float | None) -> str:
-    return (f"risk <= {risk_target:g}" if risk_target is not None
-            else "risk <= reference full-coverage risk (per trial)")
+def _resolve_risk_targets(risk_target_arg):
+    """Resolve ``--risk-target`` into parallel ``(values, descriptions)``.
+
+    ``None`` (flag omitted) means a single implicit target: the per-trial
+    full-coverage risk of the true-prior reference predictor, described as
+    ``"ref"`` in tables and ``"reference risk"`` in figures.
+    """
+    if risk_target_arg is None:
+        return [None], ["ref"]
+    return list(risk_target_arg), [f"{v:g}" for v in risk_target_arg]
 
 
 def main() -> None:
@@ -641,13 +743,15 @@ def main() -> None:
         help="Epistemic uncertainty below this value counts as negligible "
              "in the reported portion metric.")
     parser.add_argument(
-        "--risk-target", type=float, default=None,
-        help="Risk budget for the coverage-at-target metric. Default: the "
+        "--risk-target", type=float, nargs="+", default=None,
+        help="Risk budget(s) for the coverage-at-target metric; the metric is "
+             "computed for each value given. Default: a single budget, the "
              "per-trial full-coverage risk of the true-prior reference "
              "predictor (self-calibrating across configs).")
     parser.add_argument(
-        "--regret-target", type=float, default=0.002,
-        help="Regret budget for the coverage-at-target metric.")
+        "--regret-target", type=float, nargs="+", default=[0.002],
+        help="Regret budget(s) for the coverage-at-target metric; the metric "
+             "is computed for each value given.")
     parser.add_argument(
         "--config", type=str, default=str(DEFAULT_CONFIG),
         help="JSON file with the synthetic-generator setting.")

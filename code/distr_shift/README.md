@@ -302,10 +302,11 @@ one coverage regime gets diluted. Both scripts therefore also report the
 selective metric stays within a budget for every accepted rank,
 $\text{cov@}\varepsilon = \frac1n\max\{k : metric(j)\le\varepsilon\ \forall
 j\le k\}$ (the first few ranks are a grace region, since selective metrics at
-tiny $k$ are 0/1-grained). The regret budget is `--regret-target` (default
-0.002); the risk budget is `--risk-target`, defaulting to the per-trial
-full-coverage risk of the true-prior reference — i.e. *"how much coverage
-while staying no worse than the oracle-prior plugin's average error."* It is
+tiny $k$ are 0/1-grained). Both budgets accept **one or more values** and the
+metric is reported for each: `--regret-target` (default 0.002) and
+`--risk-target`, defaulting to a single budget — the per-trial full-coverage
+risk of the true-prior reference, i.e. *"how much coverage while staying no
+worse than the oracle-prior plugin's average error."* It is
 computed per trial and then averaged (threshold crossings are nonlinear, so
 the order matters). In `--sweep` mode it adds a third figure,
 `cov_at_target_vs_n_test.png`.
