@@ -296,6 +296,20 @@ plugin, since both share the same imperfect logistic posterior). Each curve is
 summarised by its area, $\text{AuRC}=\frac1n\sum_{k=1}^n metric(k)$, and both
 curves are averaged over trials.
 
+Because AuRC integrates uniformly over all coverages, a large gap confined to
+one coverage regime gets diluted. Both scripts therefore also report the
+**coverage at target** — the dual statistic: the largest coverage at which the
+selective metric stays within a budget for every accepted rank,
+$\text{cov@}\varepsilon = \frac1n\max\{k : metric(j)\le\varepsilon\ \forall
+j\le k\}$ (the first few ranks are a grace region, since selective metrics at
+tiny $k$ are 0/1-grained). The regret budget is `--regret-target` (default
+0.002); the risk budget is `--risk-target`, defaulting to the per-trial
+full-coverage risk of the true-prior reference — i.e. *"how much coverage
+while staying no worse than the oracle-prior plugin's average error."* It is
+computed per trial and then averaged (threshold crossings are nonlinear, so
+the order matters). In `--sweep` mode it adds a third figure,
+`cov_at_target_vs_n_test.png`.
+
 **No in-sample bias.** Unlike `run_synth_bayesian_learning_exp.py`'s single-size mode, *both*
 modes here score on a **fixed labeled evaluation set** that is disjoint from the
 `n_test` examples used to adapt the prior. The supervised plugin reference

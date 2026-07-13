@@ -25,7 +25,8 @@ python run_synth_reject_option_exp.py --config configs/epistemic_showcase.json -
     --m-train 10000 --n-test 500 --n-eval 2000
 
 python run_synth_reject_option_exp.py --config configs/epistemic_showcase.json --out-dir figures/epistemic_showcase/ \
-    --sweep --trials 10 --m-train 10000 --sizes 1 2 5 10 20 50 100 200 500 1000 2000 5000 --n-eval 2000 
+    --sweep --trials 10 --m-train 10000 --sizes 1 2 5 10 20 50 100 200 500 1000 2000 5000 --n-eval 2000 \
+    --regret-target 0.002 --risk-target 0.001
 
 
 # data: model1.json

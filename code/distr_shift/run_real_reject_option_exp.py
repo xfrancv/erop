@@ -61,8 +61,11 @@ from run_base_predictor_exp import make_model, to_tensor
 from run_synth_bayesian_learning_exp import _progress, accuracy, save_run_args
 from run_synth_reject_option_exp import (
     REJECT_LABELS,
+    _risk_target_desc,
     bayesian_posterior_and_aleatoric,
+    coverage_at_target,
     epistemic_metrics,
+    make_cov_target_figure,
     make_curve_figures,
     make_epistemic_metrics_figure,
     make_sweep_figure,
@@ -218,7 +221,7 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
 
 
 def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
-              master_rng, epi_threshold):
+              master_rng, epi_threshold, risk_target=None, regret_target=0.002):
     """AuRC and epistemic metrics as a function of the adaptation-set size.
 
     Mirrors ``run_synth_reject_option_exp.run_sweep_experiment``: per trial the
@@ -237,6 +240,8 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
     aurc_regret = {n: np.zeros((len(sizes), trials)) for n in names}
     warned = np.zeros((len(sizes), trials), dtype=bool)
     epi_metrics = np.zeros((len(sizes), trials, 3))
+    cov_risk = {n: np.zeros((len(sizes), trials)) for n in names}
+    cov_regret = {n: np.zeros((len(sizes), trials)) for n in names}
     shortfalls: set[int] = set()
 
     with _progress(total=trials * len(sizes), desc="sweep") as bar:
@@ -256,6 +261,7 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
             h_true = bayes_decision(
                 corrected_posterior(post_ev, train_prior, target_prior), loss)
             losses_ref = loss[h_true, y_ev]
+            rt = risk_target if risk_target is not None else float(losses_ref.mean())
 
             for i, n in enumerate(sizes):
                 adapt_idx = pool_idx[:n]
@@ -286,12 +292,16 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                     risk, regret = selective_curves(loss[h, y_ev], losses_ref, u)
                     aurc_risk[name][i, t] = risk.mean()
                     aurc_regret[name][i, t] = regret.mean()
+                    cov_risk[name][i, t] = coverage_at_target(risk, rt)
+                    cov_regret[name][i, t] = coverage_at_target(
+                        regret, regret_target)
                 epi_metrics[i, t] = epistemic_metrics(
                     total - aleatoric, loss[h_bayes, y_ev], losses_ref,
                     epi_threshold)
                 bar.update(1)
 
-    return aurc_risk, aurc_regret, warned, epi_metrics, shortfalls
+    return (aurc_risk, aurc_regret, warned, epi_metrics, shortfalls,
+            cov_risk, cov_regret)
 
 
 def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
@@ -300,9 +310,11 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
     sizes = sorted(args.sizes)
     names = list(REJECT_LABELS.keys())
     master_rng = np.random.default_rng(args.seed)
-    aurc_risk, aurc_regret, warned, epi_metrics, shortfalls = run_sweep(
+    (aurc_risk, aurc_regret, warned, epi_metrics, shortfalls,
+     cov_risk, cov_regret) = run_sweep(
         P, y_pool, train_prior, target_prior, sizes, args.trials,
-        args.n_eval, loss, master_rng, args.epi_threshold)
+        args.n_eval, loss, master_rng, args.epi_threshold,
+        args.risk_target, args.regret_target)
 
     lines = [
         "=" * 76,
@@ -330,6 +342,17 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
             row = f"{n:>8}{warned[i].mean():>8.2f}"
             row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
             lines.append(row)
+    risk_desc = _risk_target_desc(args.risk_target)
+    regret_desc = f"regret <= {args.regret_target:g}"
+    for label, cov in ((f"coverage @ {risk_desc}", cov_risk),
+                       (f"coverage @ {regret_desc}", cov_regret)):
+        lines.append("-" * 76)
+        lines.append(label)
+        lines.append(f"{'n_test':>8}"
+                     + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
+        for i, n in enumerate(sizes):
+            lines.append(f"{n:>8}"
+                         + "".join(f"{cov[name][i].mean():>24.3f}" for name in names))
     lines.append("-" * 76)
     lines.append("Epistemic-uncertainty metrics of the Bayesian predictor "
                  f"(threshold={args.epi_threshold:g})")
@@ -350,9 +373,11 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
     make_sweep_figure(sizes, aurc_risk, aurc_regret, args.trials, args.out_dir)
     make_epistemic_metrics_figure(sizes, epi_metrics, args.epi_threshold,
                                   args.out_dir)
+    make_cov_target_figure(sizes, cov_risk, cov_regret, args.trials,
+                           risk_desc, regret_desc, args.out_dir)
     print(f"\nreport and figures written to {out_dir}/: "
           f"real_reject_option_sweep_report.txt, aurc_vs_n_test.png, "
-          f"epistemic_metrics_vs_n_test.png")
+          f"epistemic_metrics_vs_n_test.png, cov_at_target_vs_n_test.png")
 
 
 def main() -> None:
@@ -378,6 +403,14 @@ def main() -> None:
         "--epi-threshold", type=float, default=0.001,
         help="Epistemic uncertainty below this value counts as negligible "
              "in the reported portion metric.")
+    parser.add_argument(
+        "--risk-target", type=float, default=None,
+        help="Risk budget for the coverage-at-target metric. Default: the "
+             "per-trial full-coverage risk of the true-prior reference "
+             "predictor.")
+    parser.add_argument(
+        "--regret-target", type=float, default=0.002,
+        help="Regret budget for the coverage-at-target metric.")
     parser.add_argument("--test-prior", type=float, nargs="+", default=None,
                         help="Explicit target test prior (Y floats, summing to "
                              "1). Default: train prior with the confusable pair "
@@ -449,6 +482,7 @@ def main() -> None:
     regret_curves = {n: np.zeros((args.trials, args.n_eval)) for n in names}
     accs: dict[str, list[float]] = {}
     epi_metrics = np.zeros((args.trials, 3))
+    ref_risks = np.zeros(args.trials)
     learned_priors = []
     shortfalls, ident_warnings = set(), []
     master_rng = np.random.default_rng(args.seed)
@@ -467,6 +501,7 @@ def main() -> None:
             for k, a in res["accuracy"].items():
                 accs.setdefault(k, []).append(a)
             epi_metrics[t] = res["epi"]
+            ref_risks[t] = res["losses_ref"].mean()
             learned_priors.append(res["learned_prior"])
             shortfalls |= res["short"]
             if res["ident_warn"] is not None:
@@ -475,6 +510,13 @@ def main() -> None:
 
     aurc_risk = {n: risk_curves[n].mean(axis=1) for n in names}
     aurc_regret = {n: regret_curves[n].mean(axis=1) for n in names}
+    rt = args.risk_target
+    cov_risk = {n: np.array([
+        coverage_at_target(risk_curves[n][t], ref_risks[t] if rt is None else rt)
+        for t in range(args.trials)]) for n in names}
+    cov_regret = {n: np.array([
+        coverage_at_target(regret_curves[n][t], args.regret_target)
+        for t in range(args.trials)]) for n in names}
     learned_prior_mean = np.mean(learned_priors, axis=0)
 
     # --- report -------------------------------------------------------------
@@ -516,6 +558,15 @@ def main() -> None:
         lines.append(f"{REJECT_LABELS[name]:<46}"
                      f"{aurc_risk[name].mean():>8.4f} ± {aurc_risk[name].std():.4f}"
                      f"{aurc_regret[name].mean():>8.4f} ± {aurc_regret[name].std():.4f}")
+    lines.append("-" * 76)
+    lines.append(f"coverage at target ({_risk_target_desc(rt)}; "
+                 f"regret <= {args.regret_target:g})")
+    lines.append(f"{'reject-option predictor':<46}{'cov@risk':>14}{'cov@regret':>14}")
+    lines.append("-" * 76)
+    for name in names:
+        lines.append(f"{REJECT_LABELS[name]:<46}"
+                     f"{cov_risk[name].mean():>8.3f} ± {cov_risk[name].std():.3f}"
+                     f"{cov_regret[name].mean():>8.3f} ± {cov_regret[name].std():.3f}")
     lines.append("-" * 76)
     lines.append("epistemic-uncertainty metrics of the Bayesian predictor "
                  f"(threshold={args.epi_threshold:g})")
