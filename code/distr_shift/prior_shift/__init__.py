@@ -13,6 +13,8 @@ from .predictors import (
     confusion_matrix,
     corrected_posterior,
     format_confusion,
+    format_per_class_error,
+    per_class_error,
     zero_one_loss_matrix,
 )
 
@@ -28,5 +30,7 @@ __all__ = [
     "corrected_posterior",
     "confusion_matrix",
     "format_confusion",
+    "per_class_error",
+    "format_per_class_error",
     "zero_one_loss_matrix",
 ]

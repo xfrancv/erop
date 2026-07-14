@@ -34,7 +34,9 @@ from prior_shift import (
     confusion_matrix,
     corrected_posterior,
     format_confusion,
+    format_per_class_error,
     load_experiment_config,
+    per_class_error,
     posterior_label_probabilities,
     sample_prior_posterior,
     zero_one_loss_matrix,
@@ -620,6 +622,16 @@ def main() -> None:
         lines.append("-" * 68)
         lines.append(PREDICTOR_LABELS[name])
         lines.append(format_confusion(cm, class_names))
+    lines.append("=" * 68)
+
+    # Per-class error (trial 0) of the base predictor learned on the training
+    # examples using the training prior -- i.e. plugin with no test adaptation.
+    err = per_class_error(y_te, detailed["preds"]["plugin_train_prior"], Y)
+    counts = np.bincount(y_te, minlength=Y)
+    lines.append("")
+    lines.append("Per-class error (trial 0 test examples), base predictor: "
+                 f"{PREDICTOR_LABELS['plugin_train_prior']}")
+    lines.append(format_per_class_error(err, class_names, counts))
     lines.append("=" * 68)
 
     report = "\n".join(lines)

@@ -30,8 +30,8 @@ Run with::
     python run_base_predictor_exp.py bloodmnist runs/blood --epochs 30 --device cuda
 
 Outputs in the given directory: ``model.pt`` (weights + T + train prior +
-normalization), ``report.txt`` (metrics + confusion matrices), and
-``learning_curves.png``.
+normalization), ``report.txt`` (metrics, confusion matrices, and per-class
+test error -- all for the calibrated predictor), and ``learning_curves.png``.
 """
 
 from __future__ import annotations
@@ -49,7 +49,12 @@ from sklearn.model_selection import train_test_split
 
 from data_tools.loaders import load_dataset
 from data_tools.registry import DATASETS
-from prior_shift import confusion_matrix, format_confusion
+from prior_shift import (
+    confusion_matrix,
+    format_confusion,
+    format_per_class_error,
+    per_class_error,
+)
 
 try:  # progress bars are optional, as in the synthetic experiment scripts.
     from tqdm import tqdm
@@ -116,14 +121,25 @@ def to_tensor(x: np.ndarray, mean: np.ndarray, std: np.ndarray) -> torch.Tensor:
 
 @torch.no_grad()
 def evaluate(model: nn.Module, X: torch.Tensor, y: torch.Tensor,
-             device: torch.device, batch_size: int = 512):
-    """Return (mean CE loss, classification error, predictions)."""
+             device: torch.device, batch_size: int = 512,
+             temperature: float = 1.0, bias: np.ndarray | None = None):
+    """Return (mean CE loss, classification error, predictions).
+
+    With ``temperature``/``bias`` given, predictions and loss use the
+    calibrated logits ``logits / temperature + bias`` -- the same predictor the
+    downstream label-shift pipeline consumes. Note the per-class ``bias`` (from
+    BCTS) *does* change the argmax, unlike temperature alone.
+    """
     model.eval()
+    bias_t = (None if bias is None
+              else torch.from_numpy(np.asarray(bias)).float().to(device))
     losses, preds = [], []
     for i in range(0, len(X), batch_size):
         xb = X[i:i + batch_size].to(device)
         yb = y[i:i + batch_size].to(device)
-        logits = model(xb)
+        logits = model(xb) / temperature
+        if bias_t is not None:
+            logits = logits + bias_t
         losses.append(F.cross_entropy(logits, yb, reduction="sum").item())
         preds.append(logits.argmax(dim=1).cpu())
     preds = torch.cat(preds)
@@ -353,11 +369,17 @@ def main() -> None:
         (marginal_ratio > CALIB_RATIO_THRESHOLD)
         | (marginal_ratio < 1 / CALIB_RATIO_THRESHOLD))]
 
-    # --- final evaluation (T does not change the argmax) --------------------
-    _, fit_err, fit_pred = evaluate(model, Xt_fit, yt_fit, device)
-    _, test_err, test_pred = evaluate(model, Xt_test, yt_test, device)
+    # --- final evaluation of the calibrated predictor -----------------------
+    # The calibrated argmax (logits / T + bias) is the base predictor the
+    # downstream pipeline uses; its accuracy/confusion may differ slightly from
+    # the raw-logit argmax, which is expected (BCTS optimizes NLL, not error).
+    _, fit_err, fit_pred = evaluate(model, Xt_fit, yt_fit, device,
+                                    temperature=temperature, bias=calib_bias)
+    _, test_err, test_pred = evaluate(model, Xt_test, yt_test, device,
+                                      temperature=temperature, bias=calib_bias)
     cm_fit = confusion_matrix(y_fit, fit_pred, Y)
     cm_test = confusion_matrix(y_test, test_pred, Y)
+    test_err_per_class = per_class_error(y_test, test_pred, Y)
 
     # --- outputs -------------------------------------------------------------
     bundle = {
@@ -407,6 +429,8 @@ def main() -> None:
         "the learned prior cannot be trusted.",
     ] if bad_calib else []) + [
         "-" * 72,
+        "(accuracy, confusion, and per-class error below use the CALIBRATED "
+        "predictor, argmax(logits / T + bias))",
         f"classification error, training (fit part) : {fit_err:.4f}",
         f"classification error, test                : {test_err:.4f}",
         "-" * 72,
@@ -415,6 +439,10 @@ def main() -> None:
         "",
         "confusion matrix, test:",
         format_confusion(cm_test, list(ds.spec.class_names)),
+        "",
+        "per-class error, test:",
+        format_per_class_error(test_err_per_class, list(ds.spec.class_names),
+                               np.bincount(y_test, minlength=Y)),
         "",
     ]
     report = "\n".join(lines)
