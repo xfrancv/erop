@@ -606,8 +606,12 @@ require **torch/torchvision** (unlike the download/analysis tools above).
 
    `--sweep` mirrors the synthetic sweep: it varies the adaptation-set size
    over `--sizes` (nested prefixes of one resampled pool per trial, scored on
-   a fixed evaluation set) and writes the AuRC-vs-n and epistemic-metrics
-   figures plus a sweep report.
+   a fixed evaluation set) and writes the AuRC-vs-n, epistemic-metrics,
+   coverage-at-target, and per-size coverage-curve figures plus a sweep
+   report. It also writes `base_accuracy_vs_n_test.png`: the test accuracy of
+   the Bayesian learned-prior predictor and the supervised-prior plugin as
+   they adapt from the `n` examples, against the (flat) true-prior plugin as
+   the oracle ceiling.
 
    It reports the four plugin/Bayesian predictors' accuracy (no optimal-Bayes
    upper bound — the true conditionals are unknown for real data), the

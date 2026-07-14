@@ -294,6 +294,12 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
     # Full per-size curves, kept for the per-n coverage-curve figures.
     risk_curves = {n: np.zeros((len(sizes), trials, n_eval)) for n in names}
     regret_curves = {n: np.zeros((len(sizes), trials, n_eval)) for n in names}
+    # Base-predictor accuracy vs. n: Bayesian learned prior, plugin with the
+    # true (target) prior, plugin with the supervised prior estimate. The
+    # true-prior plugin does not use the adaptation examples, so it is constant
+    # in n (flat curve); the other two adapt from the n examples.
+    base_acc = {k: np.zeros((len(sizes), trials))
+                for k in ("bayes_learned", "plugin_true", "plugin_supervised")}
     shortfalls: set[int] = set()
 
     with _progress(total=trials * len(sizes), desc="sweep") as bar:
@@ -315,6 +321,7 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
             losses_ref = loss[h_true, y_ev]
             resolved_rts = [float(losses_ref.mean()) if rt is None else rt
                             for rt in rts]
+            acc_true = accuracy(h_true, y_ev)   # constant in n (no adaptation)
 
             for i, n in enumerate(sizes):
                 adapt_idx = pool_idx[:n]
@@ -335,6 +342,10 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                     post_ev, train_prior, supervised_prior)
                 cond_risk_sup = post_sup @ loss.T
                 h_sup = cond_risk_sup.argmin(axis=1)
+
+                base_acc["bayes_learned"][i, t] = accuracy(h_bayes, y_ev)
+                base_acc["plugin_supervised"][i, t] = accuracy(h_sup, y_ev)
+                base_acc["plugin_true"][i, t] = acc_true
 
                 predictors = {
                     "bayes_total": (h_bayes, total),
@@ -357,7 +368,47 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                 bar.update(1)
 
     return (aurc_risk, aurc_regret, warned, epi_metrics, shortfalls,
-            cov_risk, cov_regret, risk_curves, regret_curves)
+            cov_risk, cov_regret, risk_curves, regret_curves, base_acc)
+
+
+def make_base_accuracy_figure(
+    sizes: list[int], base_acc: dict, trials: int, out_dir: str,
+) -> None:
+    """Base-predictor accuracy vs. the adaptation-set size, for the three
+    predictors: Bayesian learned prior, plugin with the true (target) prior,
+    and plugin with the supervised prior estimate. Each is a (len(sizes),
+    trials) array; the true-prior plugin is flat in n (drawn as a curve for
+    direct comparison)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    x = np.asarray(sizes, dtype=float)
+    fig, ax = plt.subplots(figsize=(8.5, 5))
+    style = (
+        ("bayes_learned", "Bayesian, learned prior", "C1", "o", "-"),
+        ("plugin_supervised", "Plugin, supervised prior estimate", "C4", "s", "-"),
+        ("plugin_true", "Plugin, true test prior (oracle)", "C0", None, "--"),
+    )
+    for key, label, color, marker, ls in style:
+        mean = base_acc[key].mean(axis=1)
+        sem = base_acc[key].std(axis=1) / np.sqrt(trials)
+        ax.plot(x, mean, lw=1.8, marker=marker, ls=ls, color=color, label=label)
+        ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.2)
+
+    ax.set_xscale("log")
+    ax.set_xticks(sizes)
+    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax.set_xlabel("number of unlabeled test examples $n$")
+    ax.set_ylabel("test accuracy")
+    ax.set_title("Base-predictor accuracy vs. test-set size "
+                 f"(mean ± s.e.m., {trials} trials)")
+    ax.legend(fontsize=8, loc="lower right")
+    ax.grid(True, which="both", alpha=0.25)
+
+    fig.tight_layout()
+    fig.savefig(f"{out_dir}/base_accuracy_vs_n_test.png", dpi=130)
+    plt.close(fig)
 
 
 def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
@@ -367,7 +418,7 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
     names = list(REJECT_LABELS.keys())
     master_rng = np.random.default_rng(args.seed)
     (aurc_risk, aurc_regret, warned, epi_metrics, shortfalls,
-     cov_risk, cov_regret, risk_curves, regret_curves) = run_sweep(
+     cov_risk, cov_regret, risk_curves, regret_curves, base_acc) = run_sweep(
         P, y_pool, train_prior, target_prior, sizes, args.trials,
         args.n_eval, loss, master_rng, args.epi_threshold,
         args.risk_target, args.regret_target)
@@ -438,6 +489,7 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
                                   args.out_dir)
     make_cov_target_figure(sizes, cov_risk, cov_regret, args.trials,
                            risk_fig_descs, regret_fig_descs, args.out_dir)
+    make_base_accuracy_figure(sizes, base_acc, args.trials, args.out_dir)
     for i, n in enumerate(sizes):
         make_curves_at_n_figure(
             {name: risk_curves[name][i] for name in names},
@@ -446,6 +498,7 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
     print(f"\nreport and figures written to {out_dir}/: "
           f"real_reject_option_sweep_report.txt, aurc_vs_n_test.png, "
           f"epistemic_metrics_vs_n_test.png, cov_at_target_vs_n_test.png, "
+          f"base_accuracy_vs_n_test.png, "
           f"coverage_curves_n<n_test>.png (one per size)")
 
 
