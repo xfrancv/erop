@@ -10,7 +10,9 @@ from .mcmc import (
 )
 from .predictors import (
     bayes_decision,
+    confusion_matrix,
     corrected_posterior,
+    format_confusion,
     zero_one_loss_matrix,
 )
 
@@ -24,5 +26,7 @@ __all__ = [
     "posterior_label_probabilities",
     "bayes_decision",
     "corrected_posterior",
+    "confusion_matrix",
+    "format_confusion",
     "zero_one_loss_matrix",
 ]

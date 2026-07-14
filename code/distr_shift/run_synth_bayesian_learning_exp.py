@@ -12,7 +12,10 @@ Run with::
 The synthetic-generator setting (number of Gaussians, their means and
 covariances, and the train/test label priors) is read from a JSON file given
 by ``--config``; the default ``configs/default.json`` reproduces the original
-experiment. Figures are written to ``figures/`` and a results table is printed.
+experiment. Figures are written to ``figures/`` and a results table is
+printed; the single-size (non-``--sweep``) mode also writes ``report.txt``
+with that table plus, per predictor, the confusion matrix on the trial-0 test
+examples (rows = true class, columns = predicted class).
 """
 
 from __future__ import annotations
@@ -28,7 +31,9 @@ from prior_shift import (
     BaseModel,
     GaussianClassConditionalModel,
     bayes_decision,
+    confusion_matrix,
     corrected_posterior,
+    format_confusion,
     load_experiment_config,
     posterior_label_probabilities,
     sample_prior_posterior,
@@ -173,6 +178,7 @@ def run_single_trial(
 
     return {
         "accuracy": acc,
+        "preds": preds,
         "mcmc": mcmc,
         "learned_prior": mcmc.posterior_mean,
         "train_prior_est": base.train_prior,
@@ -576,31 +582,52 @@ def main() -> None:
     agg_acc = {name: (float(np.mean(v)), float(np.std(v))) for name, v in accs.items()}
 
     # ---- report ----
-    print("=" * 68)
-    print("Bayesian label-prior adaptation under label shift")
-    print("=" * 68)
-    print(f"trials={args.trials}  m_train={args.m_train}  n_test={args.n_test}")
-    print(f"train prior     : {np.array2string(TRAIN_PRIOR, precision=3)}")
-    print(f"true test prior : {np.array2string(TEST_PRIOR, precision=3)}")
-    print(f"learned prior   : {np.array2string(detailed['learned_prior'], precision=3)}"
-          f"  (trial 0 posterior mean)")
-    print(f"MCMC acceptance : {detailed['mcmc'].acceptance_rate:.3f}")
-    print(f"prior L1 error  : {np.mean(prior_errs):.3f} +/- {np.std(prior_errs):.3f}"
-          f"   (learned vs true, over trials)")
+    lines = [
+        "=" * 68,
+        "Bayesian label-prior adaptation under label shift",
+        "=" * 68,
+        f"trials={args.trials}  m_train={args.m_train}  n_test={args.n_test}",
+        f"train prior     : {np.array2string(TRAIN_PRIOR, precision=3)}",
+        f"true test prior : {np.array2string(TEST_PRIOR, precision=3)}",
+        f"learned prior   : {np.array2string(detailed['learned_prior'], precision=3)}"
+        f"  (trial 0 posterior mean)",
+        f"MCMC acceptance : {detailed['mcmc'].acceptance_rate:.3f}",
+        f"prior L1 error  : {np.mean(prior_errs):.3f} +/- {np.std(prior_errs):.3f}"
+        f"   (learned vs true, over trials)",
+    ]
     if ident_warnings:
-        print(f"!!! IDENTIFIABILITY WARNING (fired in {len(ident_warnings)}/"
-              f"{args.trials} trials) !!!")
-        print(f"    {ident_warnings[0]}")
-    print("-" * 68)
-    print(f"{'predictor':<44}{'test acc':>12}{'std':>10}")
-    print("-" * 68)
+        lines.append(f"!!! IDENTIFIABILITY WARNING (fired in {len(ident_warnings)}/"
+                     f"{args.trials} trials) !!!")
+        lines.append(f"    {ident_warnings[0]}")
+    lines.append("-" * 68)
+    lines.append(f"{'predictor':<44}{'test acc':>12}{'std':>10}")
+    lines.append("-" * 68)
     for name in PREDICTOR_LABELS:
         mu, sd = agg_acc[name]
-        print(f"{PREDICTOR_LABELS[name]:<44}{mu:>12.4f}{sd:>10.4f}")
-    print("=" * 68)
+        lines.append(f"{PREDICTOR_LABELS[name]:<44}{mu:>12.4f}{sd:>10.4f}")
+    lines.append("=" * 68)
+
+    # Confusion matrices (trial 0, the same "detailed" trial the figures use),
+    # one per predictor, rows = true class / columns = predicted class.
+    Y = detailed["model"].num_classes
+    class_names = [f"y={y}" for y in range(Y)]
+    y_te = detailed["y_te"]
+    lines.append("")
+    lines.append("Confusion matrices (trial 0 test examples, "
+                 f"n_test={args.n_test})")
+    for name in PREDICTOR_LABELS:
+        cm = confusion_matrix(y_te, detailed["preds"][name], Y)
+        lines.append("-" * 68)
+        lines.append(PREDICTOR_LABELS[name])
+        lines.append(format_confusion(cm, class_names))
+    lines.append("=" * 68)
+
+    report = "\n".join(lines)
+    print(report)
+    (Path(args.out_dir) / "report.txt").write_text(report + "\n")
 
     make_figures(detailed, agg_acc, args.out_dir)
-    print(f"figures written to {args.out_dir}/")
+    print(f"figures and report.txt written to {args.out_dir}/")
 
 
 if __name__ == "__main__":

@@ -16,10 +16,13 @@ Split policy (uniform across datasets):
   which also leaves a larger pool for the downstream prior-resampling).
 
 Per epoch the script records loss and classification error on both the fit
-part and the model-selection part; after training it fits one temperature
-``T`` by minimizing NLL on the model-selection part (T does not change the
-argmax, so the reported error/confusion matrix are unaffected — it matters
-for the downstream label-shift correction).
+part and the model-selection part; after training it calibrates the posterior
+on the model-selection part — by default **bias-corrected temperature scaling**
+(scalar T + per-class bias, Alexandari et al. 2020), which the downstream
+label-shift estimation needs: a single temperature leaves per-class marginal
+bias that the MCMC misreads as prior shift. A calibration-consistency check
+(mean calibrated posterior vs. class frequency on the held-out split) is
+reported and stored in the bundle.
 
 Run with::
 
@@ -46,6 +49,7 @@ from sklearn.model_selection import train_test_split
 
 from data_tools.loaders import load_dataset
 from data_tools.registry import DATASETS
+from prior_shift import confusion_matrix, format_confusion
 
 try:  # progress bars are optional, as in the synthetic experiment scripts.
     from tqdm import tqdm
@@ -138,40 +142,56 @@ def collect_logits(model: nn.Module, X: torch.Tensor, device: torch.device,
     return torch.cat(out)
 
 
-def fit_temperature(logits: torch.Tensor, y: torch.Tensor) -> float:
-    """One scalar T minimizing NLL of ``softmax(logits / T)`` (Guo et al. 2017).
+def fit_calibration(logits: torch.Tensor, y: torch.Tensor,
+                    mode: str = "bcts") -> tuple[float, np.ndarray]:
+    """Fit post-hoc calibration by NLL on held-out logits; returns ``(T, bias)``.
+
+    ``mode="temperature"``: one scalar T, ``softmax(logits / T)`` (Guo et al.
+    2017); bias is all zeros.
+
+    ``mode="bcts"`` (default): bias-corrected temperature scaling,
+    ``softmax(logits / T + b)`` with a per-class bias b (Alexandari et al.
+    2020). A single scalar T cannot make all classes marginally consistent at
+    once — flattening overconfident logits systematically inflates the average
+    posterior mass of rare classes, which the label-shift likelihood then
+    misreads as prior shift. The per-class bias absorbs exactly that error.
+    The bias is centered (softmax is invariant to a common offset).
 
     Optimized over log T so T stays positive.
     """
     log_t = torch.zeros(1, requires_grad=True)
-    opt = torch.optim.LBFGS([log_t], lr=0.1, max_iter=100)
+    bias = torch.zeros(logits.shape[1], requires_grad=(mode == "bcts"))
+    params = [log_t, bias] if mode == "bcts" else [log_t]
+    opt = torch.optim.LBFGS(params, lr=0.1, max_iter=200)
 
     def closure():
         opt.zero_grad()
-        loss = F.cross_entropy(logits / log_t.exp(), y)
+        loss = F.cross_entropy(logits / log_t.exp() + bias, y)
         loss.backward()
         return loss
 
     opt.step(closure)
-    return float(log_t.detach().exp())
+    b = bias.detach().numpy()
+    return float(log_t.detach().exp()), b - b.mean()
 
 
-def confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, Y: int) -> np.ndarray:
-    """(Y, Y) matrix with rows = true class, columns = predicted class."""
-    cm = np.zeros((Y, Y), dtype=int)
-    np.add.at(cm, (y_true, y_pred), 1)
-    return cm
+# Marginal-consistency ratios outside [1/threshold, threshold] are flagged.
+CALIB_RATIO_THRESHOLD = 1.5
 
 
-def format_confusion(cm: np.ndarray, class_names: list[str]) -> str:
-    """Confusion matrix as text, rows true / columns predicted."""
-    short = [n[:10] for n in class_names]
-    width = max(10, max(len(s) for s in short) + 1)
-    lines = [" " * width + "".join(f"{s:>{width}}" for s in short)
-             + "   (rows = true, cols = predicted)"]
-    for i, name in enumerate(short):
-        lines.append(f"{name:>{width}}" + "".join(f"{v:>{width}d}" for v in cm[i]))
-    return "\n".join(lines)
+def marginal_consistency_ratio(post: np.ndarray, y: np.ndarray,
+                               num_classes: int) -> np.ndarray:
+    """Per-class ratio  mean calibrated posterior / empirical class frequency.
+
+    Computed on held-out *training-distribution* data, this should be ~1 for
+    every class. A deviation is calibration *bias*: the label-shift MCMC will
+    read it as evidence of prior shift (its likelihood only sees these
+    marginals), so a class with ratio r gets its learned prior inflated by
+    ~r regardless of the actual test prior. This is the bias-detecting
+    complement of the variance-detecting ``MCMCResult.ident_ratio``.
+    """
+    freq = np.bincount(y, minlength=num_classes) / len(y)
+    return post.mean(axis=0) / np.clip(freq, 1e-12, None)
 
 
 def make_curves_figure(history: dict, best_epoch: int, out_dir: Path) -> None:
@@ -219,6 +239,11 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-3,
                         help="Adam learning rate.")
+    parser.add_argument("--calibration", choices=("bcts", "temperature"),
+                        default="bcts",
+                        help="Post-hoc calibration: bias-corrected temperature "
+                             "scaling (per-class bias; needed for label-shift "
+                             "estimation downstream) or plain temperature.")
     args = parser.parse_args()
 
     if args.device == "cuda" and not torch.cuda.is_available():
@@ -314,9 +339,19 @@ def main() -> None:
 
     model.load_state_dict(best_state)
 
-    # --- temperature calibration on the model-selection part ---------------
+    # --- calibration on the model-selection part ----------------------------
     val_logits = collect_logits(model, Xt_val, device)
-    temperature = fit_temperature(val_logits, yt_val)
+    temperature, calib_bias = fit_calibration(val_logits, yt_val,
+                                              mode=args.calibration)
+    # Calibration-consistency check on the same held-out (train-distribution)
+    # split: mean calibrated posterior vs. empirical class frequency.
+    post_val = torch.softmax(
+        val_logits / temperature + torch.from_numpy(calib_bias).float(),
+        dim=1).numpy()
+    marginal_ratio = marginal_consistency_ratio(post_val, y_val, Y)
+    bad_calib = [ds.spec.class_names[i] for i in np.flatnonzero(
+        (marginal_ratio > CALIB_RATIO_THRESHOLD)
+        | (marginal_ratio < 1 / CALIB_RATIO_THRESHOLD))]
 
     # --- final evaluation (T does not change the argmax) --------------------
     _, fit_err, fit_pred = evaluate(model, Xt_fit, yt_fit, device)
@@ -333,6 +368,9 @@ def main() -> None:
         "in_channels": in_channels,
         "image_shape": tuple(ds.image_shape),
         "temperature": temperature,
+        "calib_bias": calib_bias,
+        "calibration": args.calibration,
+        "marginal_ratio": marginal_ratio,
         "train_prior": train_prior,
         "class_names": list(ds.spec.class_names),
         "norm_mean": norm_mean,
@@ -355,8 +393,19 @@ def main() -> None:
         f"splits      : fit {len(y_fit)}  model-selection {len(y_val)}  "
         f"test {len(y_test)} ({test_desc})",
         f"best epoch  : {best_epoch}  (validation error {best_val_err:.4f})",
-        f"temperature : {temperature:.4f}  (fit on the model-selection part)",
+        f"calibration : {args.calibration}  (fit on the model-selection part)",
+        f"temperature : {temperature:.4f}",
+        f"calib bias  : {np.array2string(calib_bias, precision=3)}",
         f"train prior : {np.array2string(train_prior, precision=4)}",
+        f"calib check : mean posterior / class frequency = "
+        f"{np.array2string(marginal_ratio, precision=2)}",
+    ] + ([
+        f"!!! CALIBRATION WARNING: ratio outside "
+        f"[1/{CALIB_RATIO_THRESHOLD:g}, {CALIB_RATIO_THRESHOLD:g}] for: "
+        + ", ".join(bad_calib),
+        "    the label-shift MCMC will read this bias as prior shift; "
+        "the learned prior cannot be trusted.",
+    ] if bad_calib else []) + [
         "-" * 72,
         f"classification error, training (fit part) : {fit_err:.4f}",
         f"classification error, test                : {test_err:.4f}",

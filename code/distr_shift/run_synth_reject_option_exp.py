@@ -450,7 +450,6 @@ def run_sweep_experiment(model, args, master_rng) -> None:
                    for n in names}
     regret_curves = {n: np.zeros((len(sizes), args.trials, args.n_eval))
                      for n in names}
-
     with _progress(total=args.trials * len(sizes), desc="sweep") as bar:
         for t in range(args.trials):
             rng = np.random.default_rng(master_rng.integers(1 << 32))
@@ -489,12 +488,12 @@ def run_sweep_experiment(model, args, master_rng) -> None:
                 post_sup = corrected_posterior(
                     est_post_ev, base.train_prior, supervised_prior)
                 cond_risk_sup = post_sup @ loss.T
+                h_sup = cond_risk_sup.argmin(axis=1)
 
                 predictors = {
                     "bayes_total": (h_bayes, total),
                     "bayes_epistemic": (h_bayes, total - aleatoric),
-                    "plugin_supervised": (cond_risk_sup.argmin(axis=1),
-                                          cond_risk_sup.min(axis=1)),
+                    "plugin_supervised": (h_sup, cond_risk_sup.min(axis=1)),
                 }
                 for name, (h, u) in predictors.items():
                     risk, regret = selective_curves(loss[h, y_ev], losses_ref, u)

@@ -38,3 +38,21 @@ def corrected_posterior(
     """
     w = train_posterior * (target_prior / train_prior)[None, :]
     return w / w.sum(axis=1, keepdims=True)
+
+
+def confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, Y: int) -> np.ndarray:
+    """(Y, Y) matrix with rows = true class, columns = predicted class."""
+    cm = np.zeros((Y, Y), dtype=int)
+    np.add.at(cm, (y_true, y_pred), 1)
+    return cm
+
+
+def format_confusion(cm: np.ndarray, class_names: list[str]) -> str:
+    """Confusion matrix as text, rows true / columns predicted."""
+    short = [n[:10] for n in class_names]
+    width = max(10, max(len(s) for s in short) + 1)
+    lines = [" " * width + "".join(f"{s:>{width}}" for s in short)
+             + "   (rows = true, cols = predicted)"]
+    for i, name in enumerate(short):
+        lines.append(f"{name:>{width}}" + "".join(f"{v:>{width}d}" for v in cm[i]))
+    return "\n".join(lines)

@@ -94,14 +94,58 @@ def load_base_predictor(bundle_path: Path, device: torch.device):
 
 @torch.no_grad()
 def calibrated_posterior(model, X, bundle, device, batch_size=512):
-    """Temperature-calibrated ``p_tr(y | x)`` for a uint8 image array."""
+    """Calibrated ``p_tr(y | x)`` for a uint8 image array.
+
+    Applies the bundle's calibration: ``softmax(logits / T + bias)``. Bundles
+    from before the BCTS change carry no ``calib_bias``; zero bias reproduces
+    plain temperature scaling.
+    """
     Xt = to_tensor(X, bundle["norm_mean"], bundle["norm_std"])
     T = bundle["temperature"]
+    bias = bundle.get("calib_bias")
+    bias_t = (torch.zeros(bundle["num_classes"]) if bias is None
+              else torch.from_numpy(np.asarray(bias)).float())
     out = []
     for i in range(0, len(Xt), batch_size):
         logits = model(Xt[i:i + batch_size].to(device))
-        out.append(torch.softmax(logits / T, dim=1).cpu().numpy())
+        out.append(torch.softmax(logits / T + bias_t, dim=1).cpu().numpy())
     return np.concatenate(out)
+
+
+# Same threshold as run_base_predictor_exp.CALIB_RATIO_THRESHOLD.
+CALIB_RATIO_THRESHOLD = 1.5
+
+
+def calibration_lines(bundle, class_names) -> list[str]:
+    """Report lines describing the base model's calibration and its
+    marginal-consistency check (computed at training time on held-out
+    train-distribution data — it cannot be recomputed here, where the pool is
+    shifted by design)."""
+    T = bundle["temperature"]
+    bias = bundle.get("calib_bias")
+    mode = bundle.get("calibration",
+                      "temperature" if bias is None else "bcts")
+    line = f"calibration  : {mode}, T={T:.3f}"
+    if bias is not None and np.any(bias):
+        line += f", bias in [{np.min(bias):+.2f}, {np.max(bias):+.2f}]"
+    lines = [line]
+    ratio = bundle.get("marginal_ratio")
+    if ratio is None:
+        lines.append("calib check  : unavailable (bundle predates the "
+                     "consistency check; retrain with run_base_predictor_exp.py)")
+        return lines
+    ratio = np.asarray(ratio, dtype=float)
+    lines.append(f"calib check  : mean posterior / class frequency = "
+                 f"{np.array2string(ratio, precision=2)}")
+    bad = [class_names[i] for i in np.flatnonzero(
+        (ratio > CALIB_RATIO_THRESHOLD) | (ratio < 1 / CALIB_RATIO_THRESHOLD))]
+    if bad:
+        lines.append("!!! CALIBRATION WARNING: ratio outside "
+                     f"[1/{CALIB_RATIO_THRESHOLD:g}, {CALIB_RATIO_THRESHOLD:g}]"
+                     " for: " + ", ".join(bad))
+        lines.append("    the label-shift MCMC reads this bias as prior "
+                     "shift; the learned prior cannot be trusted.")
+    return lines
 
 
 def default_target_prior(train_prior, pair_idx, ratio=(1.0, 7.0)):
@@ -290,12 +334,12 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                 post_sup = corrected_posterior(
                     post_ev, train_prior, supervised_prior)
                 cond_risk_sup = post_sup @ loss.T
+                h_sup = cond_risk_sup.argmin(axis=1)
 
                 predictors = {
                     "bayes_total": (h_bayes, total),
                     "bayes_epistemic": (h_bayes, total - aleatoric),
-                    "plugin_supervised": (cond_risk_sup.argmin(axis=1),
-                                          cond_risk_sup.min(axis=1)),
+                    "plugin_supervised": (h_sup, cond_risk_sup.min(axis=1)),
                 }
                 for name, (h, u) in predictors.items():
                     risk, regret = selective_curves(loss[h, y_ev], losses_ref, u)
@@ -335,7 +379,8 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
         f"timestamp    : {datetime.now().isoformat(timespec='seconds')}",
         f"command      : {' '.join(sys.argv)}",
         f"base model   : {spec.display_name} ({bundle['dataset']}), "
-        f"arch {bundle['arch']}, T={bundle['temperature']:.3f}",
+        f"arch {bundle['arch']}",
+        *calibration_lines(bundle, class_names),
         f"pool size    : {len(y_pool)}   trials {args.trials}   "
         f"n_eval {args.n_eval}   sizes {sizes}",
         f"train prior  : {np.array2string(train_prior, precision=3)}",
@@ -462,6 +507,9 @@ def main() -> None:
     loss = zero_one_loss_matrix(Y)
     class_names = bundle["class_names"]
 
+    for line in calibration_lines(bundle, bundle["class_names"]):
+        print(line)
+
     ds = load_dataset(bundle["dataset"])
     # Test pool = the same val+test merge the base script scored on.
     if "val" in ds.splits:
@@ -558,7 +606,8 @@ def main() -> None:
         f"timestamp    : {datetime.now().isoformat(timespec='seconds')}",
         f"command      : {' '.join(sys.argv)}",
         f"base model   : {spec.display_name} ({bundle['dataset']}), "
-        f"arch {bundle['arch']}, T={bundle['temperature']:.3f}",
+        f"arch {bundle['arch']}",
+        *calibration_lines(bundle, class_names),
         f"pool size    : {len(y_pool)}   trials {args.trials}   "
         f"n_test {args.n_test}   n_eval {args.n_eval}",
         f"confusable   : {spec.confusable_pair}"

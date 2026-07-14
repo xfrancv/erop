@@ -234,7 +234,10 @@ shows which class splits the data cannot resolve.
 
 Figures are written to `figures/`:
 `data_and_prior.png`, `mcmc_diagnostics.png`, `accuracy_comparison.png`, and
-(from `--sweep`) `accuracy_vs_n_test.png`.
+(from `--sweep`) `accuracy_vs_n_test.png`. The single-size (non-`--sweep`) mode
+also writes `report.txt`: the printed accuracy table plus, per predictor, the
+confusion matrix on the trial-0 test examples (rows = true class, columns =
+predicted class).
 
 Every run also records its argument setting next to the figures, as
 `run_synth_bayesian_learning_exp_args.txt` or
@@ -563,9 +566,20 @@ require **torch/torchvision** (unlike the download/analysis tools above).
 
 1. **`run_base_predictor_exp.py`** trains and calibrates a neural-network base
    predictor. It splits the training subset (class-stratified) into a fit part
-   and a model-selection part, selects the best epoch by validation error, fits
-   one temperature `T` on the model-selection part, and saves a `model.pt`
-   bundle (best-epoch weights + `T` + estimated training prior + normalization).
+   and a model-selection part, selects the best epoch by validation error, and
+   calibrates on the model-selection part — by default **bias-corrected
+   temperature scaling** (scalar `T` + per-class bias; `--calibration
+   temperature` for plain scaling). BCTS matters downstream: a single
+   temperature flattens overconfident logits globally, which inflates the mean
+   posterior of rare classes, and the label-shift MCMC misreads that bias as
+   prior shift (on DermaMNIST this put 60% of the learned prior on a 1% class).
+   The script reports a **calibration-consistency check** — mean calibrated
+   posterior over the held-out split divided by class frequency, ~1 per class
+   when healthy, stored in the bundle and re-printed with a warning by
+   `run_real_reject_option_exp.py` (it is the bias-detecting complement of the
+   variance-detecting `ident_ratio`). The saved `model.pt` bundle holds the
+   best-epoch weights + `T` + bias + the check + estimated training prior +
+   normalization.
    Architectures default per dataset: LeNet for Fashion-MNIST, a 32×32/28×28
    small-input-adapted ResNet-18 (3×3 stem, no max-pool, trained from scratch)
    for CIFAR-10 and the MedMNIST sets.
