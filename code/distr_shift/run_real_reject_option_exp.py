@@ -550,8 +550,11 @@ def main() -> None:
         sys.exit("error: --device cuda requested but CUDA is not available")
     device = torch.device(args.device)
 
-    out_dir = Path(args.out_dir)
+    # All outputs go to a timestamped subdirectory of the requested out_dir,
+    # so repeated runs never overwrite each other's report/figures.
+    out_dir = Path(args.out_dir) / datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
+    args.out_dir = str(out_dir)
 
     # --- base predictor + calibrated posteriors on the whole test pool ------
     model, bundle = load_base_predictor(Path(args.model), device)
