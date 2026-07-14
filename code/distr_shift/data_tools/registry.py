@@ -87,6 +87,45 @@ DATASETS: dict[str, DatasetSpec] = {
         confusable_pair=("cat", "dog"),
         tags=["rgb"],
     ),
+    "cifar100": DatasetSpec(
+        key="cifar100",
+        # Same fast.ai PNG image-folder mirror as CIFAR-10.
+        # Layout: cifar100/<split>/<fine-class>/*.png (100 fine classes).
+        display_name="CIFAR-100",
+        kind="imagefolder",
+        files=[
+            ("https://s3.amazonaws.com/fast-ai-imageclas/cifar100.tgz", "cifar100.tgz"),
+        ],
+        archive_dir="cifar100",
+        class_names=[
+            "apple", "aquarium_fish", "baby", "bear", "beaver", "bed", "bee",
+            "beetle", "bicycle", "bottle", "bowl", "boy", "bridge", "bus",
+            "butterfly", "camel", "can", "castle", "caterpillar", "cattle",
+            "chair", "chimpanzee", "clock", "cloud", "cockroach", "couch",
+            "crab", "crocodile", "cup", "dinosaur", "dolphin", "elephant",
+            "flatfish", "forest", "fox", "girl", "hamster", "house", "kangaroo",
+            "keyboard", "lamp", "lawn_mower", "leopard", "lion", "lizard",
+            "lobster", "man", "maple_tree", "motorcycle", "mountain", "mouse",
+            "mushroom", "oak_tree", "orange", "orchid", "otter", "palm_tree",
+            "pear", "pickup_truck", "pine_tree", "plain", "plate", "poppy",
+            "porcupine", "possum", "rabbit", "raccoon", "ray", "road", "rocket",
+            "rose", "sea", "seal", "shark", "shrew", "skunk", "skyscraper",
+            "snail", "snake", "spider", "squirrel", "streetcar", "sunflower",
+            "sweet_pepper", "table", "tank", "telephone", "television", "tiger",
+            "tractor", "train", "trout", "tulip", "turtle", "wardrobe", "whale",
+            "willow_tree", "wolf", "woman", "worm",
+        ],
+        description=(
+            "100 fine-grained classes at 32x32, with 20 superclasses giving "
+            "naturally confusable within-group pairs (boy/girl, the maple/oak/"
+            "palm/pine/willow trees, bicycle/motorcycle) and 98 other classes "
+            "as decoys. boy/girl is near-indistinguishable at this resolution "
+            "and carries a plausible demographic prevalence-shift story. Use "
+            "pretrained frozen features + a logistic head, as for CIFAR-10."
+        ),
+        confusable_pair=("boy", "girl"),
+        tags=["rgb"],
+    ),
     "dermamnist": DatasetSpec(
         key="dermamnist",
         display_name="DermaMNIST (MedMNIST v2)",
@@ -131,6 +170,29 @@ DATASETS: dict[str, DatasetSpec] = {
             "other cell types acting as aleatoric decoys."
         ),
         confusable_pair=("neutrophil", "immature granulocytes"),
+        tags=["rgb", "medical"],
+    ),
+    "retinamnist": DatasetSpec(
+        key="retinamnist",
+        display_name="RetinaMNIST (MedMNIST v2)",
+        kind="medmnist",
+        files=[(_ZENODO + "retinamnist.npz?download=1", "retinamnist.npz")],
+        class_names=[
+            "grade 0 (no DR)",
+            "grade 1 (mild)",
+            "grade 2 (moderate)",
+            "grade 3 (severe)",
+            "grade 4 (proliferative)",
+        ],
+        description=(
+            "Retinal fundus images (DeepDRiD), 5 ordinal diabetic-retinopathy "
+            "severity grades. Adjacent grades (mild vs. moderate) are hard to "
+            "separate even for graders, and the severity distribution shifts "
+            "naturally between a general-population screening program and a "
+            "referral clinic — the cleanest label-shift story, and the "
+            "confusable 'pair' is the adjacent-grade boundary."
+        ),
+        confusable_pair=("grade 1 (mild)", "grade 2 (moderate)"),
         tags=["rgb", "medical"],
     ),
 }

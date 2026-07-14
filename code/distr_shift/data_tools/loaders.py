@@ -82,14 +82,28 @@ def _load_idx(spec: DatasetSpec, data_dir: Path) -> dict:
     }
 
 
-# --- Image folder (<split>/<class>/*.png), e.g. CIFAR-10 ------------------
+# --- Image folder, e.g. CIFAR-10 / CIFAR-100 -----------------------------
+
+def _leaf_class_dirs(split_dir: Path):
+    """Yield the leaf directories that directly contain ``*.png`` files.
+
+    Handles both a flat layout (``<split>/<class>/*.png``, CIFAR-10) and a
+    nested one (``<split>/<superclass>/<class>/*.png``, the fast.ai CIFAR-100
+    mirror): the label is the *leaf* folder name, so intermediate superclass
+    directories (which hold only subdirectories, no images) are skipped.
+    """
+    for p in sorted(split_dir.rglob("*")):
+        if p.is_dir() and next(p.glob("*.png"), None) is not None:
+            yield p
+
 
 def _load_imagefolder(spec: DatasetSpec, data_dir: Path) -> dict:
-    """Load a ``<split>/<class>/*.png`` tree; cache the arrays as an ``.npz``.
+    """Load an image-folder tree; cache the arrays as an ``.npz``.
 
     Class folders are mapped to integer labels by their position in
     ``spec.class_names`` (so the index is stable regardless of directory order).
-    Decoding ~60k PNGs is slow, so results are cached next to the data.
+    Decoding tens of thousands of PNGs is slow, so results are cached next to
+    the data.
     """
     cache = data_dir / f"{spec.key}_arrays.npz"
     if cache.exists():
@@ -106,7 +120,7 @@ def _load_imagefolder(spec: DatasetSpec, data_dir: Path) -> dict:
         if not split_dir.is_dir():
             continue
         images, labels = [], []
-        for cls_dir in sorted(p for p in split_dir.iterdir() if p.is_dir()):
+        for cls_dir in _leaf_class_dirs(split_dir):
             idx = name_to_idx[cls_dir.name]
             for png in sorted(cls_dir.glob("*.png")):
                 arr = mpimg.imread(png)  # float32 in [0, 1], (H, W, 3|4)

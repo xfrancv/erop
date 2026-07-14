@@ -530,17 +530,25 @@ epistemic reject-option story on real data (see
 download and inspect the candidate datasets. They use only the standard
 library plus NumPy/matplotlib/tqdm — no torch/torchvision/medmnist.
 
-| Dataset | key | shape | classes | source |
-|---------|-----|-------|---------|--------|
-| Fashion-MNIST | `fashion_mnist` | 28×28 grayscale | 10 | Zalando IDX files |
-| CIFAR-10 | `cifar10` | 32×32 RGB | 10 | fast.ai PNG-folder mirror |
-| DermaMNIST | `dermamnist` | 28×28 RGB | 7 | MedMNIST v2 `.npz` (Zenodo) |
-| BloodMNIST | `bloodmnist` | 28×28 RGB | 8 | MedMNIST v2 `.npz` (Zenodo) |
+| Dataset | key | shape | classes | source | confusable pair |
+|---------|-----|-------|---------|--------|-----------------|
+| Fashion-MNIST | `fashion_mnist` | 28×28 grayscale | 10 | Zalando IDX files | Shirt / T-shirt |
+| CIFAR-10 | `cifar10` | 32×32 RGB | 10 | fast.ai PNG-folder mirror | cat / dog |
+| CIFAR-100 | `cifar100` | 32×32 RGB | 100 | fast.ai PNG-folder mirror (nested by superclass) | boy / girl |
+| DermaMNIST | `dermamnist` | 28×28 RGB | 7 | MedMNIST v2 `.npz` (Zenodo) | melanoma / nevus |
+| BloodMNIST | `bloodmnist` | 28×28 RGB | 8 | MedMNIST v2 `.npz` (Zenodo) | neutrophil / immature granulocyte |
+| RetinaMNIST | `retinamnist` | 28×28 RGB | 5 | MedMNIST v2 `.npz` (Zenodo) | grade 1 / grade 2 (adjacent DR severity) |
+
+CIFAR-100's fast.ai mirror is laid out two levels deep
+(`<split>/<superclass>/<fine-class>/*.png`); the image-folder loader labels by
+the leaf (fine-class) folder, so it yields the 100 fine classes. RetinaMNIST is
+ordinal (5 diabetic-retinopathy severity grades), so its "confusable pair" is
+the adjacent mild/moderate boundary rather than two arbitrary classes.
 
 ```bash
-python download_datasets.py                 # fetch all four into data/
+python download_datasets.py                 # fetch all into data/
 python download_datasets.py cifar10 bloodmnist   # or a subset
-python download_datasets.py --list          # list dataset keys
+python download_datasets.py --list          # list dataset keys + confusable pairs
 
 python analyze_datasets.py                   # download (if needed) + build reports
 python analyze_datasets.py fashion_mnist     # one dataset

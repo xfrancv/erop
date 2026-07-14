@@ -65,8 +65,10 @@ except ModuleNotFoundError:
 ARCH_DEFAULTS = {
     "fashion_mnist": "lenet",
     "cifar10": "resnet18-32",
+    "cifar100": "resnet18-32",
     "dermamnist": "resnet18-28",
     "bloodmnist": "resnet18-28",
+    "retinamnist": "resnet18-28",
 }
 ARCH_CHOICES = ("lenet", "resnet18-32", "resnet18-28")
 
