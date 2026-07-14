@@ -7,5 +7,8 @@ tqdm>=4.65
 # Only for the real-data NN scripts (run_base_predictor_exp.py,
 # run_real_reject_option_exp.py). The synthetic experiments and the
 # download/analysis tools do not need these.
-torch>=2.0
-torchvision>=0.15
+# Pinned to the cu126 build: this machine's NVIDIA driver only supports
+# CUDA <=12.9, and the default PyPI wheel (cu130) fails torch.cuda.is_available().
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch==2.13.0+cu126
+torchvision==0.28.0+cu126
