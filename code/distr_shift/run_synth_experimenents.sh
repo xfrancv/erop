@@ -8,7 +8,7 @@ python run_synth_bayesian_learning_exp.py --config configs/epistemic_showcase_ne
     --n-eval 2000 --m-train 10000 --sweep --sizes 1 2 5 10 20 50 100 200 1000 2000 5000
 
 python run_synth_reject_option_exp.py --config configs/epistemic_showcase_near.json --out-dir figures/epistemic_showcase_near/ \
-    --n-eval 2000  --sweep --trials 10 --m-train 10000 --sizes 1 2 5 10 20 50 100 200 500 1000 2000 5000 
+    --n-eval 2000  --sweep --trials 10 --m-train 10000 --sizes 1 2 5 10 20 50 100 200 500 1000 2000 5000 \
     --regret-target 0.005 0.01 0.02 0.05
 
 
