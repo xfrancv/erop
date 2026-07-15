@@ -36,7 +36,11 @@ Run with::
 
 The target prior defaults to the training prior with the dataset's confusable
 pair skewed to an asymmetric split (so a genuine, pair-targeted shift always
-exists); pass ``--test-prior`` to set it explicitly.
+exists). Three knobs shape it: ``--confusable-pair I J`` chooses which two
+classes are the pair (default: the dataset registry's), ``--pair-rest-ratio
+A B`` sets the pair's total mass vs. the remaining classes (default: keep the
+pair's training mass), and ``--pair-ratio`` splits the pair's mass between its
+two classes. ``--test-prior`` overrides all three with an explicit vector.
 """
 
 from __future__ import annotations
@@ -148,21 +152,60 @@ def calibration_lines(bundle, class_names) -> list[str]:
     return lines
 
 
-def default_target_prior(train_prior, pair_idx, ratio=(1.0, 7.0)):
-    """Training prior with the confusable pair skewed to an asymmetric split.
+def confusable_report_line(pair_idx, class_names, source: str) -> str:
+    """Report line naming the actually-used confusable pair (or 'none')."""
+    if pair_idx is None:
+        return "confusable   : none (target = training prior, no shift)"
+    i, j = pair_idx
+    return (f"confusable   : {class_names[i]} / {class_names[j]}  "
+            f"(classes {i}, {j}; {source})")
 
-    Keeps the total mass of the pair fixed (so the rest of the prior is
-    unchanged) but redistributes it as ``ratio`` -- a genuine, pair-targeted
-    label shift that stresses exactly the weakly-identifiable classes.
+
+def default_target_prior(train_prior, pair_idx, pair_ratio=(1.0, 7.0),
+                         pair_rest_ratio=None):
+    """Target prior obtained by re-weighting the confusable pair.
+
+    The confusable pair ``(i, j)`` is skewed within itself by ``pair_ratio``
+    and, optionally, rescaled against the remaining classes by
+    ``pair_rest_ratio``:
+
+    - ``pair_rest_ratio=(a, b)`` sets the pair's total mass to ``a/(a+b)`` and
+      the remaining classes' total to ``b/(a+b)``; the latter is distributed
+      *proportionally to the training prior* over the non-pair classes.
+    - ``pair_rest_ratio=None`` keeps the pair's training combined mass
+      ``p_tr[i] + p_tr[j]``, which leaves every non-pair class at its training
+      probability exactly -- reproducing the original behaviour.
+
+    With ``pair_idx=None`` there is no pair to skew, so the target is the
+    (normalised) training prior itself -- no shift.
     """
-    q = np.array(train_prior, dtype=float).copy()
-    if pair_idx is not None:
-        i, j = pair_idx
-        pair_mass = q[i] + q[j]
-        r = np.array(ratio, dtype=float)
-        r /= r.sum()
-        q[i], q[j] = pair_mass * r[0], pair_mass * r[1]
-    return q / q.sum()
+    q = np.array(train_prior, dtype=float)
+    if pair_idx is None:
+        return q / q.sum()
+    i, j = pair_idx
+
+    rest_mask = np.ones(len(q), dtype=bool)
+    rest_mask[[i, j]] = False
+    Q_rest = q[rest_mask].sum()
+
+    if pair_rest_ratio is None:
+        pair_total = q[i] + q[j]
+    else:
+        a, b = pair_rest_ratio
+        pair_total = a / (a + b)
+    # With no non-pair classes (pair covers everything) the rest has nowhere to
+    # go, so the pair must hold all the mass.
+    if Q_rest == 0:
+        pair_total = 1.0
+    rest_total = 1.0 - pair_total
+
+    p = np.zeros_like(q)
+    if rest_total > 0 and Q_rest > 0:
+        p[rest_mask] = rest_total * q[rest_mask] / Q_rest
+    r = np.array(pair_ratio, dtype=float)
+    r = r / r.sum()
+    p[i], p[j] = pair_total * r[0], pair_total * r[1]
+    return p
 
 
 def resample_to_prior(source_idx, labels, target_prior, m, rng):
@@ -412,7 +455,8 @@ def make_base_accuracy_figure(
 
 
 def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
-                     class_names, loss, args, out_dir: Path) -> None:
+                     class_names, loss, args, out_dir: Path,
+                     conf_line: str) -> None:
     """Drive the sweep, print/save the report, and write the two figures."""
     sizes = sorted(args.sizes)
     names = list(REJECT_LABELS.keys())
@@ -434,6 +478,7 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
         *calibration_lines(bundle, class_names),
         f"pool size    : {len(y_pool)}   trials {args.trials}   "
         f"n_eval {args.n_eval}   sizes {sizes}",
+        conf_line,
         f"train prior  : {np.array2string(train_prior, precision=3)}",
         f"target prior : {np.array2string(target_prior, precision=3)}",
     ]
@@ -541,7 +586,19 @@ def main() -> None:
                              "skewed asymmetrically.")
     parser.add_argument("--pair-ratio", type=float, nargs=2, default=(1.0, 7.0),
                         help="Asymmetric split of the confusable pair's mass "
-                             "for the default target prior (default 1 7).")
+                             "between its two classes (default 1 7).")
+    parser.add_argument("--confusable-pair", type=int, nargs=2, default=None,
+                        metavar=("I", "J"),
+                        help="Two 0-based class indices to treat as the "
+                             "confusable pair, overriding the dataset registry "
+                             "default (e.g. --confusable-pair 0 4).")
+    parser.add_argument("--pair-rest-ratio", type=float, nargs=2, default=None,
+                        metavar=("A", "B"),
+                        help="Split of total target-prior mass between the "
+                             "confusable pair (A/(A+B)) and the remaining "
+                             "classes (B/(A+B)); the rest is spread "
+                             "proportionally to the training prior. Default: "
+                             "keep the pair's training combined mass.")
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
@@ -577,15 +634,52 @@ def main() -> None:
 
     # --- target prior -------------------------------------------------------
     spec = DATASETS[bundle["dataset"]]
-    pair_idx = None
-    if spec.confusable_pair is not None:
+
+    # Resolve the confusable pair: explicit --confusable-pair, else registry.
+    if args.confusable_pair is not None:
+        i, j = args.confusable_pair
+        if not (0 <= i < Y and 0 <= j < Y):
+            sys.exit(f"error: --confusable-pair indices must be in [0, {Y})")
+        if i == j:
+            sys.exit("error: --confusable-pair needs two distinct classes")
+        pair_idx, pair_source = (i, j), "user override"
+    elif spec.confusable_pair is not None:
         pair_idx = tuple(class_names.index(c) for c in spec.confusable_pair)
+        pair_source = "registry default"
+    else:
+        pair_idx, pair_source = None, "none"
+
+    if args.pair_rest_ratio is not None:
+        a, b = args.pair_rest_ratio
+        if a < 0 or b < 0 or a + b <= 0:
+            sys.exit("error: --pair-rest-ratio needs two non-negative floats "
+                     "with A + B > 0")
+        if pair_idx is None:
+            sys.exit("error: --pair-rest-ratio needs a confusable pair, but the "
+                     "dataset has no registry pair; pass --confusable-pair too")
+
     if args.test_prior is not None:
+        if args.confusable_pair is not None or args.pair_rest_ratio is not None:
+            print("warning: --test-prior overrides --confusable-pair / "
+                  "--pair-rest-ratio / --pair-ratio")
         target_prior = np.asarray(args.test_prior, dtype=float)
         if len(target_prior) != Y or not np.isclose(target_prior.sum(), 1.0):
             sys.exit(f"error: --test-prior must be {Y} floats summing to 1")
     else:
-        target_prior = default_target_prior(train_prior, pair_idx, args.pair_ratio)
+        target_prior = default_target_prior(
+            train_prior, pair_idx, args.pair_ratio, args.pair_rest_ratio)
+        if args.pair_rest_ratio is not None:
+            a, b = args.pair_rest_ratio
+            if b == 0:
+                print("warning: --pair-rest-ratio puts all mass on the pair; "
+                      "the eval set will have no decoy classes (degenerate for "
+                      "the epistemic-vs-total contrast)")
+            if a == 0:
+                print("warning: --pair-rest-ratio puts zero mass on the pair; "
+                      "the confusable pair will be absent from the eval set")
+
+    conf_line = confusable_report_line(pair_idx, class_names, pair_source)
+    print(conf_line)
 
     save_run_args(
         args,
@@ -596,14 +690,18 @@ def main() -> None:
             "arch": bundle["arch"],
             "train_prior": np.array2string(train_prior, precision=4),
             "target_test_prior": np.array2string(target_prior, precision=4),
-            "confusable_pair": spec.confusable_pair,
+            "confusable_pair": (None if pair_idx is None else
+                                f"{class_names[pair_idx[0]]} / "
+                                f"{class_names[pair_idx[1]]} "
+                                f"(classes {pair_idx[0]}, {pair_idx[1]}; "
+                                f"{pair_source})"),
         },
         ignored={"n_test"} if args.sweep else {"sizes"},
     )
 
     if args.sweep:
         run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
-                         class_names, loss, args, out_dir)
+                         class_names, loss, args, out_dir, conf_line)
         return
 
     # --- trials -------------------------------------------------------------
@@ -666,8 +764,7 @@ def main() -> None:
         *calibration_lines(bundle, class_names),
         f"pool size    : {len(y_pool)}   trials {args.trials}   "
         f"n_test {args.n_test}   n_eval {args.n_eval}",
-        f"confusable   : {spec.confusable_pair}"
-        + (f"  (classes {pair_idx})" if pair_idx else ""),
+        conf_line,
         f"train prior  : {np.array2string(train_prior, precision=3)}",
         f"target prior : {np.array2string(target_prior, precision=3)}",
         f"learned prior: {np.array2string(learned_prior_mean, precision=3)}  "

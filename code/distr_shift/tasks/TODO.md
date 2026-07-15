@@ -1,0 +1,3 @@
+- [ ] adding additinal baseline using the perfect uncertainty measure, i.e. the actual regret
+- [ ] test the latent variable based sampler
+- [ ] adding generalized regret-coverage curve

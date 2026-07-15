@@ -603,10 +603,47 @@ require **torch/torchvision** (unlike the download/analysis tools above).
    shift** by resampling that labeled pool to a target prior, and runs the same
    predictors and reject-option curves. The target prior defaults to the
    training prior with the dataset's confusable pair skewed asymmetrically (a
-   genuine, pair-targeted shift); pass `--test-prior` to set it explicitly.
+   genuine, pair-targeted shift). Three knobs shape it:
+
+   - `--confusable-pair I J` — the two class indices to treat as the pair
+     (default: the dataset registry's, e.g. cat/dog);
+   - `--pair-rest-ratio A B` — the pair's total mass `A/(A+B)` vs. the rest
+     `B/(A+B)`, the rest spread proportionally to the training prior (default:
+     keep the pair's training mass — so with `--pair-rest-ratio` unset the
+     target is exactly today's);
+   - `--pair-ratio A B` — the split of the pair's mass between its two classes.
+
+   `--test-prior` overrides all three with an explicit `Y`-vector.
+
+   **How the target prior `p` is built** from the base model's training prior
+   `p_tr`, the confusable pair `(i, j)`, `--pair-rest-ratio (a, b)` and
+   `--pair-ratio (c, d)`:
+
+   1. **Pair total mass** — `pair_total = a/(a+b)` if `--pair-rest-ratio` is
+      given, else `p_tr[i] + p_tr[j]` (keep the training mass); and
+      `rest_total = 1 − pair_total`.
+   2. **Within the pair** — split `pair_total` by `--pair-ratio`:
+      `p[i] = pair_total·c/(c+d)`, `p[j] = pair_total·d/(c+d)`.
+   3. **The remaining classes** — spread `rest_total` *proportionally to the
+      training prior*: `p[k] = rest_total · p_tr[k] / Q_rest` for every `k ∉
+      {i,j}`, where `Q_rest = Σ_{m∉{i,j}} p_tr[m]`.
+
+   `p` sums to 1 by construction. Step 3's proportional spread makes the scheme
+   a strict generalisation of the default: with `--pair-rest-ratio` unset,
+   `rest_total = Q_rest`, so `p[k] = p_tr[k]` — every non-pair class keeps its
+   training probability and only the pair is re-weighted. The label shift is
+   then *realised* by resampling the real labeled pool to `p`: for each class,
+   `round(m·p[k])` examples are drawn (without replacement where the pool is
+   large enough, with replacement otherwise, which is flagged in the report).
+   Because only the mixing proportions change and every example keeps its true
+   class, this is a genuine label shift — the class-conditionals `p(x|y)` are
+   untouched.
 
    ```bash
    python run_real_reject_option_exp.py runs/blood/model.pt runs/blood
+   # different pair, and concentrate 70% of the mass on it:
+   python run_real_reject_option_exp.py runs/blood/model.pt runs/blood \
+       --confusable-pair 3 6 --pair-rest-ratio 7 3
    python run_real_reject_option_exp.py runs/blood/model.pt runs/blood \
        --n-test 300 --test-prior 0.1 0.1 0.1 0.35 0.1 0.1 0.05 0.1
    python run_real_reject_option_exp.py runs/blood/model.pt runs/blood --sweep
