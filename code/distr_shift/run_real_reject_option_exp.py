@@ -10,12 +10,16 @@ unchanged from the synthetic pipeline.
 
 Label shift is *simulated*: the real test pool (the base script's val+test
 merge) is labeled, so it can be resampled to a chosen target prior
-``p_te(y)``. Two disjoint draws are taken per trial — an unlabeled adaptation
-pool (whose inputs feed the MCMC and whose labels feed the supervised-prior
-baseline) and a fixed labeled evaluation set on which every predictor is
-scored. There is no optimal-Bayes upper bound here (the true class
-conditionals are unknown for real data); the regret reference is the plugin
-given the true (target) test prior.
+``p_te(y)``. Per trial the split is **adaptation-first**: the adaptation set
+(``--n-test`` examples, or ``max(--sizes)`` in a sweep) is drawn at the target
+prior from the whole pool -- per class, so it is stratified -- and the disjoint
+remainder feeds the evaluation set. ``--n-eval`` defaults to the largest
+all-distinct evaluation set that remainder supports, which maximises the eval
+size and so minimises the variance of the reported metrics. The adaptation
+inputs feed the MCMC (and their labels the supervised-prior baseline); every
+predictor is scored on the evaluation set. There is no optimal-Bayes upper
+bound here (the true class conditionals are unknown for real data); the regret
+reference is the plugin given the true (target) test prior.
 
 Predictors / baselines (same as the synthetic experiment):
 
@@ -208,49 +212,93 @@ def default_target_prior(train_prior, pair_idx, pair_ratio=(1.0, 7.0),
     return p
 
 
+def target_counts(m, target_prior):
+    """Per-class integer counts for an ``m``-sample draw at ``target_prior``.
+
+    Floor of ``m * target_prior``, with the rounding remainder handed to the
+    largest fractional parts so the counts sum to exactly ``m``. Deterministic
+    in ``(m, target_prior)`` -- used both to draw and to size the pools.
+    """
+    tp = np.asarray(target_prior, dtype=float)
+    counts = np.floor(m * tp).astype(int)
+    remainder = int(m - counts.sum())
+    if remainder > 0:
+        frac = m * tp - counts
+        counts[np.argsort(-frac)[:remainder]] += 1
+    return counts
+
+
 def resample_to_prior(source_idx, labels, target_prior, m, rng):
     """Draw ``m`` indices from ``source_idx`` so labels follow ``target_prior``.
 
     Sampling is without replacement per class where the pool is large enough,
-    with replacement otherwise (flagged by the returned ``short`` set).
+    with replacement otherwise (flagged in the returned ``short`` set). A class
+    the target wants but that has *no* examples in ``source_idx`` is skipped and
+    named in the returned ``absent`` set (so the returned index set is shorter
+    than ``m``) instead of raising -- callers guard against this upstream, so in
+    normal operation ``absent`` is empty.
     """
     Y = len(target_prior)
-    counts = np.floor(m * target_prior).astype(int)
-    # Distribute the rounding remainder to the largest fractional parts.
-    remainder = m - counts.sum()
-    if remainder > 0:
-        frac = m * target_prior - counts
-        counts[np.argsort(-frac)[:remainder]] += 1
+    counts = target_counts(m, target_prior)
 
-    chosen, short = [], set()
+    chosen, short, absent = [], set(), set()
     for c in range(Y):
-        pool_c = source_idx[labels[source_idx] == c]
         if counts[c] == 0:
+            continue
+        pool_c = source_idx[labels[source_idx] == c]
+        if len(pool_c) == 0:
+            absent.add(c)
             continue
         replace = counts[c] > len(pool_c)
         if replace:
             short.add(c)
         chosen.append(rng.choice(pool_c, size=counts[c], replace=replace))
-    idx = np.concatenate(chosen)
+    idx = (np.concatenate(chosen) if chosen
+           else np.empty(0, dtype=np.asarray(source_idx).dtype))
     rng.shuffle(idx)
-    return idx, short
+    return idx, short, absent
+
+
+def max_distinct_eval(eval_avail, target_prior):
+    """Largest all-distinct evaluation size at ``target_prior`` given per-class
+    availability ``eval_avail``: ``floor(min_c eval_avail[c] / target[c])`` over
+    classes with positive target mass (0 if there are none)."""
+    tp = np.asarray(target_prior, dtype=float)
+    caps = [eval_avail[c] / tp[c] for c in range(len(tp)) if tp[c] > 0]
+    return int(np.floor(min(caps))) if caps else 0
+
+
+def split_adapt_eval(all_idx, y, target_prior, n_adapt, n_eval, rng):
+    """Adaptation-first stratified split of the whole pool.
+
+    Draw ``n_adapt`` adaptation indices at the target prior from the whole pool
+    (``resample_to_prior`` draws per class, so this is stratified by
+    construction), give the disjoint remainder to evaluation, and draw
+    ``n_eval`` evaluation indices from that remainder. Returns
+    ``(adapt_idx, eval_idx, short, absent)`` with the diagnostics merged.
+    """
+    adapt_idx, short_a, absent_a = resample_to_prior(
+        all_idx, y, target_prior, n_adapt, rng)
+    eval_source = np.setdiff1d(all_idx, adapt_idx)
+    eval_idx, short_e, absent_e = resample_to_prior(
+        eval_source, y, target_prior, n_eval, rng)
+    return adapt_idx, eval_idx, short_a | short_e, absent_a | absent_e
 
 
 def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
                    epi_threshold=1e-3):
     """One trial: resample a shifted adaptation pool + eval set, run predictors.
 
-    ``P`` is the (N, Y) calibrated posterior of the whole labeled pool; the
-    adaptation and evaluation draws come from disjoint halves of it.
+    ``P`` is the (N, Y) calibrated posterior of the whole labeled pool. The
+    adaptation set (``n_test`` examples at the target prior) is drawn first from
+    the whole pool; the disjoint remainder feeds the ``n_eval`` evaluation set
+    (see ``split_adapt_eval``).
     """
     Y = len(train_prior)
     N = len(y)
-    # Class-stratified disjoint split of the pool into adapt / eval sources.
-    perm = rng.permutation(N)
-    src_adapt, src_eval = perm[: N // 2], perm[N // 2:]
-
-    adapt_idx, short_a = resample_to_prior(src_adapt, y, target_prior, n_test, rng)
-    eval_idx, short_e = resample_to_prior(src_eval, y, target_prior, n_eval, rng)
+    all_idx = np.arange(N)
+    adapt_idx, eval_idx, short, absent = split_adapt_eval(
+        all_idx, y, target_prior, n_test, n_eval, rng)
 
     post_adapt = P[adapt_idx]
     post_ev = P[eval_idx]
@@ -303,7 +351,8 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
         "accuracy": acc,
         "learned_prior": mcmc.posterior_mean,
         "epi": epi,
-        "short": short_a | short_e,
+        "short": short,
+        "absent": absent,
         "ident_warn": mcmc.identifiability_warning(),
     }
 
@@ -313,15 +362,15 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
               regret_targets=(0.002,)):
     """AuRC and epistemic metrics as a function of the adaptation-set size.
 
-    Mirrors ``run_synth_reject_option_exp.run_sweep_experiment``: per trial the
-    pool is split into disjoint adapt/eval halves once, the eval set and an
-    adaptation pool of size ``max(sizes)`` are resampled to the target prior
-    once, and the ``n`` adaptation examples are nested prefixes of that pool —
-    so neighbouring sizes share draws and the curves reflect ``n`` rather than
-    re-sampling noise.
+    Per trial the adaptation pool of size ``max(sizes)`` is drawn first at the
+    target prior from the whole pool, and the disjoint remainder feeds the
+    fixed ``n_eval`` evaluation set (``split_adapt_eval``). The ``n`` adaptation
+    examples are nested prefixes of that pool, so neighbouring sizes share
+    draws and the curves reflect ``n`` rather than re-sampling noise.
     """
     Y = len(train_prior)
     N = len(y)
+    all_idx = np.arange(N)
     sizes = sorted(sizes)
     n_max = sizes[-1]
     names = list(REJECT_LABELS.keys())
@@ -348,14 +397,9 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
     with _progress(total=trials * len(sizes), desc="sweep") as bar:
         for t in range(trials):
             rng = np.random.default_rng(master_rng.integers(1 << 32))
-            perm = rng.permutation(N)
-            src_adapt, src_eval = perm[: N // 2], perm[N // 2:]
-
-            pool_idx, short_a = resample_to_prior(
-                src_adapt, y, target_prior, n_max, rng)
-            eval_idx, short_e = resample_to_prior(
-                src_eval, y, target_prior, n_eval, rng)
-            shortfalls |= short_a | short_e
+            pool_idx, eval_idx, short, _absent = split_adapt_eval(
+                all_idx, y, target_prior, n_max, n_eval, rng)
+            shortfalls |= short
 
             post_ev = P[eval_idx]
             y_ev = y[eval_idx]
@@ -556,8 +600,11 @@ def main() -> None:
     parser.add_argument("--trials", type=int, default=10)
     parser.add_argument("--n-test", type=int, default=500,
                         help="Unlabeled adaptation-set size.")
-    parser.add_argument("--n-eval", type=int, default=2000,
-                        help="Fixed labeled evaluation-set size.")
+    parser.add_argument("--n-eval", type=int, default=None,
+                        help="Labeled evaluation-set size. Default: the maximum "
+                             "all-distinct size at the target prior (the "
+                             "adaptation set is drawn first, the rest go to "
+                             "evaluation). Pass an integer to pin it.")
     parser.add_argument(
         "--sweep", action="store_true",
         help="Sweep the adaptation-set size and plot AuRC-vs-n instead of "
@@ -681,6 +728,37 @@ def main() -> None:
     conf_line = confusable_report_line(pair_idx, class_names, pair_source)
     print(conf_line)
 
+    # --- resolve the evaluation-set size ------------------------------------
+    # The adaptation set (n_adapt examples at the target prior) is drawn first
+    # from the whole pool; the remainder feeds evaluation. n_eval defaults to
+    # the largest all-distinct evaluation set that remainder supports.
+    n_adapt = max(args.sizes) if args.sweep else args.n_test
+    pool_counts = np.bincount(y_pool, minlength=Y)
+    adapt_counts = target_counts(n_adapt, target_prior)
+    eval_avail = np.maximum(0, pool_counts - adapt_counts)
+
+    wanted = [c for c in range(Y) if target_prior[c] > 0]
+    missing = [c for c in wanted if pool_counts[c] == 0]
+    if missing:
+        names = ", ".join(f"{class_names[c]} (class {c})" for c in missing)
+        sys.exit(f"error: target prior wants class(es) absent from the pool: "
+                 f"{names}. Adjust --test-prior / --confusable-pair.")
+    exhausted = [c for c in wanted if eval_avail[c] == 0]
+    if exhausted:
+        names = ", ".join(f"{class_names[c]} (class {c})" for c in exhausted)
+        sys.exit(f"error: the adaptation set of {n_adapt} examples exhausts "
+                 f"class(es) {names}, leaving no evaluation examples for them. "
+                 f"Reduce the adaptation size or the target mass on them.")
+
+    n_eval_auto = args.n_eval is None
+    if n_eval_auto:
+        args.n_eval = max_distinct_eval(eval_avail, target_prior)
+        if args.n_eval <= 0:
+            sys.exit("error: no evaluation examples available at this target "
+                     "prior; reduce the adaptation size.")
+    n_eval_note = "  (auto max at target prior)" if n_eval_auto else ""
+    print(f"adapt size   : {n_adapt}   eval size : {args.n_eval}{n_eval_note}")
+
     save_run_args(
         args,
         "run_real_reject_option_exp_sweep_args.txt" if args.sweep
@@ -695,6 +773,9 @@ def main() -> None:
                                 f"{class_names[pair_idx[1]]} "
                                 f"(classes {pair_idx[0]}, {pair_idx[1]}; "
                                 f"{pair_source})"),
+            "n_eval_resolved": f"{args.n_eval}"
+                               + (" (auto max at target prior)" if n_eval_auto
+                                  else " (explicit)"),
         },
         ignored={"n_test"} if args.sweep else {"sizes"},
     )

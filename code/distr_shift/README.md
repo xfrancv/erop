@@ -665,6 +665,26 @@ require **torch/torchvision** (unlike the download/analysis tools above).
    prior counted from the adaptation-set labels — appears both as an accuracy
    reference and as a reject-option predictor.
 
+   **Pool split and evaluation size.** Each trial splits the labeled pool
+   **adaptation-first**: the adaptation set (`--n-test`, or `max(--sizes)` in a
+   sweep) is drawn at the target prior from the whole pool — per class, so it is
+   stratified — and the disjoint remainder feeds the evaluation set. `--n-eval`
+   then defaults to the **largest all-distinct evaluation set** that remainder
+   supports (`floor(min_c eval_avail[c] / target[c])`), printed at startup;
+   pass an integer to pin it. This maximises the evaluation set (typically most
+   of the pool), which sharply reduces the variance of every reported metric —
+   e.g. on Fashion-MNIST the true-prior oracle's trial std fell from 0.013 at
+   `n_eval=500` to 0.002 at the auto size (~5500). Two consequences worth
+   knowing: (1) because the evaluation set is now most of the pool, consecutive
+   trials re-score nearly the same examples, so the error bars mainly reflect
+   *adaptation* variance (which adaptation draw you got) rather than
+   evaluation-sampling noise — the oracle / no-adaptation baselines therefore
+   show near-zero spread, which is expected, not a bug; (2) a very large
+   adaptation size competes with evaluation for a scarce high-target class and
+   shrinks the auto `n_eval` (the script errors clearly if it would leave a
+   wanted class with no evaluation examples). Note the `--n-eval` **default
+   changed** from a fixed `2000` to this auto-max.
+
 ## Layout
 
 ```
