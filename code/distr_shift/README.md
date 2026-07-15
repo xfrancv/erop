@@ -262,7 +262,15 @@ conditional risk of a decision is one minus its posterior probability.
 | --- | --- | --- |
 | Bayesian, total uncertainty | Bayesian, learned prior | $\hat T(x,D)$ |
 | Bayesian, epistemic uncertainty | Bayesian, learned prior | $\hat T(x,D)-\hat A(x,D)$ |
-| Plugin, supervised prior (reference) | plugin, prior from **labeled** test data | conditional risk under $\hat p_{te}(y\mid x)$ |
+| Oracle (best attainable) | Bayesian, learned prior | actual per-example loss (risk curve) / actual per-example regret (regret curve) |
+
+The **oracle** is a label-aware reference, not a deployable predictor: it ranks
+the evaluation examples by their *realised* loss for the risk-coverage curve and
+by their *realised* regret for the regret-coverage curve (two metric-specific
+orderings), so it is the lower envelope — the best selective risk / regret any
+rejection rule could reach for the Bayesian predictor on that sample. (The
+supervised-prior plugin is no longer a reject-option curve; it remains an
+accuracy reference in `base_accuracy_vs_n_test.png` / `accuracy_vs_n_test.png`.)
 
 The **total** uncertainty is the conditional risk of the committed decision
 under the posterior-averaged label distribution,
@@ -651,8 +659,10 @@ require **torch/torchvision** (unlike the download/analysis tools above).
 
    `--sweep` mirrors the synthetic sweep: it varies the adaptation-set size
    over `--sizes` (nested prefixes of one resampled pool per trial, scored on
-   a fixed evaluation set) and writes the AuRC-vs-n, epistemic-metrics,
-   coverage-at-target, and per-size coverage-curve figures plus a sweep
+   a fixed evaluation set) and writes the AuRC-vs-n, epistemic-metrics (two
+   panels: regret/epistemic-uncertainty overlaid, and the negligible portion),
+   and coverage-at-target figures plus the per-size coverage-curve figures in a
+   `coverage_curves/` subfolder, plus a sweep
    report. It also writes `base_accuracy_vs_n_test.png`: the test accuracy of
    the Bayesian learned-prior predictor and the supervised-prior plugin as
    they adapt from the `n` examples, against the (flat) true-prior plugin as

@@ -78,6 +78,7 @@ from run_synth_reject_option_exp import (
     make_curves_at_n_figure,
     make_epistemic_metrics_figure,
     make_sweep_figure,
+    oracle_curves,
     selective_curves,
 )
 
@@ -327,10 +328,13 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
     predictors = {
         "bayes_total": (h_bayes, total),
         "bayes_epistemic": (h_bayes, total - aleatoric),
-        "plugin_supervised": (h_sup, cond_risk_sup.min(axis=1)),
     }
+    # Oracle envelope: risk ranked by actual loss, regret by actual regret.
+    oracle = oracle_curves(loss[h_bayes, y_ev], losses_ref)
 
-    # Accuracy of the four plugin/Bayesian predictors on the eval set.
+    # Accuracy of the four plugin/Bayesian predictors on the eval set. The
+    # supervised-prior plugin is kept here (accuracy reference) though it is no
+    # longer a reject-option predictor.
     acc = {
         "plugin_train_prior": accuracy(
             bayes_decision(
@@ -345,6 +349,7 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
 
     return {
         "predictors": predictors,
+        "oracle": oracle,
         "loss": loss,
         "y_ev": y_ev,
         "losses_ref": losses_ref,
@@ -437,10 +442,13 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                 predictors = {
                     "bayes_total": (h_bayes, total),
                     "bayes_epistemic": (h_bayes, total - aleatoric),
-                    "plugin_supervised": (h_sup, cond_risk_sup.min(axis=1)),
                 }
-                for name, (h, u) in predictors.items():
-                    risk, regret = selective_curves(loss[h, y_ev], losses_ref, u)
+                curve_set = {
+                    name: selective_curves(loss[h, y_ev], losses_ref, u)
+                    for name, (h, u) in predictors.items()
+                }
+                curve_set["oracle"] = oracle_curves(loss[h_bayes, y_ev], losses_ref)
+                for name, (risk, regret) in curve_set.items():
                     risk_curves[name][i, t] = risk
                     regret_curves[name][i, t] = regret
                     aurc_risk[name][i, t] = risk.mean()
@@ -486,7 +494,7 @@ def make_base_accuracy_figure(
     ax.set_xscale("log")
     ax.set_xticks(sizes)
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax.set_xlabel("number of unlabeled test examples $n$")
+    ax.set_xlabel("number of unlabeled adaptation examples $n$")
     ax.set_ylabel("test accuracy")
     ax.set_title("Base-predictor accuracy vs. test-set size "
                  f"(mean ± s.e.m., {trials} trials)")
@@ -588,7 +596,7 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
           f"real_reject_option_sweep_report.txt, aurc_vs_n_test.png, "
           f"epistemic_metrics_vs_n_test.png, cov_at_target_vs_n_test.png, "
           f"base_accuracy_vs_n_test.png, "
-          f"coverage_curves_n<n_test>.png (one per size)")
+          f"coverage_curves/coverage_curves_n<n_test>.png (one per size)")
 
 
 def main() -> None:
@@ -807,6 +815,7 @@ def main() -> None:
                     res["loss"][h, res["y_ev"]], res["losses_ref"], u)
                 risk_curves[name][t] = risk
                 regret_curves[name][t] = regret
+            risk_curves["oracle"][t], regret_curves["oracle"][t] = res["oracle"]
             for k, a in res["accuracy"].items():
                 accs.setdefault(k, []).append(a)
             epi_metrics[t] = res["epi"]

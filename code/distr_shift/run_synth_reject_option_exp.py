@@ -51,16 +51,18 @@ DEFAULT_CONFIG = Path(__file__).resolve().parent / "configs" / "default.json"
 TRAIN_PRIOR = np.array([0.25, 0.25, 0.25, 0.25])
 TEST_PRIOR = np.array([0.60, 0.20, 0.15, 0.05])
 
-# The three reject-option predictors (order fixed for tables and figures).
+# The reject-option predictors (order fixed for tables and figures). The
+# oracle is the best-attainable envelope (label-aware, metric-specific ranking);
+# it is not a deployable predictor but marks the lower bound for each metric.
 REJECT_LABELS = {
     "bayes_total": "Bayesian, total uncertainty",
     "bayes_epistemic": "Bayesian, epistemic uncertainty",
-    "plugin_supervised": "Plugin, supervised prior (reference)",
+    "oracle": "Oracle (best attainable)",
 }
 REJECT_COLORS = {
     "bayes_total": "C1",
     "bayes_epistemic": "C2",
-    "plugin_supervised": "C4",
+    "oracle": "C7",
 }
 
 
@@ -144,6 +146,22 @@ def selective_curves(
     return risk, regret
 
 
+def oracle_curves(losses_pred, losses_ref):
+    """Best-attainable selective curves for a base predictor.
+
+    The risk-coverage curve is ranked by the predictor's *actual* per-example
+    loss and the regret-coverage curve by its *actual* per-example regret --
+    two metric-specific, label-aware orderings. Sorting by the realised loss (or
+    regret) minimises the selective metric at every coverage, so these are the
+    lower envelopes: no ranking rule can do better on the given evaluation
+    sample. Returns ``(risk, regret)``; each is taken from the call whose
+    ranking matches that metric.
+    """
+    risk, _ = selective_curves(losses_pred, losses_ref, losses_pred)
+    _, regret = selective_curves(losses_pred, losses_ref, losses_pred - losses_ref)
+    return risk, regret
+
+
 def run_reject_trial(
     model: GaussianClassConditionalModel,
     m_train: int,
@@ -166,14 +184,12 @@ def run_reject_trial(
     X_tr, y_tr = model.sample(m_train, TRAIN_PRIOR, rng)
     base = BaseModel.fit(X_tr, y_tr, num_classes=Y)
 
-    # --- adaptation pool: inputs feed the MCMC, labels only the supervised prior ---
+    # --- adaptation pool: inputs feed the MCMC ---
     X_te, y_te = model.sample(n_test, TEST_PRIOR, rng)
     est_post_te = base.posterior(X_te)
     mcmc = sample_prior_posterior(
         est_post_te, base.train_prior, rng=rng, **mcmc_kwargs
     )
-    supervised_prior = np.bincount(y_te, minlength=Y).astype(float)
-    supervised_prior /= supervised_prior.sum()
 
     # --- fixed labeled evaluation set (disjoint from the adaptation pool) ---
     X_ev, y_ev = model.sample(n_eval, TEST_PRIOR, rng)
@@ -187,11 +203,6 @@ def run_reject_trial(
     h_bayes = cond_risk_bayes.argmin(axis=1)
     total = cond_risk_bayes.min(axis=1)            # T_hat = risk of h(x, D)
 
-    # Supervised plugin predictor and its conditional-risk uncertainty.
-    post_sup = corrected_posterior(est_post_ev, base.train_prior, supervised_prior)
-    cond_risk_sup = post_sup @ loss.T
-    h_sup = cond_risk_sup.argmin(axis=1)
-
     # True-prior plugin reference for the regret.
     h_true = bayes_decision(
         corrected_posterior(est_post_ev, base.train_prior, TEST_PRIOR), loss)
@@ -200,7 +211,6 @@ def run_reject_trial(
     predictors = {
         "bayes_total": (h_bayes, total),
         "bayes_epistemic": (h_bayes, total - aleatoric),
-        "plugin_supervised": (h_sup, cond_risk_sup.min(axis=1)),
     }
 
     acc = {name: accuracy(h, y_ev) for name, (h, _) in predictors.items()}
@@ -220,11 +230,16 @@ def run_reject_trial(
 
 
 def curves_from_trial(res: dict) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Risk/regret curves of every reject-option predictor for one trial."""
+    """Risk/regret curves of every reject-option predictor for one trial,
+    plus the oracle envelope (metric-specific ranking of the Bayesian
+    predictor)."""
     out = {}
     for name, (h, u) in res["predictors"].items():
         losses_pred = res["loss"][h, res["y_ev"]]
         out[name] = selective_curves(losses_pred, res["losses_ref"], u)
+    h_bayes = res["predictors"]["bayes_total"][0]
+    losses_bayes = res["loss"][h_bayes, res["y_ev"]]
+    out["oracle"] = oracle_curves(losses_bayes, res["losses_ref"])
     return out
 
 
@@ -420,7 +435,9 @@ def make_curves_at_n_figure(
     fig.suptitle(f"Coverage curves at n_test = {n_test} "
                  f"(mean ± s.e.m., {trials} trials)")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
-    path = f"{out_dir}/coverage_curves_n{n_test}.png"
+    sub = Path(out_dir) / "coverage_curves"
+    sub.mkdir(parents=True, exist_ok=True)
+    path = str(sub / f"coverage_curves_n{n_test}.png")
     fig.savefig(path, dpi=130)
     plt.close(fig)
     return path
@@ -482,21 +499,18 @@ def run_sweep_experiment(model, args, master_rng) -> None:
                 h_bayes = cond_risk_bayes.argmin(axis=1)
                 total = cond_risk_bayes.min(axis=1)
 
-                supervised_prior = np.bincount(
-                    y_pool[:n], minlength=Y).astype(float)
-                supervised_prior /= supervised_prior.sum()
-                post_sup = corrected_posterior(
-                    est_post_ev, base.train_prior, supervised_prior)
-                cond_risk_sup = post_sup @ loss.T
-                h_sup = cond_risk_sup.argmin(axis=1)
-
                 predictors = {
                     "bayes_total": (h_bayes, total),
                     "bayes_epistemic": (h_bayes, total - aleatoric),
-                    "plugin_supervised": (h_sup, cond_risk_sup.min(axis=1)),
                 }
-                for name, (h, u) in predictors.items():
-                    risk, regret = selective_curves(loss[h, y_ev], losses_ref, u)
+                # Score each predictor, then the oracle envelope (whose risk
+                # and regret curves use separate, metric-specific rankings).
+                curve_set = {
+                    name: selective_curves(loss[h, y_ev], losses_ref, u)
+                    for name, (h, u) in predictors.items()
+                }
+                curve_set["oracle"] = oracle_curves(loss[h_bayes, y_ev], losses_ref)
+                for name, (risk, regret) in curve_set.items():
                     risk_curves[name][i, t] = risk
                     regret_curves[name][i, t] = regret
                     aurc_risk[name][i, t] = risk.mean()
@@ -567,7 +581,8 @@ def run_sweep_experiment(model, args, master_rng) -> None:
     print(f"figures written to {args.out_dir}/aurc_vs_n_test.png, "
           f"{args.out_dir}/epistemic_metrics_vs_n_test.png, "
           f"{args.out_dir}/cov_at_target_vs_n_test.png and "
-          f"{args.out_dir}/coverage_curves_n<n_test>.png (one per size)")
+          f"{args.out_dir}/coverage_curves/coverage_curves_n<n_test>.png "
+          f"(one per size)")
 
 
 def make_sweep_figure(
@@ -597,7 +612,7 @@ def make_sweep_figure(
         ax.set_xscale("log")
         ax.set_xticks(sizes)
         ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        ax.set_xlabel("number of unlabeled test examples $n$")
+        ax.set_xlabel("number of unlabeled adaptation examples $n$")
         ax.set_ylabel(metric)
         ax.set_title(f"{metric} vs. test-set size (mean ± s.e.m., {trials} trials)")
         ax.legend(fontsize=8)
@@ -611,10 +626,12 @@ def make_sweep_figure(
 def make_epistemic_metrics_figure(
     sizes: list[int], epi_metrics: np.ndarray, threshold: float, out_dir: str,
 ) -> None:
-    """Three panels vs. n: avg regret, avg epistemic uncertainty, negligible portion.
+    """Two panels vs. n. Panel 1 overlays the average regret and average
+    epistemic uncertainty (both 0/1-loss units) as two lines on one axes;
+    panel 2 shows the portion with negligible epistemic uncertainty.
 
     ``epi_metrics`` is (len(sizes), trials, 3) with columns (avg epistemic
-    uncertainty, avg regret, portion below ``threshold``).  All three are
+    uncertainty, avg regret, portion below ``threshold``). All three are
     properties of the Bayesian learned-prior predictor.
     """
     import matplotlib
@@ -623,28 +640,36 @@ def make_epistemic_metrics_figure(
 
     x = np.asarray(sizes, dtype=float)
     trials = epi_metrics.shape[1]
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.6))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.6))
 
-    panels = (
-        (axes[0], epi_metrics[:, :, 1], "average regret (full coverage)", "C1"),
-        (axes[1], epi_metrics[:, :, 0], "average epistemic uncertainty", "C2"),
-        (axes[2], epi_metrics[:, :, 2],
-         f"portion with epistemic uncertainty < {threshold:g}", "C0"),
-    )
-    for ax, arr, label, color in panels:
-        mean = arr.mean(axis=1)
-        sem = arr.std(axis=1) / np.sqrt(trials)
-        ax.plot(x, mean, lw=1.8, marker="o", color=color)
+    # ---- Panel 1: regret and epistemic uncertainty overlaid ----
+    ax = axes[0]
+    for col, label, color in (
+        (1, "average regret (full coverage)", "C1"),
+        (0, "average epistemic uncertainty", "C2"),
+    ):
+        mean = epi_metrics[:, :, col].mean(axis=1)
+        sem = epi_metrics[:, :, col].std(axis=1) / np.sqrt(trials)
+        ax.plot(x, mean, lw=1.8, marker="o", color=color, label=label)
         ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.2)
-        if "regret" in label:
-            ax.axhline(0.0, color="0.4", ls="--", lw=1)
-        if label.startswith("portion"):
-            ax.set_ylim(-0.02, 1.02)
+    ax.axhline(0.0, color="0.4", ls="--", lw=1)
+    ax.set_ylabel("0/1-loss units")
+    ax.legend(fontsize=8)
+
+    # ---- Panel 2: portion with negligible epistemic uncertainty ----
+    ax = axes[1]
+    mean = epi_metrics[:, :, 2].mean(axis=1)
+    sem = epi_metrics[:, :, 2].std(axis=1) / np.sqrt(trials)
+    ax.plot(x, mean, lw=1.8, marker="o", color="C0")
+    ax.fill_between(x, mean - sem, mean + sem, color="C0", alpha=0.2)
+    ax.set_ylim(-0.02, 1.02)
+    ax.set_ylabel(f"portion with epistemic uncertainty < {threshold:g}")
+
+    for ax in axes:
         ax.set_xscale("log")
         ax.set_xticks(sizes)
         ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        ax.set_xlabel("number of unlabeled test examples $n$")
-        ax.set_ylabel(label)
+        ax.set_xlabel("number of unlabeled adaptation examples $n$")
         ax.grid(True, which="both", alpha=0.25)
 
     fig.suptitle("Epistemic-uncertainty metrics of the Bayesian predictor "
@@ -693,7 +718,7 @@ def make_cov_target_figure(
             ax.set_xscale("log")
             ax.set_xticks(sizes)
             ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-            ax.set_xlabel("number of unlabeled test examples $n$")
+            ax.set_xlabel("number of unlabeled adaptation examples $n$")
             ax.set_ylabel("coverage at target")
             ax.set_title(f"coverage @ {metric} <= {descs[c]}")
             ax.legend(fontsize=8, loc="lower right")
