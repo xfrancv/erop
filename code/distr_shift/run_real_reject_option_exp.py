@@ -71,6 +71,7 @@ from run_synth_reject_option_exp import (
     REJECT_LABELS,
     _resolve_risk_targets,
     bayesian_posterior_and_aleatoric,
+    configure_oracle,
     coverage_at_target,
     epistemic_metrics,
     make_cov_target_figure,
@@ -330,7 +331,8 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
         "bayes_epistemic": (h_bayes, total - aleatoric),
     }
     # Oracle envelope: risk ranked by actual loss, regret by actual regret.
-    oracle = oracle_curves(loss[h_bayes, y_ev], losses_ref)
+    oracle = (oracle_curves(loss[h_bayes, y_ev], losses_ref)
+              if "oracle" in REJECT_LABELS else None)
 
     # Accuracy of the four plugin/Bayesian predictors on the eval set. The
     # supervised-prior plugin is kept here (accuracy reference) though it is no
@@ -447,7 +449,9 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                     name: selective_curves(loss[h, y_ev], losses_ref, u)
                     for name, (h, u) in predictors.items()
                 }
-                curve_set["oracle"] = oracle_curves(loss[h_bayes, y_ev], losses_ref)
+                if "oracle" in REJECT_LABELS:
+                    curve_set["oracle"] = oracle_curves(
+                        loss[h_bayes, y_ev], losses_ref)
                 for name, (risk, regret) in curve_set.items():
                     risk_curves[name][i, t] = risk
                     regret_curves[name][i, t] = regret
@@ -626,6 +630,11 @@ def main() -> None:
         help="Epistemic uncertainty below this value counts as negligible "
              "in the reported portion metric.")
     parser.add_argument(
+        "--optimal-rejection", action="store_true",
+        help="Also evaluate the oracle reject-option baseline (best attainable "
+             "selective risk/regret, ranked by the actual per-example loss and "
+             "regret). It is label-aware, so it is off by default.")
+    parser.add_argument(
         "--risk-target", type=float, nargs="+", default=None,
         help="Risk budget(s) for the coverage-at-target metric; the metric is "
              "computed for each value given. Default: a single budget, the "
@@ -657,6 +666,8 @@ def main() -> None:
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
+
+    configure_oracle(args.optimal_rejection)
 
     if args.device == "cuda" and not torch.cuda.is_available():
         sys.exit("error: --device cuda requested but CUDA is not available")
@@ -815,7 +826,8 @@ def main() -> None:
                     res["loss"][h, res["y_ev"]], res["losses_ref"], u)
                 risk_curves[name][t] = risk
                 regret_curves[name][t] = regret
-            risk_curves["oracle"][t], regret_curves["oracle"][t] = res["oracle"]
+            if res["oracle"] is not None:
+                risk_curves["oracle"][t], regret_curves["oracle"][t] = res["oracle"]
             for k, a in res["accuracy"].items():
                 accs.setdefault(k, []).append(a)
             epi_metrics[t] = res["epi"]

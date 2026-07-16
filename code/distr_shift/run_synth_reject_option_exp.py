@@ -66,6 +66,21 @@ REJECT_COLORS = {
 }
 
 
+def configure_oracle(enabled: bool) -> None:
+    """Include the oracle baseline in the reject-option set, or drop it.
+
+    The evaluation loops, report tables and figure builders all key off the
+    module-level ``REJECT_LABELS``, so enabling/disabling the oracle is done by
+    keeping or removing its entry -- call this once from ``main`` before any
+    evaluation runs. The oracle is off by default (``--optimal-rejection``
+    turns it on) because it is a label-aware reference, not a deployable
+    predictor.
+    """
+    if not enabled:
+        REJECT_LABELS.pop("oracle", None)
+        REJECT_COLORS.pop("oracle", None)
+
+
 def bayesian_posterior_and_aleatoric(
     train_posterior: np.ndarray,   # (n, Y) = p_tr(y | x)
     train_prior: np.ndarray,       # (Y,)
@@ -237,9 +252,10 @@ def curves_from_trial(res: dict) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     for name, (h, u) in res["predictors"].items():
         losses_pred = res["loss"][h, res["y_ev"]]
         out[name] = selective_curves(losses_pred, res["losses_ref"], u)
-    h_bayes = res["predictors"]["bayes_total"][0]
-    losses_bayes = res["loss"][h_bayes, res["y_ev"]]
-    out["oracle"] = oracle_curves(losses_bayes, res["losses_ref"])
+    if "oracle" in REJECT_LABELS:
+        h_bayes = res["predictors"]["bayes_total"][0]
+        losses_bayes = res["loss"][h_bayes, res["y_ev"]]
+        out["oracle"] = oracle_curves(losses_bayes, res["losses_ref"])
     return out
 
 
@@ -509,7 +525,9 @@ def run_sweep_experiment(model, args, master_rng) -> None:
                     name: selective_curves(loss[h, y_ev], losses_ref, u)
                     for name, (h, u) in predictors.items()
                 }
-                curve_set["oracle"] = oracle_curves(loss[h_bayes, y_ev], losses_ref)
+                if "oracle" in REJECT_LABELS:
+                    curve_set["oracle"] = oracle_curves(
+                        loss[h_bayes, y_ev], losses_ref)
                 for name, (risk, regret) in curve_set.items():
                     risk_curves[name][i, t] = risk
                     regret_curves[name][i, t] = regret
@@ -767,6 +785,11 @@ def main() -> None:
         help="Epistemic uncertainty below this value counts as negligible "
              "in the reported portion metric.")
     parser.add_argument(
+        "--optimal-rejection", action="store_true",
+        help="Also evaluate the oracle reject-option baseline (best attainable "
+             "selective risk/regret, ranked by the actual per-example loss and "
+             "regret). It is label-aware, so it is off by default.")
+    parser.add_argument(
         "--risk-target", type=float, nargs="+", default=None,
         help="Risk budget(s) for the coverage-at-target metric; the metric is "
              "computed for each value given. Default: a single budget, the "
@@ -780,6 +803,8 @@ def main() -> None:
         "--config", type=str, default=str(DEFAULT_CONFIG),
         help="JSON file with the synthetic-generator setting.")
     args = parser.parse_args()
+
+    configure_oracle(args.optimal_rejection)
 
     cfg = load_experiment_config(args.config)
     model = cfg.model
