@@ -177,6 +177,27 @@ def oracle_curves(losses_pred, losses_ref):
     return risk, regret
 
 
+def generalize_curve(curve: np.ndarray) -> np.ndarray:
+    """A selective curve rescaled to its generalized counterpart.
+
+    The selective metrics divide the prefix sum by the accepted count ``k``, the
+    generalized ones by the evaluation-set size ``n``, so ``genrisk(k) =
+    coverage(k) * risk(k)`` and likewise for the regret. Ranks run along the
+    last axis, so a single curve or any stack of them (per-trial, per-size)
+    works.
+
+    The area under the generalized curve (AuGRC) weights the rank-i example by
+    ``(n - i + 1) / n^2``, against ``sum_{k>=i} 1/k ~ ln(n/i)`` per ``n`` for the
+    AuRC -- the latter inflates the top-ranked example's fair ``1/n`` share by a
+    factor of ``ln n``, which is what makes the AuRC sensitive to the noisy
+    low-coverage tail. Note the AuGRC weights sum to ``(n + 1) / 2n ~ 1/2``, so
+    the two areas are on different scales and must not share an axis or a table
+    column.
+    """
+    n = curve.shape[-1]
+    return curve * (np.arange(1, n + 1) / n)
+
+
 def run_reject_trial(
     model: GaussianClassConditionalModel,
     m_train: int,
@@ -298,6 +319,12 @@ def run_single_experiment(model, args, master_rng) -> None:
     # AuRC per trial (mean over ranks), then aggregated over trials.
     aurc_risk = {n: risk_curves[n].mean(axis=1) for n in names}
     aurc_regret = {n: regret_curves[n].mean(axis=1) for n in names}
+    # Generalized curves and their areas: a rescaling of the above by the
+    # coverage, so no re-ranking is needed.
+    gen_risk_curves = {n: generalize_curve(risk_curves[n]) for n in names}
+    gen_regret_curves = {n: generalize_curve(regret_curves[n]) for n in names}
+    augrc_risk = {n: gen_risk_curves[n].mean(axis=1) for n in names}
+    augrc_regret = {n: gen_regret_curves[n].mean(axis=1) for n in names}
     # Coverage-at-target per trial (computed per trial, then aggregated:
     # threshold crossings are nonlinear, so the order matters). One entry per
     # requested target.
@@ -342,6 +369,15 @@ def run_single_experiment(model, args, master_rng) -> None:
               f"{aurc_risk[name].mean():>8.4f} ± {aurc_risk[name].std():.4f}"
               f"{aurc_regret[name].mean():>8.4f} ± {aurc_regret[name].std():.4f}")
     print("-" * 76)
+    print("area under the generalized curves (normalized by n_eval, not by the "
+          "accepted count: not on the AuRC scale above)")
+    print(f"{'reject-option predictor':<46}{'AuGRC risk':>14}{'AuGRC regret':>14}")
+    print("-" * 76)
+    for name in names:
+        print(f"{REJECT_LABELS[name]:<46}"
+              f"{augrc_risk[name].mean():>8.4f} ± {augrc_risk[name].std():.4f}"
+              f"{augrc_regret[name].mean():>8.4f} ± {augrc_regret[name].std():.4f}")
+    print("-" * 76)
     ref_note = ("  ('ref' = per-trial full-coverage risk of the true-prior "
                 "reference)" if args.risk_target is None else "")
     print(f"coverage at target (mean±std over trials){ref_note}")
@@ -367,15 +403,27 @@ def run_single_experiment(model, args, master_rng) -> None:
 
     make_curve_figures(risk_curves, regret_curves, aurc_risk, aurc_regret,
                        args.n_eval, args.out_dir)
-    print(f"figures written to {args.out_dir}/risk_coverage.png and "
-          f"{args.out_dir}/regret_coverage.png")
+    make_gen_curve_figures(gen_risk_curves, gen_regret_curves,
+                           augrc_risk, augrc_regret, args.n_eval, args.out_dir)
+    print(f"figures written to {args.out_dir}/: risk_coverage.png, "
+          f"regret_coverage.png, gen_risk_coverage.png, "
+          f"gen_regret_coverage.png")
 
 
 def make_curve_figures(
     risk_curves: dict, regret_curves: dict,
     aurc_risk: dict, aurc_regret: dict,
     n_eval: int, out_dir: str,
+    metrics: tuple[str, str] = ("selective risk", "selective regret"),
+    area_label: str = "AuRC",
+    fnames: tuple[str, str] = ("risk_coverage", "regret_coverage"),
 ) -> None:
+    """One figure per metric, written to the run root (non-sweep mode).
+
+    ``metrics``, ``area_label`` and ``fnames`` select the flavour: the defaults
+    draw the selective curves; ``make_gen_curve_figures`` passes the generalized
+    ones.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -383,20 +431,21 @@ def make_curve_figures(
     coverage = np.arange(1, n_eval + 1) / n_eval
     trials = next(iter(risk_curves.values())).shape[0]
 
-    for curves, aurc, metric, fname in (
-        (risk_curves, aurc_risk, "selective risk", "risk_coverage"),
-        (regret_curves, aurc_regret, "selective regret", "regret_coverage"),
+    for curves, aurc, metric, fname, is_regret in (
+        (risk_curves, aurc_risk, metrics[0], fnames[0], False),
+        (regret_curves, aurc_regret, metrics[1], fnames[1], True),
     ):
         fig, ax = plt.subplots(figsize=(8, 5))
         for name in REJECT_LABELS:
             mean = curves[name].mean(axis=0)
             sem = curves[name].std(axis=0) / np.sqrt(trials)
             label = (f"{REJECT_LABELS[name]}  "
-                     f"(AuRC {aurc[name].mean():.4f} ± {aurc[name].std():.4f})")
+                     f"({area_label} {aurc[name].mean():.4f} ± "
+                     f"{aurc[name].std():.4f})")
             ax.plot(coverage, mean, lw=1.8, color=REJECT_COLORS[name], label=label)
             ax.fill_between(coverage, mean - sem, mean + sem,
                             color=REJECT_COLORS[name], alpha=0.2)
-        if metric == "selective regret":
+        if is_regret:
             ax.axhline(0.0, color="0.4", ls="--", lw=1)
         ax.set_xlabel("coverage")
         ax.set_ylabel(metric)
@@ -409,14 +458,36 @@ def make_curve_figures(
         plt.close(fig)
 
 
+def make_gen_curve_figures(
+    gen_risk_curves: dict, gen_regret_curves: dict,
+    augrc_risk: dict, augrc_regret: dict,
+    n_eval: int, out_dir: str,
+) -> None:
+    """Generalized counterpart of ``make_curve_figures``."""
+    make_curve_figures(
+        gen_risk_curves, gen_regret_curves, augrc_risk, augrc_regret,
+        n_eval, out_dir,
+        metrics=("generalized risk", "generalized regret"),
+        area_label="AuGRC",
+        fnames=("gen_risk_coverage", "gen_regret_coverage"))
+
+
 def make_curves_at_n_figure(
     risk_curves: dict, regret_curves: dict, n_test: int, out_dir: str,
+    metrics: tuple[str, str] = ("selective risk", "selective regret"),
+    area_label: str = "AuRC",
+    fname_prefix: str = "coverage_curves",
+    suptitle_prefix: str = "Coverage curves",
 ) -> str:
     """Side-by-side risk- and regret-coverage curves for one adaptation-set
     size of a sweep. ``risk_curves`` / ``regret_curves`` map predictor name to
     a (trials, n_eval) array of per-trial curves at that size. The size
     appears in the panel titles and in the file name; the written path is
     returned.
+
+    ``metrics``, ``area_label``, ``fname_prefix`` and ``suptitle_prefix`` select
+    the flavour: the defaults draw the selective curves;
+    ``make_gen_curves_at_n_figure`` passes the generalized ones.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -426,20 +497,20 @@ def make_curves_at_n_figure(
     coverage = np.arange(1, n_eval + 1) / n_eval
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
-    for ax, curves, metric in (
-        (axes[0], risk_curves, "selective risk"),
-        (axes[1], regret_curves, "selective regret"),
+    for ax, curves, metric, is_regret in (
+        (axes[0], risk_curves, metrics[0], False),
+        (axes[1], regret_curves, metrics[1], True),
     ):
         for name in REJECT_LABELS:
             mean = curves[name].mean(axis=0)
             sem = curves[name].std(axis=0) / np.sqrt(trials)
-            aurc = curves[name].mean(axis=1)     # per-trial AuRC
+            area = curves[name].mean(axis=1)     # per-trial area
             ax.plot(coverage, mean, lw=1.8, color=REJECT_COLORS[name],
                     label=f"{REJECT_LABELS[name]}  "
-                          f"(AuRC {aurc.mean():.4f} ± {aurc.std():.4f})")
+                          f"({area_label} {area.mean():.4f} ± {area.std():.4f})")
             ax.fill_between(coverage, mean - sem, mean + sem,
                             color=REJECT_COLORS[name], alpha=0.2)
-        if metric == "selective regret":
+        if is_regret:
             ax.axhline(0.0, color="0.4", ls="--", lw=1)
         ax.set_xlabel("coverage")
         ax.set_ylabel(metric)
@@ -448,15 +519,27 @@ def make_curves_at_n_figure(
         ax.legend(fontsize=8, loc="upper left")
         ax.grid(True, alpha=0.25)
 
-    fig.suptitle(f"Coverage curves at n_test = {n_test} "
+    fig.suptitle(f"{suptitle_prefix} at n_test = {n_test} "
                  f"(mean ± s.e.m., {trials} trials)")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     sub = Path(out_dir) / "coverage_curves"
     sub.mkdir(parents=True, exist_ok=True)
-    path = str(sub / f"coverage_curves_n{n_test}.png")
+    path = str(sub / f"{fname_prefix}_n{n_test}.png")
     fig.savefig(path, dpi=130)
     plt.close(fig)
     return path
+
+
+def make_gen_curves_at_n_figure(
+    gen_risk_curves: dict, gen_regret_curves: dict, n_test: int, out_dir: str,
+) -> str:
+    """Generalized counterpart of ``make_curves_at_n_figure``."""
+    return make_curves_at_n_figure(
+        gen_risk_curves, gen_regret_curves, n_test, out_dir,
+        metrics=("generalized risk", "generalized regret"),
+        area_label="AuGRC",
+        fname_prefix="gen_coverage_curves",
+        suptitle_prefix="Generalized coverage curves")
 
 
 # ---------------------------------------------------------------------------
@@ -542,6 +625,13 @@ def run_sweep_experiment(model, args, master_rng) -> None:
                     args.epi_threshold)
                 bar.update(1)
 
+    # Generalized curves and their areas: a rescaling of the selective curves by
+    # the coverage, so no re-ranking is needed.
+    gen_risk_curves = {n: generalize_curve(risk_curves[n]) for n in names}
+    gen_regret_curves = {n: generalize_curve(regret_curves[n]) for n in names}
+    augrc_risk = {n: gen_risk_curves[n].mean(axis=-1) for n in names}
+    augrc_regret = {n: gen_regret_curves[n].mean(axis=-1) for n in names}
+
     # ---- report ----
     print("=" * 76)
     print("AuRC vs. number of unlabeled test examples")
@@ -557,6 +647,14 @@ def run_sweep_experiment(model, args, master_rng) -> None:
             row = f"{n:>8}{warned[i].mean():>8.2f}"
             row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
             print(row)
+    for metric, augrc in (("risk", augrc_risk), ("regret", augrc_regret)):
+        print("-" * 76)
+        print(f"AuGRC ({metric})  (normalized by n_eval; not on the AuRC scale)")
+        print(f"{'n_test':>8}"
+              + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
+        for i, n in enumerate(sizes):
+            print(f"{n:>8}"
+                  + "".join(f"{augrc[name][i].mean():>24.4f}" for name in names))
     risk_fig_descs = ["reference risk" if rt is None else d
                       for rt, d in zip(rts, rt_descs)]
     regret_fig_descs = [f"{e:g}" for e in args.regret_target]
@@ -587,6 +685,8 @@ def run_sweep_experiment(model, args, master_rng) -> None:
               "the learned prior was only weakly identifiable (see README).")
 
     make_sweep_figure(sizes, aurc_risk, aurc_regret, args.trials, args.out_dir)
+    make_gen_sweep_figure(sizes, augrc_risk, augrc_regret, args.trials,
+                          args.out_dir)
     make_epistemic_metrics_figure(
         sizes, epi_metrics, args.epi_threshold, args.out_dir)
     make_cov_target_figure(sizes, cov_risk, cov_regret, args.trials,
@@ -596,17 +696,32 @@ def run_sweep_experiment(model, args, master_rng) -> None:
             {name: risk_curves[name][i] for name in names},
             {name: regret_curves[name][i] for name in names},
             n, args.out_dir)
+        make_gen_curves_at_n_figure(
+            {name: gen_risk_curves[name][i] for name in names},
+            {name: gen_regret_curves[name][i] for name in names},
+            n, args.out_dir)
     print(f"figures written to {args.out_dir}/aurc_vs_n_test.png, "
+          f"{args.out_dir}/gen_aurc_vs_n_test.png, "
           f"{args.out_dir}/epistemic_metrics_vs_n_test.png, "
           f"{args.out_dir}/cov_at_target_vs_n_test.png and "
-          f"{args.out_dir}/coverage_curves/coverage_curves_n<n_test>.png "
-          f"(one per size)")
+          f"{args.out_dir}/coverage_curves/"
+          f"[gen_]coverage_curves_n<n_test>.png (two per size)")
 
 
 def make_sweep_figure(
     sizes: list[int], aurc_risk: dict, aurc_regret: dict,
     trials: int, out_dir: str,
+    metrics: tuple[str, str] = ("AuRC (selective risk)",
+                                "AuRC (selective regret)"),
+    fname: str = "aurc_vs_n_test",
 ) -> None:
+    """Area under the coverage curves vs. the adaptation-set size.
+
+    ``metrics`` and ``fname`` select the flavour: the defaults plot the AuRC of
+    the selective curves; ``make_gen_sweep_figure`` plots the AuGRC of the
+    generalized ones. The two areas are on different scales (the AuGRC weights
+    sum to ~1/2), so they get separate figures rather than shared axes.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -614,9 +729,9 @@ def make_sweep_figure(
     x = np.asarray(sizes, dtype=float)
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
-    for ax, aurc, metric in (
-        (axes[0], aurc_risk, "AuRC (selective risk)"),
-        (axes[1], aurc_regret, "AuRC (selective regret)"),
+    for ax, aurc, metric, is_regret in (
+        (axes[0], aurc_risk, metrics[0], False),
+        (axes[1], aurc_regret, metrics[1], True),
     ):
         for name in REJECT_LABELS:
             mean = aurc[name].mean(axis=1)
@@ -625,7 +740,7 @@ def make_sweep_figure(
                     label=REJECT_LABELS[name])
             ax.fill_between(x, mean - sem, mean + sem,
                             color=REJECT_COLORS[name], alpha=0.2)
-        if "regret" in metric:
+        if is_regret:
             ax.axhline(0.0, color="0.4", ls="--", lw=1)
         ax.set_xscale("log")
         ax.set_xticks(sizes)
@@ -637,8 +752,19 @@ def make_sweep_figure(
         ax.grid(True, which="both", alpha=0.25)
 
     fig.tight_layout()
-    fig.savefig(f"{out_dir}/aurc_vs_n_test.png", dpi=130)
+    fig.savefig(f"{out_dir}/{fname}.png", dpi=130)
     plt.close(fig)
+
+
+def make_gen_sweep_figure(
+    sizes: list[int], augrc_risk: dict, augrc_regret: dict,
+    trials: int, out_dir: str,
+) -> None:
+    """Generalized counterpart of ``make_sweep_figure``."""
+    make_sweep_figure(
+        sizes, augrc_risk, augrc_regret, trials, out_dir,
+        metrics=("AuGRC (generalized risk)", "AuGRC (generalized regret)"),
+        fname="gen_aurc_vs_n_test")
 
 
 def make_epistemic_metrics_figure(

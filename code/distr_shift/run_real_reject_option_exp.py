@@ -74,10 +74,14 @@ from run_synth_reject_option_exp import (
     configure_oracle,
     coverage_at_target,
     epistemic_metrics,
+    generalize_curve,
     make_cov_target_figure,
     make_curve_figures,
     make_curves_at_n_figure,
     make_epistemic_metrics_figure,
+    make_gen_curve_figures,
+    make_gen_curves_at_n_figure,
+    make_gen_sweep_figure,
     make_sweep_figure,
     oracle_curves,
     selective_curves,
@@ -523,6 +527,13 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
         args.n_eval, loss, master_rng, args.epi_threshold,
         args.risk_target, args.regret_target)
 
+    # Generalized curves and their areas: a rescaling of the selective curves by
+    # the coverage, so no re-ranking is needed.
+    gen_risk_curves = {n: generalize_curve(risk_curves[n]) for n in names}
+    gen_regret_curves = {n: generalize_curve(regret_curves[n]) for n in names}
+    augrc_risk = {n: gen_risk_curves[n].mean(axis=-1) for n in names}
+    augrc_regret = {n: gen_regret_curves[n].mean(axis=-1) for n in names}
+
     lines = [
         "=" * 76,
         "AuRC vs. number of unlabeled adaptation examples (real data)",
@@ -551,6 +562,16 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
             row = f"{n:>8}{warned[i].mean():>8.2f}"
             row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
             lines.append(row)
+    for metric, augrc in (("risk", augrc_risk), ("regret", augrc_regret)):
+        lines.append("-" * 76)
+        lines.append(f"AuGRC ({metric})  (normalized by n_eval; not on the "
+                     f"AuRC scale)")
+        lines.append(f"{'n_test':>8}"
+                     + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
+        for i, n in enumerate(sizes):
+            lines.append(f"{n:>8}"
+                         + "".join(f"{augrc[name][i].mean():>24.4f}"
+                                   for name in names))
     rts, rt_descs = _resolve_risk_targets(args.risk_target)
     risk_fig_descs = ["reference risk" if rt is None else d
                       for rt, d in zip(rts, rt_descs)]
@@ -586,6 +607,8 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
     print(report)
 
     make_sweep_figure(sizes, aurc_risk, aurc_regret, args.trials, args.out_dir)
+    make_gen_sweep_figure(sizes, augrc_risk, augrc_regret, args.trials,
+                          args.out_dir)
     make_epistemic_metrics_figure(sizes, epi_metrics, args.epi_threshold,
                                   args.out_dir)
     make_cov_target_figure(sizes, cov_risk, cov_regret, args.trials,
@@ -596,11 +619,17 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
             {name: risk_curves[name][i] for name in names},
             {name: regret_curves[name][i] for name in names},
             n, args.out_dir)
+        make_gen_curves_at_n_figure(
+            {name: gen_risk_curves[name][i] for name in names},
+            {name: gen_regret_curves[name][i] for name in names},
+            n, args.out_dir)
     print(f"\nreport and figures written to {out_dir}/: "
           f"real_reject_option_sweep_report.txt, aurc_vs_n_test.png, "
+          f"gen_aurc_vs_n_test.png, "
           f"epistemic_metrics_vs_n_test.png, cov_at_target_vs_n_test.png, "
           f"base_accuracy_vs_n_test.png, "
-          f"coverage_curves/coverage_curves_n<n_test>.png (one per size)")
+          f"coverage_curves/[gen_]coverage_curves_n<n_test>.png "
+          f"(two per size)")
 
 
 def main() -> None:
@@ -840,6 +869,12 @@ def main() -> None:
 
     aurc_risk = {n: risk_curves[n].mean(axis=1) for n in names}
     aurc_regret = {n: regret_curves[n].mean(axis=1) for n in names}
+    # Generalized curves and their areas: a rescaling of the above by the
+    # coverage, so no re-ranking is needed.
+    gen_risk_curves = {n: generalize_curve(risk_curves[n]) for n in names}
+    gen_regret_curves = {n: generalize_curve(regret_curves[n]) for n in names}
+    augrc_risk = {n: gen_risk_curves[n].mean(axis=1) for n in names}
+    augrc_regret = {n: gen_regret_curves[n].mean(axis=1) for n in names}
     rts, rt_descs = _resolve_risk_targets(args.risk_target)
     cov_risk = [
         {n: np.array([
@@ -894,6 +929,16 @@ def main() -> None:
                      f"{aurc_risk[name].mean():>8.4f} ± {aurc_risk[name].std():.4f}"
                      f"{aurc_regret[name].mean():>8.4f} ± {aurc_regret[name].std():.4f}")
     lines.append("-" * 76)
+    lines.append("area under the generalized curves (normalized by n_eval, not "
+                 "by the accepted count: not on the AuRC scale above)")
+    lines.append(f"{'reject-option predictor':<46}{'AuGRC risk':>14}"
+                 f"{'AuGRC regret':>14}")
+    lines.append("-" * 76)
+    for name in names:
+        lines.append(f"{REJECT_LABELS[name]:<46}"
+                     f"{augrc_risk[name].mean():>8.4f} ± {augrc_risk[name].std():.4f}"
+                     f"{augrc_regret[name].mean():>8.4f} ± {augrc_regret[name].std():.4f}")
+    lines.append("-" * 76)
     ref_note = ("  ('ref' = per-trial full-coverage risk of the true-prior "
                 "reference)" if args.risk_target is None else "")
     lines.append(f"coverage at target (mean±std over trials){ref_note}")
@@ -922,8 +967,12 @@ def main() -> None:
 
     make_curve_figures(risk_curves, regret_curves, aurc_risk, aurc_regret,
                        args.n_eval, args.out_dir)
+    make_gen_curve_figures(gen_risk_curves, gen_regret_curves,
+                           augrc_risk, augrc_regret, args.n_eval, args.out_dir)
     print(f"\nreport and figures written to {out_dir}/: "
-          f"real_reject_option_report.txt, risk_coverage.png, regret_coverage.png")
+          f"real_reject_option_report.txt, risk_coverage.png, "
+          f"regret_coverage.png, gen_risk_coverage.png, "
+          f"gen_regret_coverage.png")
 
 
 if __name__ == "__main__":
