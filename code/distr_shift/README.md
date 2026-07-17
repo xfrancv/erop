@@ -322,6 +322,18 @@ computed per trial and then averaged (threshold crossings are nonlinear, so
 the order matters). In `--sweep` mode it adds a third figure,
 `cov_at_target_vs_n_test.png`.
 
+**AuRC50.** Both scripts also report $\text{AuRC50}$: the same areas averaged
+over the ranks with $coverage\ge0.5$ only. Rejecting more than half the inputs
+is not an operating point anyone deploys, and it is exactly where the estimates
+are noisiest ($risk(1)$ is a single example). Averaging over the window rather
+than integrating over it keeps AuRC50 on the AuRC scale, so the two may be read
+side by side — unlike AuGRC. **Caveat:** truncation makes the statistic
+invariant to the ranking *within* the accepted half, and since the
+reject-option predictors share one base predictor and differ only in their
+ranking score, their gaps compress. A smaller AuRC50 gap is not evidence the
+rankings agree more. In `--sweep` mode the areas get their own two-panel
+figure, `aurc50_vs_n_test.png`.
+
 **No in-sample bias.** Unlike `run_synth_bayesian_learning_exp.py`'s single-size mode, *both*
 modes here score on a **fixed labeled evaluation set** that is disjoint from the
 `n_test` examples used to adapt the prior. The supervised plugin reference
@@ -486,8 +498,9 @@ with genuine ambiguity. The lesson is the same as before: this quantity is not
 a proxy for error probability.
 
 Figures are written to the `--out-dir`: `risk_coverage.png`,
-`regret_coverage.png`, and (from `--sweep`) `aurc_vs_n_test.png`. The argument
-setting is saved alongside them as `run_synth_reject_option_exp_args.txt` or
+`regret_coverage.png`, and (from `--sweep`) `aurc_vs_n_test.png` and
+`aurc50_vs_n_test.png`. The argument setting is saved alongside them as
+`run_synth_reject_option_exp_args.txt` or
 `run_synth_reject_option_exp_sweep_args.txt` — named so that the two scripts
 can share one `--out-dir` without overwriting each other's record.
 
@@ -659,10 +672,10 @@ require **torch/torchvision** (unlike the download/analysis tools above).
 
    `--sweep` mirrors the synthetic sweep: it varies the adaptation-set size
    over `--sizes` (nested prefixes of one resampled pool per trial, scored on
-   a fixed evaluation set) and writes the AuRC-vs-n, epistemic-metrics (two
-   panels: regret/epistemic-uncertainty overlaid, and the negligible portion),
-   and coverage-at-target figures plus the per-size coverage-curve figures in a
-   `coverage_curves/` subfolder, plus a sweep
+   a fixed evaluation set) and writes the AuRC-vs-n, AuRC50-vs-n,
+   epistemic-metrics (two panels: regret/epistemic-uncertainty overlaid, and
+   the negligible portion), and coverage-at-target figures plus the per-size
+   coverage-curve figures in a `coverage_curves/` subfolder, plus a sweep
    report. It also writes `base_accuracy_vs_n_test.png`: the test accuracy of
    the Bayesian learned-prior predictor and the supervised-prior plugin as
    they adapt from the `n` examples, against the (flat) true-prior plugin as

@@ -198,6 +198,56 @@ def generalize_curve(curve: np.ndarray) -> np.ndarray:
     return curve * (np.arange(1, n + 1) / n)
 
 
+# Coverage floor of the truncated areas (AuRC50). A module constant, not a CLI
+# flag: the figure filename derives from it (see ``make_trunc_sweep_figure``).
+MIN_COVERAGE = 0.5
+
+# Shared header note and caveat for the AuRC50 report blocks (both scripts,
+# both modes). The caveat goes under the numbers, where they are read.
+AURC50_NOTE = (f"areas over coverage >= {MIN_COVERAGE:g} only; same scale as "
+               f"the AuRC above")
+AURC50_CAVEAT = (
+    f"  note: invariant to the ranking within the accepted top "
+    f"{round(100 * MIN_COVERAGE)}%, so gaps between\n"
+    f"  predictors compress -- a smaller gap here does not mean the rankings "
+    f"are more similar")
+
+
+def truncated_area(curve: np.ndarray,
+                   min_coverage: float = MIN_COVERAGE) -> np.ndarray:
+    """Mean of a selective curve over the ranks with ``coverage >= min_coverage``.
+
+    Ranks ``k = 1..n`` run along the last axis (as in ``generalize_curve``), so
+    a single curve, a per-trial stack and a per-size stack all work; the rank
+    axis is reduced. Retained are ``k0 = ceil(min_coverage * n)`` .. ``n``, so
+    with ``min_coverage = 0`` this is the plain AuRC -- the areas stay on the
+    AuRC scale ([0, 1] under 0/1 loss) and may share a table with it. Averaging
+    over the window rather than integrating over it is what keeps that scale:
+    the integral over a window of width ``1 - min_coverage`` would be smaller by
+    exactly that factor.
+
+    Dropping the low-coverage ranks drops where the selective metrics are
+    noisiest (``risk(1)`` is one example, hence 0/1-grained) and where no
+    deployment operates. As a rank statistic this weights example ``i`` by
+    ``(sum_{k>=max(i, k0)} 1/k) / (n - k0 + 1)``, i.e. ``ln(1/min_coverage)``
+    over the retained count -- a *constant* for every ``i <= k0`` -- decaying as
+    ``ln(n/i)`` below that. The full AuRC instead weights rank 1 by ``ln n``
+    times its fair ``1/n`` share: the sensitivity to the noisy tail that AuGRC
+    attacks with linear weights and this attacks by truncation.
+
+    The flat top-half weights are exactly an invariance: **the result does not
+    change under any re-ordering within the first k0 ranks** (every retained
+    ``risk(k)`` is a prefix mean containing all of them). Since the entries of
+    ``REJECT_LABELS`` share one base predictor and differ only in their ranking
+    score, their curves meet at coverage 1 and this truncation compresses the
+    gaps between them -- it discards signal along with noise, so a smaller gap
+    here is not evidence that the rankings agree more.
+    """
+    n = curve.shape[-1]
+    k0 = min(n, max(1, int(np.ceil(min_coverage * n))))
+    return curve[..., k0 - 1:].mean(axis=-1)
+
+
 def run_reject_trial(
     model: GaussianClassConditionalModel,
     m_train: int,
@@ -325,6 +375,9 @@ def run_single_experiment(model, args, master_rng) -> None:
     gen_regret_curves = {n: generalize_curve(regret_curves[n]) for n in names}
     augrc_risk = {n: gen_risk_curves[n].mean(axis=1) for n in names}
     augrc_regret = {n: gen_regret_curves[n].mean(axis=1) for n in names}
+    # Areas over the high-coverage window only: a slice of the same curves.
+    aurc50_risk = {n: truncated_area(risk_curves[n]) for n in names}
+    aurc50_regret = {n: truncated_area(regret_curves[n]) for n in names}
     # Coverage-at-target per trial (computed per trial, then aggregated:
     # threshold crossings are nonlinear, so the order matters). One entry per
     # requested target.
@@ -368,6 +421,16 @@ def run_single_experiment(model, args, master_rng) -> None:
         print(f"{REJECT_LABELS[name]:<46}"
               f"{aurc_risk[name].mean():>8.4f} ± {aurc_risk[name].std():.4f}"
               f"{aurc_regret[name].mean():>8.4f} ± {aurc_regret[name].std():.4f}")
+    print("-" * 76)
+    print(AURC50_NOTE)
+    print(f"{'reject-option predictor':<46}{'AuRC50 risk':>14}"
+          f"{'AuRC50 regret':>14}")
+    print("-" * 76)
+    for name in names:
+        print(f"{REJECT_LABELS[name]:<46}"
+              f"{aurc50_risk[name].mean():>8.4f} ± {aurc50_risk[name].std():.4f}"
+              f"{aurc50_regret[name].mean():>8.4f} ± {aurc50_regret[name].std():.4f}")
+    print(AURC50_CAVEAT)
     print("-" * 76)
     print("area under the generalized curves (normalized by n_eval, not by the "
           "accepted count: not on the AuRC scale above)")
@@ -631,6 +694,9 @@ def run_sweep_experiment(model, args, master_rng) -> None:
     gen_regret_curves = {n: generalize_curve(regret_curves[n]) for n in names}
     augrc_risk = {n: gen_risk_curves[n].mean(axis=-1) for n in names}
     augrc_regret = {n: gen_regret_curves[n].mean(axis=-1) for n in names}
+    # Areas over the high-coverage window only: a slice of the same curves.
+    aurc50_risk = {n: truncated_area(risk_curves[n]) for n in names}
+    aurc50_regret = {n: truncated_area(regret_curves[n]) for n in names}
 
     # ---- report ----
     print("=" * 76)
@@ -647,6 +713,15 @@ def run_sweep_experiment(model, args, master_rng) -> None:
             row = f"{n:>8}{warned[i].mean():>8.2f}"
             row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
             print(row)
+    for metric, aurc50 in (("risk", aurc50_risk), ("regret", aurc50_regret)):
+        print("-" * 76)
+        print(f"AuRC50 ({metric})  ({AURC50_NOTE})")
+        print(f"{'n_test':>8}"
+              + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
+        for i, n in enumerate(sizes):
+            print(f"{n:>8}"
+                  + "".join(f"{aurc50[name][i].mean():>24.4f}" for name in names))
+    print(AURC50_CAVEAT)
     for metric, augrc in (("risk", augrc_risk), ("regret", augrc_regret)):
         print("-" * 76)
         print(f"AuGRC ({metric})  (normalized by n_eval; not on the AuRC scale)")
@@ -687,6 +762,8 @@ def run_sweep_experiment(model, args, master_rng) -> None:
     make_sweep_figure(sizes, aurc_risk, aurc_regret, args.trials, args.out_dir)
     make_gen_sweep_figure(sizes, augrc_risk, augrc_regret, args.trials,
                           args.out_dir)
+    make_trunc_sweep_figure(sizes, aurc50_risk, aurc50_regret, args.trials,
+                            args.out_dir)
     make_epistemic_metrics_figure(
         sizes, epi_metrics, args.epi_threshold, args.out_dir)
     make_cov_target_figure(sizes, cov_risk, cov_regret, args.trials,
@@ -702,6 +779,7 @@ def run_sweep_experiment(model, args, master_rng) -> None:
             n, args.out_dir)
     print(f"figures written to {args.out_dir}/aurc_vs_n_test.png, "
           f"{args.out_dir}/gen_aurc_vs_n_test.png, "
+          f"{args.out_dir}/{trunc_sweep_fname()}.png, "
           f"{args.out_dir}/epistemic_metrics_vs_n_test.png, "
           f"{args.out_dir}/cov_at_target_vs_n_test.png and "
           f"{args.out_dir}/coverage_curves/"
@@ -714,6 +792,7 @@ def make_sweep_figure(
     metrics: tuple[str, str] = ("AuRC (selective risk)",
                                 "AuRC (selective regret)"),
     fname: str = "aurc_vs_n_test",
+    ylabels: tuple[str, str] | None = None,
 ) -> None:
     """Area under the coverage curves vs. the adaptation-set size.
 
@@ -721,17 +800,22 @@ def make_sweep_figure(
     the selective curves; ``make_gen_sweep_figure`` plots the AuGRC of the
     generalized ones. The two areas are on different scales (the AuGRC weights
     sum to ~1/2), so they get separate figures rather than shared axes.
+
+    ``ylabels`` defaults to ``metrics`` and overrides just the y-axis text, for
+    flavours whose full name is too long for the title (the truncated one spells
+    its coverage window out there, and keeps a short name for the title).
     """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    ylabels = ylabels or metrics
     x = np.asarray(sizes, dtype=float)
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
-    for ax, aurc, metric, is_regret in (
-        (axes[0], aurc_risk, metrics[0], False),
-        (axes[1], aurc_regret, metrics[1], True),
+    for ax, aurc, metric, ylabel, is_regret in (
+        (axes[0], aurc_risk, metrics[0], ylabels[0], False),
+        (axes[1], aurc_regret, metrics[1], ylabels[1], True),
     ):
         for name in REJECT_LABELS:
             mean = aurc[name].mean(axis=1)
@@ -746,7 +830,7 @@ def make_sweep_figure(
         ax.set_xticks(sizes)
         ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
         ax.set_xlabel("number of unlabeled adaptation examples $n$")
-        ax.set_ylabel(metric)
+        ax.set_ylabel(ylabel)
         ax.set_title(f"{metric} vs. test-set size (mean ± s.e.m., {trials} trials)")
         ax.legend(fontsize=8)
         ax.grid(True, which="both", alpha=0.25)
@@ -765,6 +849,32 @@ def make_gen_sweep_figure(
         sizes, augrc_risk, augrc_regret, trials, out_dir,
         metrics=("AuGRC (generalized risk)", "AuGRC (generalized regret)"),
         fname="gen_aurc_vs_n_test")
+
+
+def make_trunc_sweep_figure(
+    sizes: list[int], aurc50_risk: dict, aurc50_regret: dict,
+    trials: int, out_dir: str,
+) -> None:
+    """Truncated counterpart of ``make_sweep_figure`` (see ``truncated_area``).
+
+    Unlike the AuGRC these areas are on the AuRC scale, but they still get their
+    own figure: the point is to read them against each other, not against areas
+    taken over a different coverage window.
+    """
+    pct = round(100 * MIN_COVERAGE)
+    make_sweep_figure(
+        sizes, aurc50_risk, aurc50_regret, trials, out_dir,
+        metrics=(f"AuRC{pct} (selective risk)",
+                 f"AuRC{pct} (selective regret)"),
+        ylabels=(f"AuRC (selective risk, coverage >= {MIN_COVERAGE:g})",
+                 f"AuRC (selective regret, coverage >= {MIN_COVERAGE:g})"),
+        fname=trunc_sweep_fname())
+
+
+def trunc_sweep_fname() -> str:
+    """Filename stem of the truncated-area sweep figure, derived from
+    ``MIN_COVERAGE`` so it cannot go stale (``aurc50_vs_n_test`` at 0.5)."""
+    return f"aurc{round(100 * MIN_COVERAGE)}_vs_n_test"
 
 
 def make_epistemic_metrics_figure(

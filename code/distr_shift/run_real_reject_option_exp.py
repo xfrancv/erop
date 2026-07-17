@@ -68,6 +68,8 @@ from prior_shift import (
 from run_base_predictor_exp import make_model, to_tensor
 from run_synth_bayesian_learning_exp import _progress, accuracy, save_run_args
 from run_synth_reject_option_exp import (
+    AURC50_CAVEAT,
+    AURC50_NOTE,
     REJECT_LABELS,
     _resolve_risk_targets,
     bayesian_posterior_and_aleatoric,
@@ -83,8 +85,11 @@ from run_synth_reject_option_exp import (
     make_gen_curves_at_n_figure,
     make_gen_sweep_figure,
     make_sweep_figure,
+    make_trunc_sweep_figure,
     oracle_curves,
     selective_curves,
+    trunc_sweep_fname,
+    truncated_area,
 )
 
 # Accuracy-table predictors (no optimal-Bayes bound: no true conditionals).
@@ -533,6 +538,9 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
     gen_regret_curves = {n: generalize_curve(regret_curves[n]) for n in names}
     augrc_risk = {n: gen_risk_curves[n].mean(axis=-1) for n in names}
     augrc_regret = {n: gen_regret_curves[n].mean(axis=-1) for n in names}
+    # Areas over the high-coverage window only: a slice of the same curves.
+    aurc50_risk = {n: truncated_area(risk_curves[n]) for n in names}
+    aurc50_regret = {n: truncated_area(regret_curves[n]) for n in names}
 
     lines = [
         "=" * 76,
@@ -562,6 +570,16 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
             row = f"{n:>8}{warned[i].mean():>8.2f}"
             row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
             lines.append(row)
+    for metric, aurc50 in (("risk", aurc50_risk), ("regret", aurc50_regret)):
+        lines.append("-" * 76)
+        lines.append(f"AuRC50 ({metric})  ({AURC50_NOTE})")
+        lines.append(f"{'n_test':>8}"
+                     + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
+        for i, n in enumerate(sizes):
+            lines.append(f"{n:>8}"
+                         + "".join(f"{aurc50[name][i].mean():>24.4f}"
+                                   for name in names))
+    lines.append(AURC50_CAVEAT)
     for metric, augrc in (("risk", augrc_risk), ("regret", augrc_regret)):
         lines.append("-" * 76)
         lines.append(f"AuGRC ({metric})  (normalized by n_eval; not on the "
@@ -609,6 +627,8 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
     make_sweep_figure(sizes, aurc_risk, aurc_regret, args.trials, args.out_dir)
     make_gen_sweep_figure(sizes, augrc_risk, augrc_regret, args.trials,
                           args.out_dir)
+    make_trunc_sweep_figure(sizes, aurc50_risk, aurc50_regret, args.trials,
+                            args.out_dir)
     make_epistemic_metrics_figure(sizes, epi_metrics, args.epi_threshold,
                                   args.out_dir)
     make_cov_target_figure(sizes, cov_risk, cov_regret, args.trials,
@@ -625,7 +645,7 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
             n, args.out_dir)
     print(f"\nreport and figures written to {out_dir}/: "
           f"real_reject_option_sweep_report.txt, aurc_vs_n_test.png, "
-          f"gen_aurc_vs_n_test.png, "
+          f"gen_aurc_vs_n_test.png, {trunc_sweep_fname()}.png, "
           f"epistemic_metrics_vs_n_test.png, cov_at_target_vs_n_test.png, "
           f"base_accuracy_vs_n_test.png, "
           f"coverage_curves/[gen_]coverage_curves_n<n_test>.png "
@@ -875,6 +895,9 @@ def main() -> None:
     gen_regret_curves = {n: generalize_curve(regret_curves[n]) for n in names}
     augrc_risk = {n: gen_risk_curves[n].mean(axis=1) for n in names}
     augrc_regret = {n: gen_regret_curves[n].mean(axis=1) for n in names}
+    # Areas over the high-coverage window only: a slice of the same curves.
+    aurc50_risk = {n: truncated_area(risk_curves[n]) for n in names}
+    aurc50_regret = {n: truncated_area(regret_curves[n]) for n in names}
     rts, rt_descs = _resolve_risk_targets(args.risk_target)
     cov_risk = [
         {n: np.array([
@@ -928,6 +951,17 @@ def main() -> None:
         lines.append(f"{REJECT_LABELS[name]:<46}"
                      f"{aurc_risk[name].mean():>8.4f} ± {aurc_risk[name].std():.4f}"
                      f"{aurc_regret[name].mean():>8.4f} ± {aurc_regret[name].std():.4f}")
+    lines.append("-" * 76)
+    lines.append(AURC50_NOTE)
+    lines.append(f"{'reject-option predictor':<46}{'AuRC50 risk':>14}"
+                 f"{'AuRC50 regret':>14}")
+    lines.append("-" * 76)
+    for name in names:
+        lines.append(
+            f"{REJECT_LABELS[name]:<46}"
+            f"{aurc50_risk[name].mean():>8.4f} ± {aurc50_risk[name].std():.4f}"
+            f"{aurc50_regret[name].mean():>8.4f} ± {aurc50_regret[name].std():.4f}")
+    lines.append(AURC50_CAVEAT)
     lines.append("-" * 76)
     lines.append("area under the generalized curves (normalized by n_eval, not "
                  "by the accepted count: not on the AuRC scale above)")
