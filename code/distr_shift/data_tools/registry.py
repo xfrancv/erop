@@ -193,6 +193,8 @@ DATASETS: dict[str, DatasetSpec] = {
             "confusable 'pair' is the adjacent-grade boundary."
         ),
         confusable_pair=("grade 1 (mild)", "grade 2 (moderate)"),
-        tags=["rgb", "medical"],
+        # "ordinal": grades are ordered, so the auto target-prior search only
+        # considers adjacent-grade pairs (non-adjacent flips are meaningless).
+        tags=["rgb", "medical", "ordinal"],
     ),
 }

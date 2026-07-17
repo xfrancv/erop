@@ -636,6 +636,52 @@ require **torch/torchvision** (unlike the download/analysis tools above).
 
    `--test-prior` overrides all three with an explicit `Y`-vector.
 
+   **Autonomous selection: `--auto-target-prior [N_MIN]`.** Tuning the three
+   knobs by hand is dataset-specific and easy to get wrong (too little
+   evaluation data, or a prior at which the epistemic and total reject-option
+   predictors behave identically). The flag replaces all of them with the
+   search of [`tasks/target_label_prior_selection.md`](tasks/target_label_prior_selection.md)
+   (implemented in `prior_shift/target_prior_search.py`):
+
+   1. **Gate** — for every class pair it predicts, in closed form from the
+      pool posteriors (Fisher information of the mixture likelihood along the
+      pair-split direction), the `ident_ratio` the MCMC diagnostic would
+      report. The prediction is `α`-dependent, so the threshold (ratio ≥ 3)
+      is enforced per candidate prior; the reference-prior ranking only
+      screens which pairs enter the grid. If no feasible candidate is weakly
+      identifiable, no target prior can separate the epistemic and total
+      scores and the script says so instead of searching.
+   2. **Eval-size guarantee** — candidate priors are projected onto the box
+      `α[c] ≤ (N_c − 1)/(n_adapt + N_MIN)`, which makes the auto `n_eval` at
+      least `N_MIN` (default 300) by construction, with no with-replacement
+      resampling.
+   3. **Flip-test scoring** — each candidate (a grid over the pair, its skew
+      and its mass vs. the rest) is scored without MCMC by comparing plugin
+      decisions under the candidate split and its mirror: `E` (prior-sensitive
+      eval mass → epistemic uncertainty), `A` (prior-insensitive high-risk
+      mass → aleatoric decoys), `G` (expected full-coverage regret) and `S`
+      (do decoys out-rank pair examples in total uncertainty). Among
+      candidates with `E ≥ 0.05`, `A ≥ 0.05`, `S ≥ 0.5` the search maximises
+      `G`, relaxing `S`, then `A` if the set is empty (and reporting it).
+   4. **Validation** — the winner is confirmed by 2 short MCMC trials (ident
+      warning fires on the pair, epistemic mass non-negligible, regret-AuRC
+      gap between the total and epistemic rankings beyond trial noise),
+      falling back to the runners-up (3 attempts) on failure.
+
+   The selection report (gate table, candidate scores, chosen prior, and a
+   recommended `n_test` ceiling above which the split posterior concentrates
+   and the epistemic signal fades) is printed and recorded in the saved args
+   file. `--auto-target-prior` is mutually exclusive with `--test-prior`; if
+   the base model failed its calibration-consistency check the search aborts,
+   since the flip test would inherit the same biased posteriors the MCMC
+   does. For ordinal datasets (RetinaMNIST, tagged `ordinal` in the registry)
+   only adjacent-grade pairs are considered.
+
+   ```bash
+   python run_real_reject_option_exp.py runs/blood/model.pt runs/blood --auto-target-prior
+   python run_real_reject_option_exp.py runs/blood/model.pt runs/blood --auto-target-prior 500 --sweep
+   ```
+
    **How the target prior `p` is built** from the base model's training prior
    `p_tr`, the confusable pair `(i, j)`, `--pair-rest-ratio (a, b)` and
    `--pair-ratio (c, d)`:
