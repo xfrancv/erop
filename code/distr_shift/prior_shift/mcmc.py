@@ -24,11 +24,23 @@ With a Dirichlet(beta) prior on theta the log posterior (up to a constant) is
     log p(theta | D) = sum_y (beta_y - 1) log alpha(y)
                      + sum_i log( sum_y R(x_i, y) alpha(y) ) .
 
-This module samples theta from ``p(theta | D)`` with a random-walk
-Metropolis-Hastings chain.  To respect the simplex constraint we reparameterise
-theta with an additive-logistic (softmax) map from an unconstrained
-``z in R^{Y-1}`` and include the change-of-variables Jacobian, so the chain
-targets the correct density on the simplex.
+This module samples theta from ``p(theta | D)`` with one of two chains,
+selected by the ``sampler`` argument of :func:`sample_prior_posterior`:
+
+``"mh"`` (default)
+    Random-walk Metropolis-Hastings.  To respect the simplex constraint we
+    reparameterise theta with an additive-logistic (softmax) map from an
+    unconstrained ``z in R^{Y-1}`` and include the change-of-variables
+    Jacobian, so the chain targets the correct density on the simplex.
+
+``"gibbs"``
+    Latent-variable Gibbs sampler (see
+    'tasks/latent_variable_sampling_dirichlet_posterior_dollar_math.md').
+    Each likelihood term ``sum_y R(x_i, y) alpha(y)`` is the marginal of a
+    latent class ``z_i`` with ``p(z_i = y | alpha) proportional to
+    R(x_i, y) alpha(y)``; conditioned on the latent assignments the posterior
+    of alpha is conjugate, ``alpha | z ~ Dirichlet(beta + counts(z))``.  The
+    sampler alternates the two exact conditionals, so every move is accepted.
 """
 
 from __future__ import annotations
@@ -96,8 +108,16 @@ def sample_prior_posterior(
     thin: int = 5,
     step_size: float = 0.15,
     rng: np.random.Generator | None = None,
+    sampler: str = "mh",
 ) -> MCMCResult:
-    """Run random-walk Metropolis-Hastings for the test prior ``alpha``."""
+    """Sample the test-prior posterior ``p(alpha | D)``.
+
+    ``sampler`` selects the chain: ``"mh"`` runs the random-walk
+    Metropolis-Hastings sampler (default), ``"gibbs"`` the latent-variable
+    Gibbs sampler.  Both target the same posterior; ``step_size`` only
+    applies to ``"mh"`` and is ignored by ``"gibbs"``, whose moves are
+    exact conditional draws (``acceptance_rate`` is reported as 1).
+    """
     if rng is None:
         rng = np.random.default_rng()
 
@@ -108,6 +128,37 @@ def sample_prior_posterior(
 
     # R(x_i, y) = p_tr(y | x_i) / p_tr(y).  Precompute once.
     R = train_posterior / train_prior[None, :]
+
+    if sampler == "gibbs":
+        chain, acceptance_rate = _run_gibbs(R, beta, num_iters, rng)
+    elif sampler == "mh":
+        chain, acceptance_rate = _run_mh(R, beta, num_iters, step_size, rng)
+    else:
+        raise ValueError(f"unknown sampler {sampler!r}; expected 'mh' or 'gibbs'")
+
+    kept = chain[burn_in::thin]
+    posterior_mean = kept.mean(axis=0)
+    # Identifiability diagnostic: posterior std relative to the std of the
+    # label-counting estimator sqrt(alpha(1-alpha)/n) at the same sample size.
+    counting_std = np.sqrt(np.clip(posterior_mean * (1 - posterior_mean), 1e-12, None) / n)
+    return MCMCResult(
+        samples=kept,
+        posterior_mean=posterior_mean,
+        acceptance_rate=acceptance_rate,
+        all_alpha=chain,
+        ident_ratio=kept.std(axis=0) / counting_std,
+    )
+
+
+def _run_mh(
+    R: np.ndarray,
+    beta: np.ndarray,
+    num_iters: int,
+    step_size: float,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, float]:
+    """Random-walk Metropolis-Hastings chain; returns (chain, acceptance rate)."""
+    Y = R.shape[1]
     logR = np.log(np.clip(R, 1e-300, None))
 
     def log_target(z: np.ndarray) -> float:
@@ -136,18 +187,42 @@ def sample_prior_posterior(
             n_accept += 1
         chain[t] = _softmax_last_fixed(z)
 
-    kept = chain[burn_in::thin]
-    posterior_mean = kept.mean(axis=0)
-    # Identifiability diagnostic: posterior std relative to the std of the
-    # label-counting estimator sqrt(alpha(1-alpha)/n) at the same sample size.
-    counting_std = np.sqrt(np.clip(posterior_mean * (1 - posterior_mean), 1e-12, None) / n)
-    return MCMCResult(
-        samples=kept,
-        posterior_mean=posterior_mean,
-        acceptance_rate=n_accept / num_iters,
-        all_alpha=chain,
-        ident_ratio=kept.std(axis=0) / counting_std,
-    )
+    return chain, n_accept / num_iters
+
+
+def _run_gibbs(
+    R: np.ndarray,
+    beta: np.ndarray,
+    num_iters: int,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, float]:
+    """Latent-variable Gibbs chain; returns (chain, acceptance rate = 1).
+
+    Alternates the two exact conditionals
+
+        z_i | alpha  ~ Categorical( R(x_i, y) alpha(y) / sum_k R(x_i, k) alpha(k) )
+        alpha | z    ~ Dirichlet( beta + counts(z) )
+
+    which leave the augmented posterior ``p(alpha, z | D)`` invariant; the
+    marginal over alpha is exactly ``p(alpha | D)``.
+    """
+    n, Y = R.shape
+    alpha = np.full(Y, 1.0 / Y)   # start at the uniform prior, as the MH chain
+    chain = np.empty((num_iters, Y))
+
+    for t in range(num_iters):
+        # Latent assignments: one categorical draw per observation, vectorised
+        # via inverse-CDF sampling on the row-normalised weights R * alpha.
+        W = R * alpha[None, :]
+        cdf = W.cumsum(axis=1)
+        u = rng.random(n) * cdf[:, -1]
+        z = np.minimum((cdf < u[:, None]).sum(axis=1), Y - 1)
+        # Conjugate update of alpha given the class counts.
+        counts = np.bincount(z, minlength=Y)
+        alpha = rng.dirichlet(beta + counts)
+        chain[t] = alpha
+
+    return chain, 1.0
 
 
 def posterior_label_probabilities(

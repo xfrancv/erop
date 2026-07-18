@@ -348,7 +348,8 @@ def run_single_experiment(model, args, master_rng) -> None:
         for t in range(args.trials):
             rng = np.random.default_rng(master_rng.integers(1 << 32))
             res = run_reject_trial(
-                model, args.m_train, args.n_test, args.n_eval, rng)
+                model, args.m_train, args.n_test, args.n_eval, rng,
+                mcmc_kwargs={"sampler": args.sampler})
             for name, (risk, regret) in curves_from_trial(res).items():
                 risk_curves[name][t] = risk
                 regret_curves[name][t] = regret
@@ -652,7 +653,8 @@ def run_sweep_experiment(model, args, master_rng) -> None:
 
             for i, n in enumerate(sizes):
                 mcmc = sample_prior_posterior(
-                    est_post_pool[:n], base.train_prior, rng=rng)
+                    est_post_pool[:n], base.train_prior, rng=rng,
+                    sampler=args.sampler)
                 warned[i, t] = mcmc.identifiability_warning() is not None
 
                 bayes_post, aleatoric = bayesian_posterior_and_aleatoric(
@@ -1038,6 +1040,11 @@ def main() -> None:
     parser.add_argument(
         "--config", type=str, default=str(DEFAULT_CONFIG),
         help="JSON file with the synthetic-generator setting.")
+    parser.add_argument(
+        "--sampler", choices=("mh", "gibbs"), default="mh",
+        help="Posterior sampler for the test prior: random-walk "
+             "Metropolis-Hastings (mh, default) or the latent-variable "
+             "Gibbs sampler (gibbs).")
     args = parser.parse_args()
 
     configure_oracle(args.optimal_rejection)

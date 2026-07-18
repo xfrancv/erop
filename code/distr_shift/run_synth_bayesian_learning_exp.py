@@ -469,7 +469,8 @@ def run_sweep_experiment(model, args, master_rng) -> None:
     """Driver for the accuracy-vs-test-set-size curve."""
     sizes = sorted(args.sizes)
     acc, prior_err, warned = run_size_sweep(
-        model, args.m_train, sizes, args.trials, master_rng, n_eval=args.n_eval
+        model, args.m_train, sizes, args.trials, master_rng, n_eval=args.n_eval,
+        mcmc_kwargs={"sampler": args.sampler},
     )
 
     print("=" * 74)
@@ -528,6 +529,11 @@ def main() -> None:
         "--config", type=str, default=str(DEFAULT_CONFIG),
         help="JSON file with the synthetic-generator setting: Gaussian means "
              "and covariances plus the train/test label priors.")
+    parser.add_argument(
+        "--sampler", choices=("mh", "gibbs"), default="mh",
+        help="Posterior sampler for the test prior: random-walk "
+             "Metropolis-Hastings (mh, default) or the latent-variable "
+             "Gibbs sampler (gibbs).")
     args = parser.parse_args()
 
     cfg = load_experiment_config(args.config)
@@ -569,7 +575,8 @@ def main() -> None:
     bar = _progress(total=args.trials, desc="trials")
     for t in range(args.trials):
         rng = np.random.default_rng(master_rng.integers(1 << 32))
-        res = run_single_trial(model, args.m_train, args.n_test, rng)
+        res = run_single_trial(model, args.m_train, args.n_test, rng,
+                               mcmc_kwargs={"sampler": args.sampler})
         for name, a in res["accuracy"].items():
             accs.setdefault(name, []).append(a)
         prior_errs.append(float(np.abs(res["learned_prior"] - TEST_PRIOR).sum()))

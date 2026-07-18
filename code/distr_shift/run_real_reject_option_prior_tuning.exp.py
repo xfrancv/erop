@@ -240,7 +240,7 @@ def split_adapt_eval(all_idx, y, target_prior, n_adapt, n_eval, rng):
 
 def validate_auto_candidate(P, y, train_prior, cand, n_va, n_eval, loss,
                             master_rng, trials=2, epi_threshold=1e-3,
-                            ident_threshold=3.0):
+                            ident_threshold=3.0, sampler="mh"):
     """Step-4 validation gate of the auto target-prior search.
 
     Runs ``trials`` cheap trials of the real pipeline (adaptation set of
@@ -266,7 +266,8 @@ def validate_auto_candidate(P, y, train_prior, cand, n_va, n_eval, loss,
         rng = np.random.default_rng(master_rng.integers(1 << 32))
         adapt_idx, eval_idx, _short, _absent = split_adapt_eval(
             all_idx, y, cand.alpha, n_va, n_eval, rng)
-        mcmc = sample_prior_posterior(P[adapt_idx], train_prior, rng=rng)
+        mcmc = sample_prior_posterior(P[adapt_idx], train_prior, rng=rng,
+                                      sampler=sampler)
         fired[t] = bool(
             np.any(mcmc.ident_ratio[list(cand.pair)] > ident_threshold))
         post_ev, y_ev = P[eval_idx], y[eval_idx]
@@ -304,7 +305,7 @@ def validate_auto_candidate(P, y, train_prior, cand, n_va, n_eval, loss,
 
 
 def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
-                   epi_threshold=1e-3):
+                   epi_threshold=1e-3, sampler="mh"):
     """One trial: resample a shifted adaptation pool + eval set, run predictors.
 
     ``P`` is the (N, Y) calibrated posterior of the whole labeled pool. The
@@ -323,7 +324,8 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
     y_ev = y[eval_idx]
 
     # Bayesian prior learning from the unlabeled adaptation inputs.
-    mcmc = sample_prior_posterior(post_adapt, train_prior, rng=rng)
+    mcmc = sample_prior_posterior(post_adapt, train_prior, rng=rng,
+                                  sampler=sampler)
     supervised_prior = np.bincount(y[adapt_idx], minlength=Y).astype(float)
     supervised_prior /= supervised_prior.sum()
 
@@ -382,7 +384,7 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
 
 def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
               master_rng, epi_threshold, risk_targets=None,
-              regret_targets=(0.002,)):
+              regret_targets=(0.002,), sampler="mh"):
     """AuRC and epistemic metrics as a function of the adaptation-set size.
 
     Per trial the adaptation pool of size ``max(sizes)`` is drawn first at the
@@ -436,7 +438,7 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
             for i, n in enumerate(sizes):
                 adapt_idx = pool_idx[:n]
                 mcmc = sample_prior_posterior(
-                    P[adapt_idx], train_prior, rng=rng)
+                    P[adapt_idx], train_prior, rng=rng, sampler=sampler)
                 warned[i, t] = mcmc.identifiability_warning() is not None
 
                 bayes_post, aleatoric = bayesian_posterior_and_aleatoric(
@@ -537,7 +539,7 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
      cov_risk, cov_regret, risk_curves, regret_curves, base_acc) = run_sweep(
         P, y_pool, train_prior, target_prior, sizes, args.trials,
         args.n_eval, loss, master_rng, args.epi_threshold,
-        args.risk_target, args.regret_target)
+        args.risk_target, args.regret_target, sampler=args.sampler)
 
     # Generalized curves and their areas: a rescaling of the selective curves by
     # the coverage, so no re-ranking is needed.
@@ -727,6 +729,11 @@ def main() -> None:
                              "classes (B/(A+B)); the rest is spread "
                              "proportionally to the training prior. Default: "
                              "keep the pair's training combined mass.")
+    parser.add_argument(
+        "--sampler", choices=("mh", "gibbs"), default="mh",
+        help="Posterior sampler for the test prior: random-walk "
+             "Metropolis-Hastings (mh, default) or the latent-variable "
+             "Gibbs sampler (gibbs).")
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
@@ -844,7 +851,7 @@ def main() -> None:
             ok, val_lines = validate_auto_candidate(
                 P, y_pool, train_prior, cand, n_va,
                 min(cand.n_eval, 2000), loss, gate_rng,
-                epi_threshold=args.epi_threshold)
+                epi_threshold=args.epi_threshold, sampler=args.sampler)
             print("\n".join(val_lines))
             if ok:
                 chosen = cand
@@ -960,7 +967,8 @@ def main() -> None:
             rng = np.random.default_rng(master_rng.integers(1 << 32))
             res = run_real_trial(P, y_pool, train_prior, target_prior,
                                  args.n_test, args.n_eval, loss, rng,
-                                 epi_threshold=args.epi_threshold)
+                                 epi_threshold=args.epi_threshold,
+                                 sampler=args.sampler)
             for name, (h, u) in res["predictors"].items():
                 risk, regret = selective_curves(
                     res["loss"][h, res["y_ev"]], res["losses_ref"], u)
