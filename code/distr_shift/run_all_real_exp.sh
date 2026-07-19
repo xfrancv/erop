@@ -56,11 +56,11 @@ run_bloodmnist() {
 
     run bloodmnist --pair-ratio 1 1 --pair-rest-ratio 1 1
 
-    run bloodmnist --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 10
+    run bloodmnist --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 100
 
     run bloodmnist --test-prior 0.45 0.01 0.01 0.25 0.01 0.01 0.25 0.01 
 
-    run bloodmnist --test-prior 0.45 0.01 0.01 0.25 0.01 0.01 0.25 0.01 --dirichlet 10
+    run bloodmnist --test-prior 0.45 0.01 0.01 0.25 0.01 0.01 0.25 0.01 --dirichlet 100
 }
 
 
@@ -69,11 +69,11 @@ run_cifar10() {
 
     run cifar10 --pair-ratio 1 1 --pair-rest-ratio 1 1
 
-    run cifar10 --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 10
+    run cifar10 --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 100
 
     run cifar10 --test-prior 0.43 0.01 0.01 0.25 0.01 0.25 0.01 0.01 0.01 0.01
 
-    run cifar10 --test-prior 0.43 0.01 0.01 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 10
+    run cifar10 --test-prior 0.43 0.01 0.01 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 100
 }
 
 
@@ -82,11 +82,11 @@ run_dermamnist() {
 
     run dermamnist --pair-ratio 1 1 --pair-rest-ratio 1 1
 
-    run dermamnist --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 10
+    run dermamnist --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 100
 
     run dermamnist --test-prior 0.01 0.01 0.46 0.01 0.25 0.25 0.01
 
-    run dermamnist --test-prior 0.01 0.01 0.46 0.01 0.25 0.25 0.01 --dirichlet 10
+    run dermamnist --test-prior 0.01 0.01 0.46 0.01 0.25 0.25 0.01 --dirichlet 100
 }
 
 run_fashion_mnist() {
@@ -94,11 +94,11 @@ run_fashion_mnist() {
 
     run fashion_mnist --pair-ratio 1 1 --pair-rest-ratio 1 1
 
-    run fashion_mnist --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 10
+    run fashion_mnist --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 100
 
     run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01
 
-    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 10
+    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 100
 }
 
 
@@ -107,7 +107,11 @@ run_cifar100() {
 
     run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 3
 
-    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 3 --dirichlet 10
+    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 3 --dirichlet 1000
+
+    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 5
+
+    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 5 --dirichlet 1000
     
 }
 
