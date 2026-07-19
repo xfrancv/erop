@@ -297,7 +297,7 @@ def split_adapt_eval(all_idx, y, target_prior, n_adapt, n_eval, rng):
 
 
 def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
-                   epi_threshold=1e-3, sampler="mh"):
+                   epi_threshold=1e-3, sampler="mh", beta=None):
     """One trial: resample a shifted adaptation pool + eval set, run predictors.
 
     ``P`` is the (N, Y) calibrated posterior of the whole labeled pool. The
@@ -317,7 +317,7 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
 
     # Bayesian prior learning from the unlabeled adaptation inputs.
     mcmc = sample_prior_posterior(post_adapt, train_prior, rng=rng,
-                                  sampler=sampler)
+                                  sampler=sampler, beta=beta)
     supervised_prior = np.bincount(y[adapt_idx], minlength=Y).astype(float)
     supervised_prior /= supervised_prior.sum()
 
@@ -376,7 +376,7 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
 
 def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
               master_rng, epi_threshold, risk_targets=None,
-              regret_targets=(0.002,), sampler="mh"):
+              regret_targets=(0.002,), sampler="mh", beta=None):
     """AuRC and epistemic metrics as a function of the adaptation-set size.
 
     Per trial the adaptation pool of size ``max(sizes)`` is drawn first at the
@@ -430,7 +430,8 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
             for i, n in enumerate(sizes):
                 adapt_idx = pool_idx[:n]
                 mcmc = sample_prior_posterior(
-                    P[adapt_idx], train_prior, rng=rng, sampler=sampler)
+                    P[adapt_idx], train_prior, rng=rng, sampler=sampler,
+                    beta=beta)
                 warned[i, t] = mcmc.identifiability_warning() is not None
 
                 bayes_post, aleatoric = bayesian_posterior_and_aleatoric(
@@ -531,7 +532,8 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
      cov_risk, cov_regret, risk_curves, regret_curves, base_acc) = run_sweep(
         P, y_pool, train_prior, target_prior, sizes, args.trials,
         args.n_eval, loss, master_rng, args.epi_threshold,
-        args.risk_target, args.regret_target, sampler=args.sampler)
+        args.risk_target, args.regret_target, sampler=args.sampler,
+        beta=args.beta)
 
     # Generalized curves and their areas: a rescaling of the selective curves by
     # the coverage, so no re-ranking is needed.
@@ -554,6 +556,7 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
         *calibration_lines(bundle, class_names),
         f"pool size    : {len(y_pool)}   trials {args.trials}   "
         f"n_eval {args.n_eval}   sizes {sizes}",
+        f"prior beta   : {args.beta:g} per class (symmetric Dirichlet)",
         conf_line,
         f"train prior  : {np.array2string(train_prior, precision=3)}",
         f"target prior : {np.array2string(target_prior, precision=3)}",
@@ -714,6 +717,15 @@ def main() -> None:
                              "proportionally to the training prior. Default: "
                              "keep the pair's training combined mass.")
     parser.add_argument(
+        "--beta", type=float, default=1.0,
+        help="Per-class concentration of the symmetric Dirichlet prior on the "
+             "test prior (default 1). With many classes the default carries Y "
+             "pseudo-counts and overwhelms small unlabeled samples, so the "
+             "posterior hugs the near-uniform prior and the epistemic "
+             "uncertainty underestimates the true regret; values < 1 spread "
+             "the prior over skewed priors instead, but their spiky draws "
+             "degrade the Bayesian point decision at small n.")
+    parser.add_argument(
         "--sampler", choices=("mh", "gibbs"), default="mh",
         help="Posterior sampler for the test prior: random-walk "
              "Metropolis-Hastings (mh, default) or the latent-variable "
@@ -740,6 +752,9 @@ def main() -> None:
     train_prior = np.asarray(bundle["train_prior"], dtype=float)
     loss = zero_one_loss_matrix(Y)
     class_names = bundle["class_names"]
+
+    if args.beta <= 0:
+        sys.exit("error: --beta must be positive")
 
     for line in calibration_lines(bundle, bundle["class_names"]):
         print(line)
@@ -876,7 +891,7 @@ def main() -> None:
             res = run_real_trial(P, y_pool, train_prior, target_prior,
                                  args.n_test, args.n_eval, loss, rng,
                                  epi_threshold=args.epi_threshold,
-                                 sampler=args.sampler)
+                                 sampler=args.sampler, beta=args.beta)
             for name, (h, u) in res["predictors"].items():
                 risk, regret = selective_curves(
                     res["loss"][h, res["y_ev"]], res["losses_ref"], u)
@@ -931,6 +946,7 @@ def main() -> None:
         *calibration_lines(bundle, class_names),
         f"pool size    : {len(y_pool)}   trials {args.trials}   "
         f"n_test {args.n_test}   n_eval {args.n_eval}",
+        f"prior beta   : {args.beta:g} per class (symmetric Dirichlet)",
         conf_line,
         f"train prior  : {np.array2string(train_prior, precision=3)}",
         f"target prior : {np.array2string(target_prior, precision=3)}",

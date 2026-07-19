@@ -117,6 +117,13 @@ def sample_prior_posterior(
     Gibbs sampler.  Both target the same posterior; ``step_size`` only
     applies to ``"mh"`` and is ignored by ``"gibbs"``, whose moves are
     exact conditional draws (``acceptance_rate`` is reported as 1).
+
+    ``beta`` is the Dirichlet concentration: a (Y,) vector, or a scalar for a
+    symmetric Dirichlet(beta, ..., beta).  Default: Dirichlet(1).  Note that
+    the total pseudo-count is ``sum(beta)``, so with many classes Dirichlet(1)
+    is far from uninformative — its per-class marginal Beta(1, Y-1) all but
+    rules out a single class carrying large mass, and it overwhelms the
+    likelihood of small unlabeled samples.
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -125,6 +132,8 @@ def sample_prior_posterior(
     if beta is None:
         beta = np.ones(Y)
     beta = np.asarray(beta, dtype=float)
+    if beta.ndim == 0:
+        beta = np.full(Y, float(beta))
 
     # R(x_i, y) = p_tr(y | x_i) / p_tr(y).  Precompute once.
     R = train_posterior / train_prior[None, :]
