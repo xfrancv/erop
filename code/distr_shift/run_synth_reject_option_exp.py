@@ -81,6 +81,37 @@ def configure_oracle(enabled: bool) -> None:
         REJECT_COLORS.pop("oracle", None)
 
 
+# Replicate-axis aggregation used by every figure builder: how the shaded band
+# is computed from the replicate axis and how titles describe it. The default
+# reproduces the historical behaviour (s.e.m. over trials); the real-data
+# dirichlet mode switches to std over sampled priors via
+# ``configure_aggregation`` (the ``{reps}`` placeholder receives the replicate
+# count the figure was given).
+_AGG_BAND = "sem"
+_AGG_DESC = "mean ± s.e.m., {reps} trials"
+
+
+def configure_aggregation(band: str = "sem",
+                          desc: str = "mean ± s.e.m., {reps} trials") -> None:
+    """Set the figures' replicate-axis band ('sem' or 'std') and title text."""
+    global _AGG_BAND, _AGG_DESC
+    if band not in ("sem", "std"):
+        raise ValueError(f"band must be 'sem' or 'std', got {band!r}")
+    _AGG_BAND, _AGG_DESC = band, desc
+
+
+def _band(arr: np.ndarray, axis: int, reps: int) -> np.ndarray:
+    """Half-width of the shaded band along the replicate axis."""
+    s = arr.std(axis=axis)
+    return s / np.sqrt(reps) if _AGG_BAND == "sem" else s
+
+
+def _agg_desc(reps: int) -> str:
+    """Title fragment describing the aggregation, e.g. 'mean ± s.e.m., 10
+    trials'."""
+    return _AGG_DESC.format(reps=reps)
+
+
 def bayesian_posterior_and_aleatoric(
     train_posterior: np.ndarray,   # (n, Y) = p_tr(y | x)
     train_prior: np.ndarray,       # (Y,)
@@ -502,7 +533,7 @@ def make_curve_figures(
         fig, ax = plt.subplots(figsize=(8, 5))
         for name in REJECT_LABELS:
             mean = curves[name].mean(axis=0)
-            sem = curves[name].std(axis=0) / np.sqrt(trials)
+            sem = _band(curves[name], 0, trials)
             label = (f"{REJECT_LABELS[name]}  "
                      f"({area_label} {aurc[name].mean():.4f} ± "
                      f"{aurc[name].std():.4f})")
@@ -514,7 +545,7 @@ def make_curve_figures(
         ax.set_xlabel("coverage")
         ax.set_ylabel(metric)
         ax.set_title(f"{metric.capitalize()}-coverage curve "
-                     f"(mean ± s.e.m., {trials} trials)")
+                     f"({_agg_desc(trials)})")
         ax.legend(fontsize=8, loc="upper left")
         ax.grid(True, alpha=0.25)
         fig.tight_layout()
@@ -567,7 +598,7 @@ def make_curves_at_n_figure(
     ):
         for name in REJECT_LABELS:
             mean = curves[name].mean(axis=0)
-            sem = curves[name].std(axis=0) / np.sqrt(trials)
+            sem = _band(curves[name], 0, trials)
             area = curves[name].mean(axis=1)     # per-trial area
             ax.plot(coverage, mean, lw=1.8, color=REJECT_COLORS[name],
                     label=f"{REJECT_LABELS[name]}  "
@@ -584,7 +615,7 @@ def make_curves_at_n_figure(
         ax.grid(True, alpha=0.25)
 
     fig.suptitle(f"{suptitle_prefix} at n_test = {n_test} "
-                 f"(mean ± s.e.m., {trials} trials)")
+                 f"({_agg_desc(trials)})")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     sub = Path(out_dir) / "coverage_curves"
     sub.mkdir(parents=True, exist_ok=True)
@@ -821,7 +852,7 @@ def make_sweep_figure(
     ):
         for name in REJECT_LABELS:
             mean = aurc[name].mean(axis=1)
-            sem = aurc[name].std(axis=1) / np.sqrt(trials)
+            sem = _band(aurc[name], 1, trials)
             ax.plot(x, mean, lw=1.8, marker="o", color=REJECT_COLORS[name],
                     label=REJECT_LABELS[name])
             ax.fill_between(x, mean - sem, mean + sem,
@@ -833,7 +864,7 @@ def make_sweep_figure(
         ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
         ax.set_xlabel("number of unlabeled adaptation examples $n$")
         ax.set_ylabel(ylabel)
-        ax.set_title(f"{metric} vs. test-set size (mean ± s.e.m., {trials} trials)")
+        ax.set_title(f"{metric} vs. test-set size ({_agg_desc(trials)})")
         ax.legend(fontsize=8)
         ax.grid(True, which="both", alpha=0.25)
 
@@ -905,7 +936,7 @@ def make_epistemic_metrics_figure(
         (0, "average epistemic uncertainty", "C2"),
     ):
         mean = epi_metrics[:, :, col].mean(axis=1)
-        sem = epi_metrics[:, :, col].std(axis=1) / np.sqrt(trials)
+        sem = _band(epi_metrics[:, :, col], 1, trials)
         ax.plot(x, mean, lw=1.8, marker="o", color=color, label=label)
         ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.2)
     ax.axhline(0.0, color="0.4", ls="--", lw=1)
@@ -915,7 +946,7 @@ def make_epistemic_metrics_figure(
     # ---- Panel 2: portion with negligible epistemic uncertainty ----
     ax = axes[1]
     mean = epi_metrics[:, :, 2].mean(axis=1)
-    sem = epi_metrics[:, :, 2].std(axis=1) / np.sqrt(trials)
+    sem = _band(epi_metrics[:, :, 2], 1, trials)
     ax.plot(x, mean, lw=1.8, marker="o", color="C0")
     ax.fill_between(x, mean - sem, mean + sem, color="C0", alpha=0.2)
     ax.set_ylim(-0.02, 1.02)
@@ -929,7 +960,7 @@ def make_epistemic_metrics_figure(
         ax.grid(True, which="both", alpha=0.25)
 
     fig.suptitle("Epistemic-uncertainty metrics of the Bayesian predictor "
-                 f"(mean ± s.e.m., {trials} trials)")
+                 f"({_agg_desc(trials)})")
     fig.tight_layout()
     fig.savefig(f"{out_dir}/epistemic_metrics_vs_n_test.png", dpi=130)
     plt.close(fig)
@@ -965,7 +996,7 @@ def make_cov_target_figure(
                 continue
             for name in REJECT_LABELS:
                 mean = covs[c][name].mean(axis=1)
-                sem = covs[c][name].std(axis=1) / np.sqrt(trials)
+                sem = _band(covs[c][name], 1, trials)
                 ax.plot(x, mean, lw=1.8, marker="o", color=REJECT_COLORS[name],
                         label=REJECT_LABELS[name])
                 ax.fill_between(x, mean - sem, mean + sem,
@@ -981,7 +1012,7 @@ def make_cov_target_figure(
             ax.grid(True, which="both", alpha=0.25)
 
     fig.suptitle("Coverage at target vs. test-set size "
-                 f"(mean ± s.e.m., {trials} trials)")
+                 f"({_agg_desc(trials)})")
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     fig.savefig(f"{out_dir}/cov_at_target_vs_n_test.png", dpi=130)
     plt.close(fig)
