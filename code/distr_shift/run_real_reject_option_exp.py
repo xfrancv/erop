@@ -238,6 +238,38 @@ def default_target_prior(train_prior, pair_idx, pair_ratio=(1.0, 7.0),
     return p
 
 
+def target_prior_from_weights(Y, classes, weights, rest_weight):
+    """Target prior from a subset of classes, their weights, and a fallback.
+
+    ``classes`` and ``weights`` are positionally aligned sequences of length
+    ``k <= Y``; every class *not* named in ``classes`` gets ``rest_weight``
+    individually (a per-class weight, not a total mass to share, so the
+    unnamed classes are always equiprobable among themselves). The result is
+    the normalised weight vector
+
+        p(c) = w(c) / sum_c' w(c'),
+
+    with ``w(c) = weights[i]`` where ``c == classes[i]``, else ``rest_weight``.
+    With ``k == Y`` no class is unnamed and ``rest_weight`` is unused.
+
+    Validation of the arguments happens at the call site (argument parsing),
+    which owns the error messages; this only assumes them well formed.
+    """
+    w = np.full(Y, float(rest_weight if rest_weight is not None else 0.0))
+    w[np.asarray(classes, dtype=int)] = np.asarray(weights, dtype=float)
+    return w / w.sum()
+
+
+def class_weights_report_line(classes, weights, rest_weight, class_names):
+    """Report line describing a target prior built from class weights."""
+    named = ", ".join(f"{class_names[c]}={w:g}"
+                      for c, w in zip(classes, weights))
+    if rest_weight is None or len(classes) == len(class_names):
+        return f"target prior : class weights  {named} (all classes named)"
+    return (f"target prior : class weights  {named}, "
+            f"rest={rest_weight:g} (per class)")
+
+
 def target_counts(m, target_prior):
     """Per-class integer counts for an ``m``-sample draw at ``target_prior``.
 
@@ -1200,9 +1232,27 @@ def main() -> None:
                         help="Explicit target test prior (Y floats, summing to "
                              "1). Default: train prior with the confusable pair "
                              "skewed asymmetrically.")
-    parser.add_argument("--pair-ratio", type=float, nargs=2, default=(1.0, 7.0),
+    parser.add_argument("--pair-ratio", type=float, nargs=2, default=None,
                         help="Asymmetric split of the confusable pair's mass "
                              "between its two classes (default 1 7).")
+    parser.add_argument("--prior-classes", type=int, nargs="+", default=None,
+                        metavar="Y",
+                        help="0-based class indices whose target-prior weights "
+                             "are given by --prior-weights; every class not "
+                             "listed gets --prior-rest-weight. Distinct, in "
+                             "[0, Y). Conflicts with --test-prior and the "
+                             "confusable-pair flags.")
+    parser.add_argument("--prior-weights", type=float, nargs="+", default=None,
+                        metavar="W",
+                        help="Non-negative weights aligned positionally with "
+                             "--prior-classes. Relative, not probabilities: "
+                             "the full weight vector is normalised to sum 1.")
+    parser.add_argument("--prior-rest-weight", type=float, default=None,
+                        metavar="R",
+                        help="Per-class weight of every class not named by "
+                             "--prior-classes (so they stay equiprobable among "
+                             "themselves). Required unless --prior-classes "
+                             "names all Y classes.")
     parser.add_argument("--confusable-pair", type=int, nargs=2, default=None,
                         metavar=("I", "J"),
                         help="Two 0-based class indices to treat as the "
@@ -1251,6 +1301,33 @@ def main() -> None:
     args = parser.parse_args()
 
     configure_oracle(args.optimal_rejection)
+
+    # The three target-prior strategies are mutually exclusive. Membership is
+    # decided by what was *explicitly passed*, never by the parsed value:
+    # --pair-ratio carries a default and --confusable-pair falls back to the
+    # registry, so a value-based test would flag a conflict on every dataset
+    # with a registry pair. Hence the None sentinel on --pair-ratio,
+    # substituted once the check is done. Checked here, before the model is
+    # loaded, so a flag clash fails immediately rather than a minute in.
+    pair_flags = [f for f, v in (("--confusable-pair", args.confusable_pair),
+                                 ("--pair-ratio", args.pair_ratio),
+                                 ("--pair-rest-ratio", args.pair_rest_ratio))
+                  if v is not None]
+    weight_flags = [f for f, v in (("--prior-classes", args.prior_classes),
+                                   ("--prior-weights", args.prior_weights),
+                                   ("--prior-rest-weight",
+                                    args.prior_rest_weight))
+                    if v is not None]
+    strategies = [g for g in (pair_flags,
+                              ["--test-prior"] if args.test_prior is not None
+                              else [],
+                              weight_flags) if g]
+    if len(strategies) > 1:
+        clash = " and ".join(", ".join(g) for g in strategies)
+        sys.exit(f"error: {clash} are different ways to build the target "
+                 "prior; pass only one strategy")
+    if args.pair_ratio is None:
+        args.pair_ratio = (1.0, 7.0)
 
     dirichlet_mode = args.dirichlet is not None
     if args.trials_prior is not None and not dirichlet_mode:
@@ -1322,12 +1399,47 @@ def main() -> None:
                      "dataset has no registry pair; pass --confusable-pair too")
 
     if args.test_prior is not None:
-        if args.confusable_pair is not None or args.pair_rest_ratio is not None:
-            print("warning: --test-prior overrides --confusable-pair / "
-                  "--pair-rest-ratio / --pair-ratio")
         target_prior = np.asarray(args.test_prior, dtype=float)
         if len(target_prior) != Y or not np.isclose(target_prior.sum(), 1.0):
             sys.exit(f"error: --test-prior must be {Y} floats summing to 1")
+    elif weight_flags:
+        if args.prior_classes is None or args.prior_weights is None:
+            sys.exit("error: --prior-classes and --prior-weights must be given "
+                     "together")
+        k = len(args.prior_classes)
+        if len(args.prior_weights) != k:
+            sys.exit(f"error: --prior-classes has {k} entries but "
+                     f"--prior-weights has {len(args.prior_weights)}; they are "
+                     "aligned positionally and must match")
+        bad = [c for c in args.prior_classes if not 0 <= c < Y]
+        if bad:
+            sys.exit(f"error: --prior-classes entries must be in [0, {Y}), got "
+                     f"{bad}")
+        if len(set(args.prior_classes)) != k:
+            sys.exit("error: --prior-classes must not repeat a class index")
+        if any(w < 0 for w in args.prior_weights):
+            sys.exit("error: --prior-weights must be non-negative")
+        if args.prior_rest_weight is not None and args.prior_rest_weight < 0:
+            sys.exit("error: --prior-rest-weight must be non-negative")
+        if k < Y and args.prior_rest_weight is None:
+            sys.exit(f"error: --prior-classes names {k} of {Y} classes, so "
+                     "--prior-rest-weight is required for the remaining "
+                     f"{Y - k}")
+        if k == Y and args.prior_rest_weight is not None:
+            print("warning: --prior-classes names every class, so "
+                  "--prior-rest-weight is ignored")
+        total = sum(args.prior_weights) + (Y - k) * (args.prior_rest_weight
+                                                     if k < Y else 0.0)
+        if total <= 0:
+            sys.exit("error: the --prior-weights / --prior-rest-weight weights "
+                     "are all zero, so the target prior is undefined")
+        target_prior = target_prior_from_weights(
+            Y, args.prior_classes, args.prior_weights,
+            args.prior_rest_weight if k < Y else None)
+        zero = [class_names[c] for c in np.flatnonzero(target_prior <= 0)]
+        if zero:
+            print(f"warning: zero weight on {', '.join(zero)}; "
+                  "absent from the adaptation and evaluation sets")
     else:
         target_prior = default_target_prior(
             train_prior, pair_idx, args.pair_ratio, args.pair_rest_ratio)
@@ -1341,7 +1453,15 @@ def main() -> None:
                 print("warning: --pair-rest-ratio puts zero mass on the pair; "
                       "the confusable pair will be absent from the eval set")
 
-    conf_line = confusable_report_line(pair_idx, class_names, pair_source)
+    if weight_flags:
+        # The confusable pair plays no part in a class-weights prior, so name
+        # the weights instead; pair_idx stays resolved for the other reports.
+        conf_line = class_weights_report_line(
+            args.prior_classes, args.prior_weights,
+            args.prior_rest_weight if len(args.prior_classes) < Y else None,
+            class_names)
+    else:
+        conf_line = confusable_report_line(pair_idx, class_names, pair_source)
     print(conf_line)
 
     # --- model prior (dirichlet mode) ---------------------------------------
@@ -1355,7 +1475,8 @@ def main() -> None:
                              for c in np.flatnonzero(target_prior <= 0))
             sys.exit("error: --dirichlet needs positive central mass on every "
                      f"class, but these have none: {zero}. Adjust "
-                     "--test-prior / --pair-rest-ratio.")
+                     "--test-prior / --pair-rest-ratio / --prior-weights / "
+                     "--prior-rest-weight.")
         if args.beta is None:
             model_beta = args.dirichlet * target_prior
         else:
