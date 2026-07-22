@@ -41,6 +41,7 @@ from prior_shift import (
     GaussianClassConditionalModel,
     bayes_decision,
     corrected_posterior,
+    estimate_prior_em,
     load_experiment_config,
     sample_prior_posterior,
     zero_one_loss_matrix,
@@ -57,11 +58,13 @@ TEST_PRIOR = np.array([0.60, 0.20, 0.15, 0.05])
 REJECT_LABELS = {
     "bayes_total": "Bayesian, total uncertainty",
     "bayes_epistemic": "Bayesian, epistemic uncertainty",
+    "em_plugin": "EM plugin (learned prior)",
     "oracle": "Oracle (best attainable)",
 }
 REJECT_COLORS = {
     "bayes_total": "C1",
     "bayes_epistemic": "C2",
+    "em_plugin": "C3",
     "oracle": "C7",
 }
 
@@ -138,6 +141,28 @@ def bayesian_posterior_and_aleatoric(
         acc_alea += (w @ loss.T).min(axis=1)
     S = len(alpha_samples)
     return acc_post / S, acc_alea / S
+
+
+def em_plugin_predictor(
+    post_adapt: np.ndarray,   # (m, Y) = p_tr(y | x) of the unlabeled adaptation inputs
+    post_eval: np.ndarray,    # (n, Y) = p_tr(y | x) of the evaluation inputs
+    train_prior: np.ndarray,  # (Y,)
+    loss: np.ndarray,         # (Y, Y) with loss[yhat, y]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """EM-plugin reject-option predictor ``(h_em, u_em, em_prior)``.
+
+    Estimates the test prior by EM on the unlabeled adaptation posteriors (the
+    MLE point estimate; no Dirichlet regularisation), forms the plugin
+    label-shift posterior ``q_em`` on the evaluation set, and returns the Bayes
+    decision ``h_em`` and its conditional-Bayes-risk uncertainty ``u_em =
+    min_yhat sum_y q_em(y|x) loss[yhat, y]``. Being a point estimate it has no
+    epistemic component (total == aleatoric), so it contributes one curve. The
+    learned prior is returned too, for the accuracy-vs-n reporting.
+    """
+    em_prior = estimate_prior_em(post_adapt, train_prior)
+    q_em = corrected_posterior(post_eval, train_prior, em_prior)
+    cond_risk = q_em @ loss.T
+    return cond_risk.argmin(axis=1), cond_risk.min(axis=1), em_prior
 
 
 def epistemic_metrics(
@@ -325,9 +350,14 @@ def run_reject_trial(
         corrected_posterior(est_post_ev, base.train_prior, TEST_PRIOR), loss)
     losses_ref = loss[h_true, y_ev]
 
+    # EM-plugin baseline: MLE test prior + plugin Bayes reject-option predictor.
+    h_em, u_em, _em_prior = em_plugin_predictor(
+        est_post_te, est_post_ev, base.train_prior, loss)
+
     predictors = {
         "bayes_total": (h_bayes, total),
         "bayes_epistemic": (h_bayes, total - aleatoric),
+        "em_plugin": (h_em, u_em),
     }
 
     acc = {name: accuracy(h, y_ev) for name, (h, _) in predictors.items()}
@@ -694,9 +724,13 @@ def run_sweep_experiment(model, args, master_rng) -> None:
                 h_bayes = cond_risk_bayes.argmin(axis=1)
                 total = cond_risk_bayes.min(axis=1)
 
+                h_em, u_em, _em_prior = em_plugin_predictor(
+                    est_post_pool[:n], est_post_ev, base.train_prior, loss)
+
                 predictors = {
                     "bayes_total": (h_bayes, total),
                     "bayes_epistemic": (h_bayes, total - aleatoric),
+                    "em_plugin": (h_em, u_em),
                 }
                 # Score each predictor, then the oracle envelope (whose risk
                 # and regret curves use separate, metric-specific rankings).
