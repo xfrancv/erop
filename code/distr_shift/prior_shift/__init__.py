@@ -3,7 +3,6 @@
 from .base_model import BaseModel
 from .config import ExperimentConfig, load_experiment_config
 from .data import GaussianClassConditionalModel
-from .em import estimate_prior_em
 from .mcmc import (
     MCMCResult,
     posterior_label_probabilities,
@@ -24,7 +23,6 @@ __all__ = [
     "ExperimentConfig",
     "load_experiment_config",
     "GaussianClassConditionalModel",
-    "estimate_prior_em",
     "MCMCResult",
     "sample_prior_posterior",
     "posterior_label_probabilities",

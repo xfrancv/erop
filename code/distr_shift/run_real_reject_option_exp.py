@@ -90,7 +90,6 @@ from run_synth_reject_option_exp import (
     configure_aggregation,
     configure_oracle,
     coverage_at_target,
-    em_plugin_predictor,
     epistemic_metrics,
     generalize_curve,
     make_cov_target_figure,
@@ -112,7 +111,6 @@ from run_synth_reject_option_exp import (
 PREDICTOR_LABELS = {
     "plugin_true_test_prior": "Plugin, true test prior (oracle)",
     "plugin_supervised_prior": "Plugin, supervised prior estimate",
-    "plugin_em_prior": "Plugin, EM-learned prior (EM baseline)",
     "bayes_learned_prior": "Bayesian, learned prior (proposed)",
     "plugin_train_prior": "Plugin, training prior (no adaptation)",
 }
@@ -402,10 +400,6 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
     cond_risk_sup = post_sup @ loss.T
     h_sup = cond_risk_sup.argmin(axis=1)
 
-    # EM-plugin baseline: MLE test prior from the unlabeled adaptation inputs.
-    h_em, u_em, _em_prior = em_plugin_predictor(
-        post_adapt, post_ev, train_prior, loss)
-
     # Regret reference: plugin given the true (target) test prior.
     h_true = bayes_decision(
         corrected_posterior(post_ev, train_prior, target_prior), loss)
@@ -414,7 +408,6 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
     predictors = {
         "bayes_total": (h_bayes, total),
         "bayes_epistemic": (h_bayes, total - aleatoric),
-        "em_plugin": (h_em, u_em),
     }
     # Oracle envelope: risk ranked by actual loss, regret by actual regret.
     oracle = (oracle_curves(loss[h_bayes, y_ev], losses_ref)
@@ -429,7 +422,6 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
                 corrected_posterior(post_ev, train_prior, train_prior), loss), y_ev),
         "plugin_true_test_prior": accuracy(h_true, y_ev),
         "plugin_supervised_prior": accuracy(h_sup, y_ev),
-        "plugin_em_prior": accuracy(h_em, y_ev),
         "bayes_learned_prior": accuracy(h_bayes, y_ev),
     }
 
@@ -493,8 +485,7 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
     # true-prior plugin does not use the adaptation examples, so it is constant
     # in n (flat curve); the other two adapt from the n examples.
     base_acc = {k: np.zeros((len(sizes), trials))
-                for k in ("bayes_learned", "plugin_true", "plugin_supervised",
-                          "em_plugin")}
+                for k in ("bayes_learned", "plugin_true", "plugin_supervised")}
     short_adapt: set[int] = set()
     short_eval: set[int] = set()
     realized_n = np.zeros((len(sizes), trials), dtype=int)
@@ -542,18 +533,13 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                 cond_risk_sup = post_sup @ loss.T
                 h_sup = cond_risk_sup.argmin(axis=1)
 
-                h_em, u_em, _em_prior = em_plugin_predictor(
-                    P[adapt_idx], post_ev, train_prior, loss)
-
                 base_acc["bayes_learned"][i, t] = accuracy(h_bayes, y_ev)
                 base_acc["plugin_supervised"][i, t] = accuracy(h_sup, y_ev)
                 base_acc["plugin_true"][i, t] = acc_true
-                base_acc["em_plugin"][i, t] = accuracy(h_em, y_ev)
 
                 predictors = {
                     "bayes_total": (h_bayes, total),
                     "bayes_epistemic": (h_bayes, total - aleatoric),
-                    "em_plugin": (h_em, u_em),
                 }
                 curve_set = {
                     name: selective_curves(loss[h, y_ev], losses_ref, u)
@@ -584,11 +570,11 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
 def make_base_accuracy_figure(
     sizes: list[int], base_acc: dict, trials: int, out_dir: str,
 ) -> None:
-    """Base-predictor accuracy vs. the adaptation-set size, for the four
-    predictors: Bayesian learned prior, EM-plugin learned prior, plugin with
-    the true (target) prior, and plugin with the supervised prior estimate.
-    Each is a (len(sizes), trials) array; the true-prior plugin is flat in n
-    (drawn as a curve for direct comparison)."""
+    """Base-predictor accuracy vs. the adaptation-set size, for the three
+    predictors: Bayesian learned prior, plugin with the true (target) prior,
+    and plugin with the supervised prior estimate. Each is a (len(sizes),
+    trials) array; the true-prior plugin is flat in n (drawn as a curve for
+    direct comparison)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -597,7 +583,6 @@ def make_base_accuracy_figure(
     fig, ax = plt.subplots(figsize=(8.5, 5))
     style = (
         ("bayes_learned", "Bayesian, learned prior", "C1", "o", "-"),
-        ("em_plugin", "Plugin, EM-learned prior", "C3", "^", "-"),
         ("plugin_supervised", "Plugin, supervised prior estimate", "C4", "s", "-"),
         ("plugin_true", "Plugin, true test prior (oracle)", "C0", None, "--"),
     )
@@ -901,7 +886,7 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
     regret_curves_d = {n: np.zeros((S, N, args.n_eval)) for n in names}
     base_acc_d = {k: np.zeros((S, N))
                   for k in ("bayes_learned", "plugin_true",
-                            "plugin_supervised", "em_plugin")}
+                            "plugin_supervised")}
     realized_d = np.zeros((S, N))
     short_eval_all: set[int] = set()
     alphas = np.zeros((N, len(central_prior)))
