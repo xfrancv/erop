@@ -10,5 +10,7 @@ python run_base_predictor_exp.py fashion_mnist runs/fashion_mnist --epochs 30 --
 
 python run_base_predictor_exp.py cifar100 runs/cifar100 --epochs 30 --device cuda --calibration bcts
 
+python run_base_predictor_exp.py retinamnist runs/retinamnist --epochs 30 --device cuda --calibration bcts
+
 
 
