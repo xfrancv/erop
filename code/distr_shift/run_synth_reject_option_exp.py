@@ -81,34 +81,66 @@ def configure_oracle(enabled: bool) -> None:
         REJECT_COLORS.pop("oracle", None)
 
 
-# Replicate-axis aggregation used by every figure builder: how the shaded band
-# is computed from the replicate axis and how titles describe it. The default
-# reproduces the historical behaviour (s.e.m. over trials); the real-data
-# dirichlet mode switches to std over sampled priors via
-# ``configure_aggregation`` (the ``{reps}`` placeholder receives the replicate
-# count the figure was given).
+# Replicate-axis aggregation used by every figure builder: how the solid line
+# and the shaded band are computed from the replicate axis and how titles
+# describe them. The default reproduces the historical behaviour (mean line,
+# s.e.m. band over trials); the real-data dirichlet mode switches to std over
+# sampled priors via ``configure_aggregation`` (the ``{reps}`` placeholder
+# receives the replicate count the figure was given, ``noun`` the word for one
+# replicate). ``--percentile-band`` overrides the band type for either axis via
+# ``configure_percentile_band``: the line becomes the pointwise median and the
+# band the central X% percentile interval (see ``_series`` / ``_agg_desc``).
 _AGG_BAND = "sem"
 _AGG_DESC = "mean ± s.e.m., {reps} trials"
+_AGG_NOUN = "trials"
+_PCT_BAND: float | None = None
 
 
 def configure_aggregation(band: str = "sem",
-                          desc: str = "mean ± s.e.m., {reps} trials") -> None:
-    """Set the figures' replicate-axis band ('sem' or 'std') and title text."""
-    global _AGG_BAND, _AGG_DESC
+                          desc: str = "mean ± s.e.m., {reps} trials",
+                          noun: str = "trials") -> None:
+    """Set the figures' replicate-axis band ('sem' or 'std'), the title text and
+    the replicate noun (used by the percentile-band title)."""
+    global _AGG_BAND, _AGG_DESC, _AGG_NOUN
     if band not in ("sem", "std"):
         raise ValueError(f"band must be 'sem' or 'std', got {band!r}")
-    _AGG_BAND, _AGG_DESC = band, desc
+    _AGG_BAND, _AGG_DESC, _AGG_NOUN = band, desc, noun
 
 
-def _band(arr: np.ndarray, axis: int, reps: int) -> np.ndarray:
-    """Half-width of the shaded band along the replicate axis."""
-    s = arr.std(axis=axis)
-    return s / np.sqrt(reps) if _AGG_BAND == "sem" else s
+def configure_percentile_band(x: float | None) -> None:
+    """Enable percentile bands: the figures' solid line becomes the pointwise
+    median and the band the central ``x``% interval (``x`` in [0, 100]). ``None``
+    restores the default mean±spread band. Overrides the 'sem'/'std' band type,
+    but not the replicate axis or ``reps``."""
+    global _PCT_BAND
+    if x is not None and not 0 <= x <= 100:
+        raise ValueError(f"percentile band must be in [0, 100], got {x}")
+    _PCT_BAND = x
+
+
+def _series(arr: np.ndarray, axis: int, reps: int):
+    """``(center, lower, upper)`` of the plotted curve along the replicate
+    ``axis``. Default: the mean and mean ± (std or std/sqrt(reps)) per the
+    'sem'/'std' setting. Percentile mode (``configure_percentile_band``): the
+    pointwise median and the central ``[lo, hi]`` percentile interval -- in
+    general asymmetric about the median, but always containing it."""
+    if _PCT_BAND is None:
+        center = arr.mean(axis=axis)
+        s = arr.std(axis=axis)
+        half = s / np.sqrt(reps) if _AGG_BAND == "sem" else s
+        return center, center - half, center + half
+    lo, hi = (100 - _PCT_BAND) / 2, (100 + _PCT_BAND) / 2
+    return (np.median(arr, axis=axis),
+            np.percentile(arr, lo, axis=axis),
+            np.percentile(arr, hi, axis=axis))
 
 
 def _agg_desc(reps: int) -> str:
     """Title fragment describing the aggregation, e.g. 'mean ± s.e.m., 10
+    trials' or, under ``--percentile-band``, 'median, central 80% band, 10
     trials'."""
+    if _PCT_BAND is not None:
+        return f"median, central {_PCT_BAND:g}% band, {reps} {_AGG_NOUN}"
     return _AGG_DESC.format(reps=reps)
 
 
@@ -277,6 +309,41 @@ def truncated_area(curve: np.ndarray,
     n = curve.shape[-1]
     k0 = min(n, max(1, int(np.ceil(min_coverage * n))))
     return curve[..., k0 - 1:].mean(axis=-1)
+
+
+# ----------------------------------------------------------------------------
+# Single-number summary of each sweep curve
+# ----------------------------------------------------------------------------
+# Each sweep table shows a measure as a curve over the adaptation-set size
+# (one row per size in ``--sizes``). These helpers append one ``avg`` row that
+# collapses each column to a single scalar: the mean of the per-size cells.
+# Because every size carries the same replicate count, that equals the plain
+# mean over the whole (size x replicate) array. Shared by both reject-option
+# scripts. See ``tasks/single_number_summary_polished.md`` -- and its caveats:
+# the mean is over the *sampled* sizes, so it is only comparable across runs
+# with the same ``--sizes`` and must not be read as a substitute for the curve.
+SWEEP_AVG_LABEL = "avg"
+
+
+def sweep_avg_row(data: dict, names, decimals: int, warn=None) -> str:
+    """Format the ``avg`` row for a per-predictor sweep table (AuRC, AuRC50,
+    AuGRC, coverage-at-target): mean over sizes of each predictor column, in the
+    table's own field width (24) and ``decimals``. ``warn`` (the AuRC tables'
+    per-size warn array) adds the matching mean-warn cell when given."""
+    row = f"{SWEEP_AVG_LABEL:>8}"
+    if warn is not None:
+        row += f"{float(np.mean(warn)):>8.2f}"
+    row += "".join(f"{float(np.mean(data[name])):>24.{decimals}f}" for name in names)
+    return row
+
+
+def sweep_epi_avg_row(epi_metrics: np.ndarray) -> str:
+    """Format the ``avg`` row for the epistemic-uncertainty metrics table, whose
+    columns are the three fixed metrics (not per predictor). ``epi_metrics`` is
+    (sizes, replicates, 3); each column is averaged over sizes and replicates."""
+    return (f"{SWEEP_AVG_LABEL:>8}{epi_metrics[:, :, 0].mean():>14.4f}"
+            f"{epi_metrics[:, :, 1].mean():>14.4f}"
+            f"{epi_metrics[:, :, 2].mean():>14.3f}")
 
 
 def run_reject_trial(
@@ -532,13 +599,13 @@ def make_curve_figures(
     ):
         fig, ax = plt.subplots(figsize=(8, 5))
         for name in REJECT_LABELS:
-            mean = curves[name].mean(axis=0)
-            sem = _band(curves[name], 0, trials)
+            center, lo, hi = _series(curves[name], 0, trials)
             label = (f"{REJECT_LABELS[name]}  "
                      f"({area_label} {aurc[name].mean():.4f} ± "
                      f"{aurc[name].std():.4f})")
-            ax.plot(coverage, mean, lw=1.8, color=REJECT_COLORS[name], label=label)
-            ax.fill_between(coverage, mean - sem, mean + sem,
+            ax.plot(coverage, center, lw=1.8, color=REJECT_COLORS[name],
+                    label=label)
+            ax.fill_between(coverage, lo, hi,
                             color=REJECT_COLORS[name], alpha=0.2)
         if is_regret:
             ax.axhline(0.0, color="0.4", ls="--", lw=1)
@@ -597,13 +664,12 @@ def make_curves_at_n_figure(
         (axes[1], regret_curves, metrics[1], True),
     ):
         for name in REJECT_LABELS:
-            mean = curves[name].mean(axis=0)
-            sem = _band(curves[name], 0, trials)
+            center, lo, hi = _series(curves[name], 0, trials)
             area = curves[name].mean(axis=1)     # per-trial area
-            ax.plot(coverage, mean, lw=1.8, color=REJECT_COLORS[name],
+            ax.plot(coverage, center, lw=1.8, color=REJECT_COLORS[name],
                     label=f"{REJECT_LABELS[name]}  "
                           f"({area_label} {area.mean():.4f} ± {area.std():.4f})")
-            ax.fill_between(coverage, mean - sem, mean + sem,
+            ax.fill_between(coverage, lo, hi,
                             color=REJECT_COLORS[name], alpha=0.2)
         if is_regret:
             ax.axhline(0.0, color="0.4", ls="--", lw=1)
@@ -746,6 +812,7 @@ def run_sweep_experiment(model, args, master_rng) -> None:
             row = f"{n:>8}{warned[i].mean():>8.2f}"
             row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
             print(row)
+        print(sweep_avg_row(aurc, names, decimals=4, warn=warned))
     for metric, aurc50 in (("risk", aurc50_risk), ("regret", aurc50_regret)):
         print("-" * 76)
         print(f"AuRC50 ({metric})  ({AURC50_NOTE})")
@@ -754,6 +821,7 @@ def run_sweep_experiment(model, args, master_rng) -> None:
         for i, n in enumerate(sizes):
             print(f"{n:>8}"
                   + "".join(f"{aurc50[name][i].mean():>24.4f}" for name in names))
+        print(sweep_avg_row(aurc50, names, decimals=4))
     print(AURC50_CAVEAT)
     for metric, augrc in (("risk", augrc_risk), ("regret", augrc_regret)):
         print("-" * 76)
@@ -763,6 +831,7 @@ def run_sweep_experiment(model, args, master_rng) -> None:
         for i, n in enumerate(sizes):
             print(f"{n:>8}"
                   + "".join(f"{augrc[name][i].mean():>24.4f}" for name in names))
+        print(sweep_avg_row(augrc, names, decimals=4))
     risk_fig_descs = ["reference risk" if rt is None else d
                       for rt, d in zip(rts, rt_descs)]
     regret_fig_descs = [f"{e:g}" for e in args.regret_target]
@@ -779,6 +848,7 @@ def run_sweep_experiment(model, args, master_rng) -> None:
         for i, n in enumerate(sizes):
             print(f"{n:>8}"
                   + "".join(f"{cov[name][i].mean():>24.3f}" for name in names))
+        print(sweep_avg_row(cov, names, decimals=3))
     print("-" * 76)
     print("Epistemic-uncertainty metrics of the Bayesian predictor "
           f"(threshold={args.epi_threshold:g})")
@@ -787,6 +857,7 @@ def run_sweep_experiment(model, args, master_rng) -> None:
         print(f"{n:>8}{epi_metrics[i, :, 0].mean():>14.4f}"
               f"{epi_metrics[i, :, 1].mean():>14.4f}"
               f"{epi_metrics[i, :, 2].mean():>14.3f}")
+    print(sweep_epi_avg_row(epi_metrics))
     print("=" * 76)
     if warned.any():
         print("!!! IDENTIFIABILITY WARNING: 'warn' = fraction of trials where "
@@ -851,11 +922,10 @@ def make_sweep_figure(
         (axes[1], aurc_regret, metrics[1], ylabels[1], True),
     ):
         for name in REJECT_LABELS:
-            mean = aurc[name].mean(axis=1)
-            sem = _band(aurc[name], 1, trials)
-            ax.plot(x, mean, lw=1.8, marker="o", color=REJECT_COLORS[name],
+            center, lo, hi = _series(aurc[name], 1, trials)
+            ax.plot(x, center, lw=1.8, marker="o", color=REJECT_COLORS[name],
                     label=REJECT_LABELS[name])
-            ax.fill_between(x, mean - sem, mean + sem,
+            ax.fill_between(x, lo, hi,
                             color=REJECT_COLORS[name], alpha=0.2)
         if is_regret:
             ax.axhline(0.0, color="0.4", ls="--", lw=1)
@@ -935,20 +1005,18 @@ def make_epistemic_metrics_figure(
         (1, "average regret (full coverage)", "C1"),
         (0, "average epistemic uncertainty", "C2"),
     ):
-        mean = epi_metrics[:, :, col].mean(axis=1)
-        sem = _band(epi_metrics[:, :, col], 1, trials)
-        ax.plot(x, mean, lw=1.8, marker="o", color=color, label=label)
-        ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.2)
+        center, lo, hi = _series(epi_metrics[:, :, col], 1, trials)
+        ax.plot(x, center, lw=1.8, marker="o", color=color, label=label)
+        ax.fill_between(x, lo, hi, color=color, alpha=0.2)
     ax.axhline(0.0, color="0.4", ls="--", lw=1)
     ax.set_ylabel("0/1-loss units")
     ax.legend(fontsize=8)
 
     # ---- Panel 2: portion with negligible epistemic uncertainty ----
     ax = axes[1]
-    mean = epi_metrics[:, :, 2].mean(axis=1)
-    sem = _band(epi_metrics[:, :, 2], 1, trials)
-    ax.plot(x, mean, lw=1.8, marker="o", color="C0")
-    ax.fill_between(x, mean - sem, mean + sem, color="C0", alpha=0.2)
+    center, lo, hi = _series(epi_metrics[:, :, 2], 1, trials)
+    ax.plot(x, center, lw=1.8, marker="o", color="C0")
+    ax.fill_between(x, lo, hi, color="C0", alpha=0.2)
     ax.set_ylim(-0.02, 1.02)
     ax.set_ylabel(f"portion with epistemic uncertainty < {threshold:g}")
 
@@ -995,11 +1063,10 @@ def make_cov_target_figure(
                 ax.axis("off")
                 continue
             for name in REJECT_LABELS:
-                mean = covs[c][name].mean(axis=1)
-                sem = _band(covs[c][name], 1, trials)
-                ax.plot(x, mean, lw=1.8, marker="o", color=REJECT_COLORS[name],
+                center, lo, hi = _series(covs[c][name], 1, trials)
+                ax.plot(x, center, lw=1.8, marker="o", color=REJECT_COLORS[name],
                         label=REJECT_LABELS[name])
-                ax.fill_between(x, mean - sem, mean + sem,
+                ax.fill_between(x, lo, hi,
                                 color=REJECT_COLORS[name], alpha=0.2)
             ax.set_ylim(-0.02, 1.05)
             ax.set_xscale("log")
@@ -1076,9 +1143,18 @@ def main() -> None:
         help="Posterior sampler for the test prior: random-walk "
              "Metropolis-Hastings (mh, default) or the latent-variable "
              "Gibbs sampler (gibbs).")
+    parser.add_argument(
+        "--percentile-band", type=float, default=None, metavar="X",
+        help="Draw the figures' uncertainty bands as the central X%% "
+             "percentile interval (X in [0, 100]; e.g. 80 -> 10th-90th "
+             "percentile) with the solid line at the pointwise median, instead "
+             "of the default mean +/- s.e.m. band.")
     args = parser.parse_args()
+    if args.percentile_band is not None and not 0 <= args.percentile_band <= 100:
+        parser.error("--percentile-band must be in [0, 100]")
 
     configure_oracle(args.optimal_rejection)
+    configure_percentile_band(args.percentile_band)
 
     cfg = load_experiment_config(args.config)
     model = cfg.model

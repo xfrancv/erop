@@ -497,12 +497,37 @@ toward arbitrary. At small `n` it retains enough signal to correlate weakly
 with genuine ambiguity. The lesson is the same as before: this quantity is not
 a proxy for error probability.
 
+**Single-number summary (`avg` row).** Every per-size sweep table above —
+AuRC, AuRC50, AuGRC, coverage-at-target and the epistemic-uncertainty metrics —
+ends with an `avg` row: each column's mean over the swept sizes (the plain mean
+of the cells above it; where the table has a `warn` column its mean is shown
+too). It is a convenience scalar for comparing runs at a glance, printed only in
+the text tables, not in the figures. Two caveats keep it from being over-read:
+the mean is over the *sampled* `--sizes`, which are log-spaced, so it weights
+small `n` more heavily and is **only comparable across runs sharing the same
+`--sizes`**; and it collapses exactly the `n`-dependence these curves exist to
+show (e.g. the epistemic AuRC's rise above), so it is no substitute for the
+curve. It is also distinct from the single-size (non-`--sweep`) AuRC, which is
+scored at one `n`.
+
 Figures are written to the `--out-dir`: `risk_coverage.png`,
 `regret_coverage.png`, and (from `--sweep`) `aurc_vs_n_test.png` and
 `aurc50_vs_n_test.png`. The argument setting is saved alongside them as
 `run_synth_reject_option_exp_args.txt` or
 `run_synth_reject_option_exp_sweep_args.txt` — named so that the two scripts
 can share one `--out-dir` without overwriting each other's record.
+
+**Uncertainty bands.** By default every figure shades a `mean ± s.e.m.` band
+(the real-data dirichlet mode uses `± std` over sampled priors) around the mean
+curve. Passing `--percentile-band X` (both reject-option scripts, `X` in
+`[0, 100]`) instead draws the **central `X`% percentile interval** — e.g. `80`
+→ the 10th–90th percentile — and moves the solid line to the pointwise
+**median**. The band is then generally asymmetric (it always contains the
+median), and, unlike the s.e.m. band, describes the *spread of the replicate
+values* rather than the *uncertainty of their mean*, so it does not shrink as
+trials are added; at the default 10–20 replicates its edges are coarse. Only
+the figures change — the text tables stay mean-based, and the figure titles
+name the median so the two are not conflated.
 
 ## Setup
 

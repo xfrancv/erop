@@ -84,11 +84,12 @@ from run_synth_reject_option_exp import (
     AURC50_NOTE,
     REJECT_LABELS,
     _agg_desc,
-    _band,
     _resolve_risk_targets,
+    _series,
     bayesian_posterior_and_aleatoric,
     configure_aggregation,
     configure_oracle,
+    configure_percentile_band,
     coverage_at_target,
     epistemic_metrics,
     generalize_curve,
@@ -103,6 +104,8 @@ from run_synth_reject_option_exp import (
     make_trunc_sweep_figure,
     oracle_curves,
     selective_curves,
+    sweep_avg_row,
+    sweep_epi_avg_row,
     trunc_sweep_fname,
     truncated_area,
 )
@@ -587,10 +590,9 @@ def make_base_accuracy_figure(
         ("plugin_true", "Plugin, true test prior (oracle)", "C0", None, "--"),
     )
     for key, label, color, marker, ls in style:
-        mean = base_acc[key].mean(axis=1)
-        sem = _band(base_acc[key], 1, trials)
-        ax.plot(x, mean, lw=1.8, marker=marker, ls=ls, color=color, label=label)
-        ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.2)
+        center, lo, hi = _series(base_acc[key], 1, trials)
+        ax.plot(x, center, lw=1.8, marker=marker, ls=ls, color=color, label=label)
+        ax.fill_between(x, lo, hi, color=color, alpha=0.2)
 
     ax.set_xscale("log")
     ax.set_xticks(sizes)
@@ -636,6 +638,7 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
             row = f"{n:>8}{warned[i].mean():>8.2f}"
             row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
             lines.append(row)
+        lines.append(sweep_avg_row(aurc, names, decimals=4, warn=warned))
     for metric, aurc50 in (("risk", aurc50_risk), ("regret", aurc50_regret)):
         lines.append("-" * 76)
         lines.append(f"AuRC50 ({metric})  ({AURC50_NOTE})")
@@ -645,6 +648,7 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
             lines.append(f"{n:>8}"
                          + "".join(f"{aurc50[name][i].mean():>24.4f}"
                                    for name in names))
+        lines.append(sweep_avg_row(aurc50, names, decimals=4))
     lines.append(AURC50_CAVEAT)
     for metric, augrc in (("risk", augrc_risk), ("regret", augrc_regret)):
         lines.append("-" * 76)
@@ -656,6 +660,7 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
             lines.append(f"{n:>8}"
                          + "".join(f"{augrc[name][i].mean():>24.4f}"
                                    for name in names))
+        lines.append(sweep_avg_row(augrc, names, decimals=4))
     rts, rt_descs = _resolve_risk_targets(args.risk_target)
     risk_fig_descs = ["reference risk" if rt is None else d
                       for rt, d in zip(rts, rt_descs)]
@@ -673,6 +678,7 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
         for i, n in enumerate(sizes):
             lines.append(f"{n:>8}"
                          + "".join(f"{cov[name][i].mean():>24.3f}" for name in names))
+        lines.append(sweep_avg_row(cov, names, decimals=3))
     lines.append("-" * 76)
     lines.append("Epistemic-uncertainty metrics of the Bayesian predictor "
                  f"(threshold={args.epi_threshold:g})")
@@ -681,6 +687,7 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
         lines.append(f"{n:>8}{epi_metrics[i, :, 0].mean():>14.4f}"
                      f"{epi_metrics[i, :, 1].mean():>14.4f}"
                      f"{epi_metrics[i, :, 2].mean():>14.3f}")
+    lines.append(sweep_epi_avg_row(epi_metrics))
     lines.append("=" * 76)
     if warned.any():
         lines.append("!!! IDENTIFIABILITY WARNING: 'warn' = fraction of trials "
@@ -922,7 +929,8 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
 
     _write_sampled_priors(out_dir, alphas, prior_seeds, beta_gen)
     configure_aggregation(
-        "std", f"{N}x{T} runs, ±1 std over {{reps}} priors")
+        "std", f"{N}x{T} runs, ±1 std over {{reps}} priors",
+        noun="priors")
 
     lines = [
         "=" * 76,
@@ -1139,7 +1147,8 @@ def run_dirichlet_single_report(P, y_pool, train_prior, central_prior, bundle,
 
     _write_sampled_priors(out_dir, alphas, prior_seeds, beta_gen)
     configure_aggregation(
-        "std", f"{N}x{T} runs, ±1 std over {{reps}} priors")
+        "std", f"{N}x{T} runs, ±1 std over {{reps}} priors",
+        noun="priors")
 
     lines = [
         "=" * 76,
@@ -1296,11 +1305,20 @@ def main() -> None:
         help="Posterior sampler for the test prior: random-walk "
              "Metropolis-Hastings (mh, default) or the latent-variable "
              "Gibbs sampler (gibbs).")
+    parser.add_argument(
+        "--percentile-band", type=float, default=None, metavar="X",
+        help="Draw the figures' uncertainty bands as the central X%% "
+             "percentile interval (X in [0, 100]; e.g. 80 -> 10th-90th "
+             "percentile) with the solid line at the pointwise median, instead "
+             "of the default mean +/- s.e.m. (or std) band.")
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
+    if args.percentile_band is not None and not 0 <= args.percentile_band <= 100:
+        parser.error("--percentile-band must be in [0, 100]")
 
     configure_oracle(args.optimal_rejection)
+    configure_percentile_band(args.percentile_band)
 
     # The three target-prior strategies are mutually exclusive. Membership is
     # decided by what was *explicitly passed*, never by the parsed value:
