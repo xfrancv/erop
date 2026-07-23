@@ -69,6 +69,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+import figspec
 from data_tools.loaders import load_dataset
 from data_tools.registry import DATASETS
 from prior_shift import (
@@ -578,35 +579,28 @@ def make_base_accuracy_figure(
     and plugin with the supervised prior estimate. Each is a (len(sizes),
     trials) array; the true-prior plugin is flat in n (drawn as a curve for
     direct comparison)."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     x = np.asarray(sizes, dtype=float)
-    fig, ax = plt.subplots(figsize=(8.5, 5))
     style = (
         ("bayes_learned", "Bayesian, learned prior", "C1", "o", "-"),
         ("plugin_supervised", "Plugin, supervised prior estimate", "C4", "s", "-"),
         ("plugin_true", "Plugin, true test prior (oracle)", "C0", None, "--"),
     )
+    series = []
     for key, label, color, marker, ls in style:
         center, lo, hi = _series(base_acc[key], 1, trials)
-        ax.plot(x, center, lw=1.8, marker=marker, ls=ls, color=color, label=label)
-        ax.fill_between(x, lo, hi, color=color, alpha=0.2)
+        series.append(figspec.Series(
+            x=x, center=center, lower=lo, upper=hi, marker=marker,
+            linestyle=ls, color=color, label=label))
 
-    ax.set_xscale("log")
-    ax.set_xticks(sizes)
-    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax.set_xlabel("number of unlabeled adaptation examples $n$")
-    ax.set_ylabel("test accuracy")
-    ax.set_title("Base-predictor accuracy vs. test-set size "
-                 f"({_agg_desc(trials)})")
-    ax.legend(fontsize=8, loc="lower right")
-    ax.grid(True, which="both", alpha=0.25)
-
-    fig.tight_layout()
-    fig.savefig(f"{out_dir}/base_accuracy_vs_n_test.png", dpi=130)
-    plt.close(fig)
+    panel = figspec.Panel(
+        series=series, xscale="log", xticks=list(sizes),
+        xlabel="number of unlabeled adaptation examples $n$",
+        ylabel="test accuracy",
+        title="Base-predictor accuracy vs. test-set size "
+              f"({_agg_desc(trials)})",
+        legend=True, legend_loc="lower right", grid_which="both")
+    spec = figspec.FigureSpec(panels=[panel], figsize=[8.5, 5.0])
+    figspec.write(spec, f"{out_dir}/base_accuracy_vs_n_test.png")
 
 
 def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
@@ -835,33 +829,33 @@ def make_epi_regret_calibration_figure(sizes, epi_by_size, out_dir) -> None:
     misspecified model prior (``--beta``) or heavy truncation pushes them off
     it. ``epi_by_size`` is (len(sizes), N, 3) per-prior means with columns
     (avg epi, avg regret, portion negligible)."""
-    import matplotlib
-    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     epi_by_size = np.asarray(epi_by_size)
     S, N, _ = epi_by_size.shape
-    fig, ax = plt.subplots(figsize=(6.6, 6))
     cmap = plt.get_cmap("viridis")
+    series = []
     for i, n in enumerate(sizes):
-        ax.scatter(epi_by_size[i, :, 0], epi_by_size[i, :, 1], s=36,
-                   color=cmap(i / max(S - 1, 1)), alpha=0.85,
-                   edgecolors="none", zorder=3, label=f"n = {n}")
+        series.append(figspec.Series(
+            kind="scatter", x=epi_by_size[i, :, 0], center=epi_by_size[i, :, 1],
+            size=36, color=list(cmap(i / max(S - 1, 1))), alpha=0.85,
+            edgecolors="none", zorder=3, label=f"n = {n}"))
     vals = epi_by_size[:, :, :2]
     lo = min(0.0, float(vals.min()))
     hi = float(vals.max()) * 1.05 + 1e-9
-    ax.plot([lo, hi], [lo, hi], color="0.4", ls="--", lw=1,
-            label="y = x (calibrated)")
-    ax.set_xlabel("average epistemic uncertainty (per sampled prior)")
-    ax.set_ylabel("average realized regret at full coverage "
-                  "(per sampled prior)")
-    ax.set_title("Epistemic-uncertainty calibration of the Bayesian "
-                 f"predictor\none point per (sampled prior, n); {N} priors")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.25)
-    fig.tight_layout()
-    fig.savefig(f"{out_dir}/epi_vs_regret_calibration.png", dpi=130)
-    plt.close(fig)
+    series.append(figspec.Series(
+        x=np.array([lo, hi]), center=np.array([lo, hi]), color="0.4",
+        linestyle="--", linewidth=1.0, label="y = x (calibrated)"))
+
+    panel = figspec.Panel(
+        series=series,
+        xlabel="average epistemic uncertainty (per sampled prior)",
+        ylabel="average realized regret at full coverage (per sampled prior)",
+        title="Epistemic-uncertainty calibration of the Bayesian "
+              f"predictor\none point per (sampled prior, n); {N} priors",
+        legend=True)
+    spec = figspec.FigureSpec(panels=[panel], figsize=[6.6, 6.0])
+    figspec.write(spec, f"{out_dir}/epi_vs_regret_calibration.png")
 
 
 def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,

@@ -36,6 +36,7 @@ from pathlib import Path
 
 import numpy as np
 
+import figspec
 from prior_shift import (
     BaseModel,
     GaussianClassConditionalModel,
@@ -586,10 +587,6 @@ def make_curve_figures(
     draw the selective curves; ``make_gen_curve_figures`` passes the generalized
     ones.
     """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     coverage = np.arange(1, n_eval + 1) / n_eval
     trials = next(iter(risk_curves.values())).shape[0]
 
@@ -597,27 +594,23 @@ def make_curve_figures(
         (risk_curves, aurc_risk, metrics[0], fnames[0], False),
         (regret_curves, aurc_regret, metrics[1], fnames[1], True),
     ):
-        fig, ax = plt.subplots(figsize=(8, 5))
+        series = []
         for name in REJECT_LABELS:
             center, lo, hi = _series(curves[name], 0, trials)
             label = (f"{REJECT_LABELS[name]}  "
                      f"({area_label} {aurc[name].mean():.4f} ± "
                      f"{aurc[name].std():.4f})")
-            ax.plot(coverage, center, lw=1.8, color=REJECT_COLORS[name],
-                    label=label)
-            ax.fill_between(coverage, lo, hi,
-                            color=REJECT_COLORS[name], alpha=0.2)
-        if is_regret:
-            ax.axhline(0.0, color="0.4", ls="--", lw=1)
-        ax.set_xlabel("coverage")
-        ax.set_ylabel(metric)
-        ax.set_title(f"{metric.capitalize()}-coverage curve "
-                     f"({_agg_desc(trials)})")
-        ax.legend(fontsize=8, loc="upper left")
-        ax.grid(True, alpha=0.25)
-        fig.tight_layout()
-        fig.savefig(f"{out_dir}/{fname}.png", dpi=130)
-        plt.close(fig)
+            series.append(figspec.Series(
+                x=coverage, center=center, lower=lo, upper=hi,
+                color=REJECT_COLORS[name], label=label))
+        panel = figspec.Panel(
+            series=series,
+            hlines=[figspec.HLine(0.0)] if is_regret else [],
+            xlabel="coverage", ylabel=metric,
+            title=f"{metric.capitalize()}-coverage curve ({_agg_desc(trials)})",
+            legend=True, legend_loc="upper left")
+        spec = figspec.FigureSpec(panels=[panel], figsize=[8.0, 5.0])
+        figspec.write(spec, f"{out_dir}/{fname}.png")
 
 
 def make_gen_curve_figures(
@@ -651,44 +644,38 @@ def make_curves_at_n_figure(
     the flavour: the defaults draw the selective curves;
     ``make_gen_curves_at_n_figure`` passes the generalized ones.
     """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     trials, n_eval = next(iter(risk_curves.values())).shape
     coverage = np.arange(1, n_eval + 1) / n_eval
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
-    for ax, curves, metric, is_regret in (
-        (axes[0], risk_curves, metrics[0], False),
-        (axes[1], regret_curves, metrics[1], True),
+    panels = []
+    for curves, metric, is_regret in (
+        (risk_curves, metrics[0], False),
+        (regret_curves, metrics[1], True),
     ):
+        series = []
         for name in REJECT_LABELS:
             center, lo, hi = _series(curves[name], 0, trials)
             area = curves[name].mean(axis=1)     # per-trial area
-            ax.plot(coverage, center, lw=1.8, color=REJECT_COLORS[name],
-                    label=f"{REJECT_LABELS[name]}  "
-                          f"({area_label} {area.mean():.4f} ± {area.std():.4f})")
-            ax.fill_between(coverage, lo, hi,
-                            color=REJECT_COLORS[name], alpha=0.2)
-        if is_regret:
-            ax.axhline(0.0, color="0.4", ls="--", lw=1)
-        ax.set_xlabel("coverage")
-        ax.set_ylabel(metric)
-        ax.set_title(f"{metric.capitalize()}-coverage curve, "
-                     f"$n_\\mathrm{{test}}$ = {n_test}")
-        ax.legend(fontsize=8, loc="upper left")
-        ax.grid(True, alpha=0.25)
+            series.append(figspec.Series(
+                x=coverage, center=center, lower=lo, upper=hi,
+                color=REJECT_COLORS[name],
+                label=f"{REJECT_LABELS[name]}  "
+                      f"({area_label} {area.mean():.4f} ± {area.std():.4f})"))
+        panels.append(figspec.Panel(
+            series=series,
+            hlines=[figspec.HLine(0.0)] if is_regret else [],
+            xlabel="coverage", ylabel=metric,
+            title=f"{metric.capitalize()}-coverage curve, "
+                  f"$n_\\mathrm{{test}}$ = {n_test}",
+            legend=True, legend_loc="upper left"))
 
-    fig.suptitle(f"{suptitle_prefix} at n_test = {n_test} "
-                 f"({_agg_desc(trials)})")
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    spec = figspec.FigureSpec(
+        panels=panels, nrows=1, ncols=2, figsize=[13.0, 5.0],
+        suptitle=f"{suptitle_prefix} at n_test = {n_test} ({_agg_desc(trials)})",
+        tight_rect=[0.0, 0.0, 1.0, 0.94])
     sub = Path(out_dir) / "coverage_curves"
     sub.mkdir(parents=True, exist_ok=True)
-    path = str(sub / f"{fname_prefix}_n{n_test}.png")
-    fig.savefig(path, dpi=130)
-    plt.close(fig)
-    return path
+    return figspec.write(spec, str(sub / f"{fname_prefix}_n{n_test}.png"))
 
 
 def make_gen_curves_at_n_figure(
@@ -909,38 +896,32 @@ def make_sweep_figure(
     flavours whose full name is too long for the title (the truncated one spells
     its coverage window out there, and keeps a short name for the title).
     """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     ylabels = ylabels or metrics
     x = np.asarray(sizes, dtype=float)
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
-    for ax, aurc, metric, ylabel, is_regret in (
-        (axes[0], aurc_risk, metrics[0], ylabels[0], False),
-        (axes[1], aurc_regret, metrics[1], ylabels[1], True),
+    panels = []
+    for aurc, metric, ylabel, is_regret in (
+        (aurc_risk, metrics[0], ylabels[0], False),
+        (aurc_regret, metrics[1], ylabels[1], True),
     ):
-        for name in REJECT_LABELS:
-            center, lo, hi = _series(aurc[name], 1, trials)
-            ax.plot(x, center, lw=1.8, marker="o", color=REJECT_COLORS[name],
-                    label=REJECT_LABELS[name])
-            ax.fill_between(x, lo, hi,
-                            color=REJECT_COLORS[name], alpha=0.2)
-        if is_regret:
-            ax.axhline(0.0, color="0.4", ls="--", lw=1)
-        ax.set_xscale("log")
-        ax.set_xticks(sizes)
-        ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        ax.set_xlabel("number of unlabeled adaptation examples $n$")
-        ax.set_ylabel(ylabel)
-        ax.set_title(f"{metric} vs. test-set size ({_agg_desc(trials)})")
-        ax.legend(fontsize=8)
-        ax.grid(True, which="both", alpha=0.25)
+        series = [
+            figspec.Series(
+                x=x, center=c, lower=lo, upper=hi, marker="o",
+                color=REJECT_COLORS[name], label=REJECT_LABELS[name])
+            for name in REJECT_LABELS
+            for c, lo, hi in [_series(aurc[name], 1, trials)]]
+        panels.append(figspec.Panel(
+            series=series,
+            hlines=[figspec.HLine(0.0)] if is_regret else [],
+            xscale="log", xticks=list(sizes),
+            xlabel="number of unlabeled adaptation examples $n$",
+            ylabel=ylabel,
+            title=f"{metric} vs. test-set size ({_agg_desc(trials)})",
+            legend=True, grid_which="both"))
 
-    fig.tight_layout()
-    fig.savefig(f"{out_dir}/{fname}.png", dpi=130)
-    plt.close(fig)
+    spec = figspec.FigureSpec(panels=panels, nrows=1, ncols=2,
+                              figsize=[13.0, 5.0])
+    figspec.write(spec, f"{out_dir}/{fname}.png")
 
 
 def make_gen_sweep_figure(
@@ -991,47 +972,39 @@ def make_epistemic_metrics_figure(
     uncertainty, avg regret, portion below ``threshold``). All three are
     properties of the Bayesian learned-prior predictor.
     """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     x = np.asarray(sizes, dtype=float)
     trials = epi_metrics.shape[1]
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.6))
+    xlabel = "number of unlabeled adaptation examples $n$"
 
     # ---- Panel 1: regret and epistemic uncertainty overlaid ----
-    ax = axes[0]
+    p1_series = []
     for col, label, color in (
         (1, "average regret (full coverage)", "C1"),
         (0, "average epistemic uncertainty", "C2"),
     ):
         center, lo, hi = _series(epi_metrics[:, :, col], 1, trials)
-        ax.plot(x, center, lw=1.8, marker="o", color=color, label=label)
-        ax.fill_between(x, lo, hi, color=color, alpha=0.2)
-    ax.axhline(0.0, color="0.4", ls="--", lw=1)
-    ax.set_ylabel("0/1-loss units")
-    ax.legend(fontsize=8)
+        p1_series.append(figspec.Series(
+            x=x, center=center, lower=lo, upper=hi, marker="o",
+            color=color, label=label))
+    panel1 = figspec.Panel(
+        series=p1_series, hlines=[figspec.HLine(0.0)],
+        xscale="log", xticks=list(sizes), xlabel=xlabel,
+        ylabel="0/1-loss units", legend=True, grid_which="both")
 
     # ---- Panel 2: portion with negligible epistemic uncertainty ----
-    ax = axes[1]
     center, lo, hi = _series(epi_metrics[:, :, 2], 1, trials)
-    ax.plot(x, center, lw=1.8, marker="o", color="C0")
-    ax.fill_between(x, lo, hi, color="C0", alpha=0.2)
-    ax.set_ylim(-0.02, 1.02)
-    ax.set_ylabel(f"portion with epistemic uncertainty < {threshold:g}")
+    panel2 = figspec.Panel(
+        series=[figspec.Series(x=x, center=center, lower=lo, upper=hi,
+                               marker="o", color="C0")],
+        xscale="log", xticks=list(sizes), xlabel=xlabel, ylim=[-0.02, 1.02],
+        ylabel=f"portion with epistemic uncertainty < {threshold:g}",
+        grid_which="both")
 
-    for ax in axes:
-        ax.set_xscale("log")
-        ax.set_xticks(sizes)
-        ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-        ax.set_xlabel("number of unlabeled adaptation examples $n$")
-        ax.grid(True, which="both", alpha=0.25)
-
-    fig.suptitle("Epistemic-uncertainty metrics of the Bayesian predictor "
+    spec = figspec.FigureSpec(
+        panels=[panel1, panel2], nrows=1, ncols=2, figsize=[12.0, 4.6],
+        suptitle="Epistemic-uncertainty metrics of the Bayesian predictor "
                  f"({_agg_desc(trials)})")
-    fig.tight_layout()
-    fig.savefig(f"{out_dir}/epistemic_metrics_vs_n_test.png", dpi=130)
-    plt.close(fig)
+    figspec.write(spec, f"{out_dir}/epistemic_metrics_vs_n_test.png")
 
 
 def make_cov_target_figure(
@@ -1044,45 +1017,38 @@ def make_cov_target_figure(
     ``cov_risk`` / ``cov_regret`` are lists (one entry per target) of dicts
     mapping predictor name to a (len(sizes), trials) coverage array.
     """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     x = np.asarray(sizes, dtype=float)
     ncols = max(len(cov_risk), len(cov_regret))
-    fig, axes = plt.subplots(2, ncols, figsize=(5.8 * ncols, 9.2),
-                             squeeze=False)
 
-    for r, covs, descs, metric in (
-        (0, cov_risk, risk_descs, "risk"),
-        (1, cov_regret, regret_descs, "regret"),
+    panels = []
+    for covs, descs, metric in (
+        (cov_risk, risk_descs, "risk"),
+        (cov_regret, regret_descs, "regret"),
     ):
         for c in range(ncols):
-            ax = axes[r][c]
             if c >= len(covs):
-                ax.axis("off")
+                panels.append(figspec.Panel(axis_off=True))
                 continue
-            for name in REJECT_LABELS:
-                center, lo, hi = _series(covs[c][name], 1, trials)
-                ax.plot(x, center, lw=1.8, marker="o", color=REJECT_COLORS[name],
-                        label=REJECT_LABELS[name])
-                ax.fill_between(x, lo, hi,
-                                color=REJECT_COLORS[name], alpha=0.2)
-            ax.set_ylim(-0.02, 1.05)
-            ax.set_xscale("log")
-            ax.set_xticks(sizes)
-            ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-            ax.set_xlabel("number of unlabeled adaptation examples $n$")
-            ax.set_ylabel("coverage at target")
-            ax.set_title(f"coverage @ {metric} <= {descs[c]}")
-            ax.legend(fontsize=8, loc="lower right")
-            ax.grid(True, which="both", alpha=0.25)
+            series = [
+                figspec.Series(
+                    x=x, center=center, lower=lo, upper=hi, marker="o",
+                    color=REJECT_COLORS[name], label=REJECT_LABELS[name])
+                for name in REJECT_LABELS
+                for center, lo, hi in [_series(covs[c][name], 1, trials)]]
+            panels.append(figspec.Panel(
+                series=series, ylim=[-0.02, 1.05], xscale="log",
+                xticks=list(sizes),
+                xlabel="number of unlabeled adaptation examples $n$",
+                ylabel="coverage at target",
+                title=f"coverage @ {metric} <= {descs[c]}",
+                legend=True, legend_loc="lower right", grid_which="both"))
 
-    fig.suptitle("Coverage at target vs. test-set size "
-                 f"({_agg_desc(trials)})")
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(f"{out_dir}/cov_at_target_vs_n_test.png", dpi=130)
-    plt.close(fig)
+    spec = figspec.FigureSpec(
+        panels=panels, nrows=2, ncols=ncols,
+        figsize=[5.8 * ncols, 9.2],
+        suptitle=f"Coverage at target vs. test-set size ({_agg_desc(trials)})",
+        tight_rect=[0.0, 0.0, 1.0, 0.97])
+    figspec.write(spec, f"{out_dir}/cov_at_target_vs_n_test.png")
 
 
 def _resolve_risk_targets(risk_target_arg):

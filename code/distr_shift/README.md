@@ -529,6 +529,27 @@ trials are added; at the default 10–20 replicates its edges are coarse. Only
 the figures change — the text tables stay mean-based, and the figure titles
 name the median so the two are not conflated.
 
+**Restyling figures without re-running (figure specs).** Every `*.png` a
+reject-option script writes drops a reusable **figure spec** beside it:
+`<name>.figspec.json` (the editable text — labels, titles, colours, legend
+placement, axis scales) plus `<name>.figspec.npz` (the numeric curve/band
+arrays, kept exact rather than stringified into the JSON). The spec fully
+describes the figure; `figspec.py` renders the PNG from it, so the two stay in
+sync by construction (a re-render reproduces the original PNG). To tune a
+figure's look for the paper — a data-free loop, no experiment re-run —
+hand-edit its `.figspec.json` and/or apply a matplotlib style sheet, then
+re-render with `render_figspecs.py`:
+
+```bash
+python render_figspecs.py figures/                      # re-render every spec (no-op check)
+python render_figspecs.py figures/ --style styles/paper.mplstyle --format pdf
+python render_figspecs.py figures/risk_coverage.figspec.json --format pdf svg
+```
+
+`--style` centralises presentation (fonts, sizes, line widths, colour cycle) in
+one rcParams file decoupled from the data; `--format` emits vector output (PDF
+or SVG) for LaTeX. The specs are gitignored along with the rest of `figures/`.
+
 ## Setup
 
 **conda (recommended):**
