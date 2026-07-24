@@ -904,6 +904,28 @@ def make_sweep_figure(
     ``figsize=None`` so the size defers to the active style sheet. The defaults
     reproduce the historical synthetic look.
     """
+    panels = sweep_panels(sizes, aurc_risk, aurc_regret, trials,
+                          metrics=metrics, ylabels=ylabels, xlabel=xlabel,
+                          titles=titles)
+    spec = figspec.FigureSpec(panels=panels, nrows=1, ncols=2,
+                              figsize=list(figsize) if figsize else None)
+    figspec.write(spec, f"{out_dir}/{fname}.png")
+
+
+def sweep_panels(
+    sizes: list[int], aurc_risk: dict, aurc_regret: dict, trials: int,
+    metrics: tuple[str, str] = ("AuRC (selective risk)",
+                                "AuRC (selective regret)"),
+    ylabels: tuple[str, str] | None = None,
+    xlabel: str = "number of unlabeled adaptation examples $n$",
+    titles: tuple[str, str] | None = None,
+) -> list:
+    """The two AuRC-vs-size panels (risk, regret) as a list of ``figspec.Panel``.
+
+    Split out of ``make_sweep_figure`` so the same panels can be embedded in a
+    multi-figure layout (e.g. the real-data accuracy + AuRC overview) instead of
+    being written to their own file. See ``make_sweep_figure`` for the argument
+    meanings."""
     ylabels = ylabels or metrics
     titles = titles or tuple(
         f"{m} vs. test-set size ({_agg_desc(trials)})" for m in metrics)
@@ -928,10 +950,7 @@ def make_sweep_figure(
             ylabel=ylabel,
             title=title,
             legend=True, grid_which="both"))
-
-    spec = figspec.FigureSpec(panels=panels, nrows=1, ncols=2,
-                              figsize=list(figsize) if figsize else None)
-    figspec.write(spec, f"{out_dir}/{fname}.png")
+    return panels
 
 
 def make_gen_sweep_figure(

@@ -1,0 +1,7 @@
+# Width override for the 3-panel overview figure
+# (accuracy_and_aurc_vs_n_test). Layer it *after* paper.mplstyle so it only
+# widens the canvas and inherits everything else:
+#   python render_figspecs.py <spec> --style styles/paper.mplstyle styles/wide3.mplstyle
+# The base paper.mplstyle figure.figsize (13x4) is tuned for the 2-panel
+# figures; three panels of the same per-panel width need ~19.5 inches.
+figure.figsize:     19.5, 4.5

@@ -107,6 +107,7 @@ from run_synth_reject_option_exp import (
     selective_curves,
     sweep_avg_row,
     sweep_epi_avg_row,
+    sweep_panels,
     trunc_sweep_fname,
     truncated_area,
 )
@@ -571,14 +572,18 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
             base_acc, realized_n)
 
 
-def make_base_accuracy_figure(
-    sizes: list[int], base_acc: dict, trials: int, out_dir: str,
-) -> None:
-    """Base-predictor accuracy vs. the adaptation-set size, for the three
-    predictors: Bayesian learned prior, plugin with the true (target) prior,
-    and plugin with the supervised prior estimate. Each is a (len(sizes),
-    trials) array; the true-prior plugin is flat in n (drawn as a curve for
-    direct comparison)."""
+def base_accuracy_panel(
+    sizes: list[int], base_acc: dict, trials: int,
+    xlabel: str = "number of unlabeled adaptation examples $n$",
+    title: str | None = None,
+) -> figspec.Panel:
+    """The base-predictor-accuracy-vs-size panel as a ``figspec.Panel``.
+
+    Three predictors: Bayesian learned prior, plugin with the true (target)
+    prior, and plugin with the supervised prior estimate. Each ``base_acc``
+    entry is a (len(sizes), trials) array; the true-prior plugin is flat in n
+    (drawn as a curve for direct comparison). Split out so the panel can be
+    embedded in the combined accuracy + AuRC overview figure."""
     x = np.asarray(sizes, dtype=float)
     style = (
         ("bayes_learned", "Bayesian, learned prior", "C1", "o", "-"),
@@ -592,15 +597,45 @@ def make_base_accuracy_figure(
             x=x, center=center, lower=lo, upper=hi, marker=marker,
             linestyle=ls, color=color, label=label))
 
-    panel = figspec.Panel(
+    if title is None:
+        title = f"Base-predictor accuracy vs. test-set size ({_agg_desc(trials)})"
+    return figspec.Panel(
         series=series, xscale="log", xticks=list(sizes),
-        xlabel="number of unlabeled adaptation examples $n$",
-        ylabel="test accuracy",
-        title="Base-predictor accuracy vs. test-set size "
-              f"({_agg_desc(trials)})",
+        xlabel=xlabel, ylabel="test accuracy", title=title,
         legend=True, legend_loc="lower right", grid_which="both")
+
+
+def make_base_accuracy_figure(
+    sizes: list[int], base_acc: dict, trials: int, out_dir: str,
+) -> None:
+    """Base-predictor accuracy vs. the adaptation-set size (one-panel figure)."""
+    panel = base_accuracy_panel(sizes, base_acc, trials)
     spec = figspec.FigureSpec(panels=[panel], figsize=[8.5, 5.0])
     figspec.write(spec, f"{out_dir}/base_accuracy_vs_n_test.png")
+
+
+def make_overview_figure(
+    sizes: list[int], base_acc: dict, aurc_risk: dict, aurc_regret: dict,
+    reps: int, out_dir: str, short_name: str,
+) -> None:
+    """Three-panel overview: base-predictor accuracy, AuRC (risk) and AuReC
+    (regret), all vs. the adaptation-set size, side by side.
+
+    Panel 1 is the ``base_accuracy_vs_n_test`` accuracy panel (retitled
+    ``<dataset>: Accuracy vs. adaptation set size``); panels 2-3 are exactly the
+    two panels of ``aurc_vs_n_test`` with their dataset-named titles preserved.
+    ``figsize=None`` so the size follows the render style sheet."""
+    xlabel = "number of unlabeled adaptation examples $m$"
+    acc_panel = base_accuracy_panel(
+        sizes, base_acc, reps, xlabel=xlabel,
+        title=f"{short_name}: Accuracy vs. adaptation set size")
+    aurc_panels = sweep_panels(
+        sizes, aurc_risk, aurc_regret, reps, xlabel=xlabel,
+        titles=(f"{short_name}: AuRC vs. adaptation set size",
+                f"{short_name}: AuReC vs. adaptation set size"))
+    spec = figspec.FigureSpec(panels=[acc_panel, *aurc_panels],
+                              nrows=1, ncols=3, figsize=None)
+    figspec.write(spec, f"{out_dir}/accuracy_and_aurc_vs_n_test.png")
 
 
 def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
@@ -709,6 +744,8 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
     make_cov_target_figure(sizes, cov_risk, cov_regret, reps,
                            risk_fig_descs, regret_fig_descs, args.out_dir)
     make_base_accuracy_figure(sizes, base_acc, reps, args.out_dir)
+    make_overview_figure(sizes, base_acc, aurc_risk, aurc_regret, reps,
+                         args.out_dir, short_name)
     for i, n in enumerate(sizes):
         make_curves_at_n_figure(
             {name: risk_curves[name][i] for name in names},
@@ -722,7 +759,7 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
           f"real_reject_option_sweep_report.txt, aurc_vs_n_test.png, "
           f"gen_aurc_vs_n_test.png, {trunc_sweep_fname()}.png, "
           f"epistemic_metrics_vs_n_test.png, cov_at_target_vs_n_test.png, "
-          f"base_accuracy_vs_n_test.png, "
+          f"base_accuracy_vs_n_test.png, accuracy_and_aurc_vs_n_test.png, "
           f"coverage_curves/[gen_]coverage_curves_n<n_test>.png "
           f"(two per size)")
 
