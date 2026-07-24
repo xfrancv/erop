@@ -605,7 +605,8 @@ def make_base_accuracy_figure(
 
 def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
                    aurc_regret, warned, epi_metrics, cov_risk, cov_regret,
-                   risk_curves, regret_curves, base_acc, reps: int) -> None:
+                   risk_curves, regret_curves, base_acc, reps: int,
+                   display_name: str = "") -> None:
     """Append the sweep metric tables to ``lines``, write/print the report and
     build every sweep figure. Shared by the fixed-prior sweep (replicate axis =
     trials) and the dirichlet sweep (replicate axis = sampled priors, arrays
@@ -691,7 +692,15 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
     (out_dir / "real_reject_option_sweep_report.txt").write_text(report + "\n")
     print(report)
 
-    make_sweep_figure(sizes, aurc_risk, aurc_regret, reps, args.out_dir)
+    # aurc_vs_n_test: dataset-named title, "$m$" for the adaptation-set size,
+    # and figsize=None so the figure size follows the render style sheet.
+    short_name = display_name.split(" (")[0] if display_name else "real data"
+    make_sweep_figure(
+        sizes, aurc_risk, aurc_regret, reps, args.out_dir,
+        xlabel="number of unlabeled adaptation examples $m$",
+        titles=(f"{short_name}: AuRC vs. adaptation set size $m$",
+                f"{short_name}: AuReC vs. adaptation set size $m$"),
+        figsize=None)
     make_gen_sweep_figure(sizes, augrc_risk, augrc_regret, reps, args.out_dir)
     make_trunc_sweep_figure(sizes, aurc50_risk, aurc50_regret, reps,
                             args.out_dir)
@@ -755,7 +764,8 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
                      f"(pool too small at this target prior): {pretty}")
     _sweep_outputs(sizes, args, out_dir, lines, aurc_risk, aurc_regret,
                    warned, epi_metrics, cov_risk, cov_regret, risk_curves,
-                   regret_curves, base_acc, args.trials)
+                   regret_curves, base_acc, args.trials,
+                   display_name=spec.display_name)
 
 
 def sample_target_prior(rng, beta_gen, max_tries=100):
@@ -958,7 +968,8 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
 
     _sweep_outputs(sizes, args, out_dir, lines, aurc_risk_d, aurc_regret_d,
                    warned_d, epi_d, cov_risk_d, cov_regret_d, risk_curves_d,
-                   regret_curves_d, base_acc_d, N)
+                   regret_curves_d, base_acc_d, N,
+                   display_name=spec.display_name)
 
     make_epi_regret_calibration_figure(sizes, epi_d, args.out_dir)
     print(f"calibration figure and sampled priors written to {out_dir}/: "

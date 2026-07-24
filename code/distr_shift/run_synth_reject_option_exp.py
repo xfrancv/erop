@@ -884,6 +884,9 @@ def make_sweep_figure(
                                 "AuRC (selective regret)"),
     fname: str = "aurc_vs_n_test",
     ylabels: tuple[str, str] | None = None,
+    xlabel: str = "number of unlabeled adaptation examples $n$",
+    titles: tuple[str, str] | None = None,
+    figsize: tuple[float, float] | None = (13.0, 5.0),
 ) -> None:
     """Area under the coverage curves vs. the adaptation-set size.
 
@@ -895,14 +898,21 @@ def make_sweep_figure(
     ``ylabels`` defaults to ``metrics`` and overrides just the y-axis text, for
     flavours whose full name is too long for the title (the truncated one spells
     its coverage window out there, and keeps a short name for the title).
+
+    ``xlabel``, ``titles`` (a (risk, regret) pair) and ``figsize`` let a caller
+    restyle the figure -- the real-data driver passes a dataset-named title and
+    ``figsize=None`` so the size defers to the active style sheet. The defaults
+    reproduce the historical synthetic look.
     """
     ylabels = ylabels or metrics
+    titles = titles or tuple(
+        f"{m} vs. test-set size ({_agg_desc(trials)})" for m in metrics)
     x = np.asarray(sizes, dtype=float)
 
     panels = []
-    for aurc, metric, ylabel, is_regret in (
-        (aurc_risk, metrics[0], ylabels[0], False),
-        (aurc_regret, metrics[1], ylabels[1], True),
+    for aurc, title, ylabel, is_regret in (
+        (aurc_risk, titles[0], ylabels[0], False),
+        (aurc_regret, titles[1], ylabels[1], True),
     ):
         series = [
             figspec.Series(
@@ -914,13 +924,13 @@ def make_sweep_figure(
             series=series,
             hlines=[figspec.HLine(0.0)] if is_regret else [],
             xscale="log", xticks=list(sizes),
-            xlabel="number of unlabeled adaptation examples $n$",
+            xlabel=xlabel,
             ylabel=ylabel,
-            title=f"{metric} vs. test-set size ({_agg_desc(trials)})",
+            title=title,
             legend=True, grid_which="both"))
 
     spec = figspec.FigureSpec(panels=panels, nrows=1, ncols=2,
-                              figsize=[13.0, 5.0])
+                              figsize=list(figsize) if figsize else None)
     figspec.write(spec, f"{out_dir}/{fname}.png")
 
 

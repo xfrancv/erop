@@ -102,7 +102,7 @@ class Panel:
     grid_alpha: float = 0.25
     legend: bool = False
     legend_loc: str | None = None
-    legend_fontsize: float = 8.0
+    legend_fontsize: float | None = None
     axis_off: bool = False
 
 
@@ -114,7 +114,7 @@ class FigureSpec:
     panels: list[Panel]
     nrows: int = 1
     ncols: int = 1
-    figsize: list[float] = field(default_factory=lambda: [8.0, 5.0])
+    figsize: list[float] | None = None
     suptitle: str | None = None
     tight_rect: list[float] | None = None
     dpi: int = 130
@@ -159,10 +159,14 @@ def _draw_panel(ax, panel: Panel, mticker) -> None:
     if panel.title is not None:
         ax.set_title(panel.title)
     if panel.legend:
-        if panel.legend_loc is None:
-            ax.legend(fontsize=panel.legend_fontsize)
-        else:
-            ax.legend(fontsize=panel.legend_fontsize, loc=panel.legend_loc)
+        # fontsize=None defers to the active style sheet's legend.fontsize
+        # rcParam; only a numeric value in the spec overrides the style.
+        kw = {}
+        if panel.legend_fontsize is not None:
+            kw["fontsize"] = panel.legend_fontsize
+        if panel.legend_loc is not None:
+            kw["loc"] = panel.legend_loc
+        ax.legend(**kw)
     if panel.grid:
         ax.grid(True, which=panel.grid_which, alpha=panel.grid_alpha)
 
@@ -174,8 +178,11 @@ def render_figure(spec: FigureSpec):
     import matplotlib.pyplot as plt
     import matplotlib.ticker as mticker
 
+    # figsize=None defers to the active style sheet's figure.figsize rcParam;
+    # only a value in the spec overrides the style.
+    figsize = tuple(spec.figsize) if spec.figsize is not None else None
     fig, axes = plt.subplots(spec.nrows, spec.ncols,
-                             figsize=tuple(spec.figsize), squeeze=False)
+                             figsize=figsize, squeeze=False)
     for idx, panel in enumerate(spec.panels):
         r, c = divmod(idx, spec.ncols)
         _draw_panel(axes[r][c], panel, mticker)

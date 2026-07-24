@@ -6,12 +6,16 @@
 # Fonts: serif to match a typical LaTeX document body. Switch to
 # text.usetex: True (and a matching preamble) if you want true LaTeX text.
 font.family:        serif
-font.size:          11
-axes.titlesize:     12
-axes.labelsize:     11
-legend.fontsize:    9
-xtick.labelsize:    10
-ytick.labelsize:    10
+font.size:          14
+axes.titlesize:     14
+axes.labelsize:     14
+legend.fontsize:    14
+xtick.labelsize:    13
+ytick.labelsize:    13
+
+# Figure size in inches [width, height]. Specs with figsize=null defer here;
+# a spec that sets its own figsize overrides this.
+figure.figsize:     13.0, 4.0
 
 # Lines and grid
 lines.linewidth:    1.8
