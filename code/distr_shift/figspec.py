@@ -95,6 +95,7 @@ class Panel:
     ylabel: str | None = None
     title: str | None = None
     xscale: str = "linear"
+    yscale: str = "linear"
     xticks: list[float] | None = None
     ylim: list[float] | None = None
     grid: bool = True
@@ -146,6 +147,8 @@ def _draw_panel(ax, panel: Panel, mticker) -> None:
         ax.axhline(h.y, color=h.color, ls=h.linestyle, lw=h.linewidth)
     if panel.xscale != "linear":
         ax.set_xscale(panel.xscale)
+    if panel.yscale != "linear":
+        ax.set_yscale(panel.yscale)
     if panel.xticks is not None:
         ax.set_xticks(panel.xticks)
         if panel.xscale == "log":

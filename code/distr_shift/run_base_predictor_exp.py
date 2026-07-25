@@ -69,6 +69,10 @@ ARCH_DEFAULTS = {
     "dermamnist": "resnet18-28",
     "bloodmnist": "resnet18-28",
     "retinamnist": "resnet18-28",
+    "pathmnist": "resnet18-28",
+    "octmnist": "resnet18-28",
+    "tissuemnist": "resnet18-28",
+    "organamnist": "resnet18-28",
 }
 ARCH_CHOICES = ("lenet", "resnet18-32", "resnet18-28")
 
@@ -279,21 +283,36 @@ def main() -> None:
     Y = ds.num_classes
     arch = args.arch or ARCH_DEFAULTS[args.dataset]
 
+    # The role of the official ``val`` split is a per-dataset registry property
+    # (see DatasetSpec.val_role):
+    #   "test"  -- carve the model-selection set out of train, and evaluate on
+    #              the test subset (with the official val merged in when present).
+    #   "train" -- train on the whole official train split, use the official val
+    #              split as the model-selection set, and evaluate on test only.
     X_train_full, y_train_full = ds.splits["train"]
-    # Class-stratified split of the training subset into fit / model-selection.
-    X_fit, X_val, y_fit, y_val = train_test_split(
-        X_train_full, y_train_full, test_size=args.val_fraction,
-        stratify=y_train_full, random_state=args.seed)
-
-    # Test data: the test subset, plus the official val subset when one exists
-    # (merged into test only -- never used for training or calibration).
-    if "val" in ds.splits:
-        X_test = np.concatenate([ds.splits["val"][0], ds.splits["test"][0]])
-        y_test = np.concatenate([ds.splits["val"][1], ds.splits["test"][1]])
-        test_desc = "official val + test merged"
-    else:
+    if ds.spec.val_role == "train":
+        if "val" not in ds.splits:
+            raise ValueError(
+                f"{args.dataset}: val_role='train' requires an official val "
+                "split, but none was loaded")
+        X_fit, y_fit = X_train_full, y_train_full
+        X_val, y_val = ds.splits["val"]
         X_test, y_test = ds.splits["test"]
-        test_desc = "test subset"
+        test_desc = "official test subset"
+    else:
+        # Class-stratified split of the training subset into fit / model-selection.
+        X_fit, X_val, y_fit, y_val = train_test_split(
+            X_train_full, y_train_full, test_size=args.val_fraction,
+            stratify=y_train_full, random_state=args.seed)
+        # Test data: the test subset, plus the official val subset when one exists
+        # (merged into test only -- never used for training or calibration).
+        if "val" in ds.splits:
+            X_test = np.concatenate([ds.splits["val"][0], ds.splits["test"][0]])
+            y_test = np.concatenate([ds.splits["val"][1], ds.splits["test"][1]])
+            test_desc = "official val + test merged"
+        else:
+            X_test, y_test = ds.splits["test"]
+            test_desc = "test subset"
 
     # Per-channel normalization computed on the fit part and stored in the
     # bundle so the downstream script reproduces the same posterior.

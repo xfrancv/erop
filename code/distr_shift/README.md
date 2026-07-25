@@ -605,12 +605,30 @@ library plus NumPy/matplotlib/tqdm — no torch/torchvision/medmnist.
 | DermaMNIST | `dermamnist` | 28×28 RGB | 7 | MedMNIST v2 `.npz` (Zenodo) | melanoma / nevus |
 | BloodMNIST | `bloodmnist` | 28×28 RGB | 8 | MedMNIST v2 `.npz` (Zenodo) | neutrophil / immature granulocyte |
 | RetinaMNIST | `retinamnist` | 28×28 RGB | 5 | MedMNIST v2 `.npz` (Zenodo) | grade 1 / grade 2 (adjacent DR severity) |
+| PathMNIST | `pathmnist` | 28×28 RGB | 9 | MedMNIST v2 `.npz` (Zenodo) | cancer-associated stroma / smooth muscle |
+| OCTMNIST | `octmnist` | 28×28 grayscale | 4 | MedMNIST v2 `.npz` (Zenodo) | drusen / normal |
+| TissueMNIST | `tissuemnist` | 28×28 grayscale | 8 | MedMNIST v2 `.npz` (Zenodo) | glomerular / interstitial endothelial cells |
+| OrganAMNIST | `organamnist` | 28×28 grayscale | 11 | MedMNIST v2 `.npz` (Zenodo) | kidney-left / kidney-right |
 
 CIFAR-100's fast.ai mirror is laid out two levels deep
 (`<split>/<superclass>/<fine-class>/*.png`); the image-folder loader labels by
 the leaf (fine-class) folder, so it yields the 100 fine classes. RetinaMNIST is
 ordinal (5 diabetic-retinopathy severity grades), so its "confusable pair" is
-the adjacent mild/moderate boundary rather than two arbitrary classes.
+the adjacent mild/moderate boundary rather than two arbitrary classes. The
+confusable pairs for PathMNIST, OCTMNIST, TissueMNIST and OrganAMNIST are
+initial proposals (e.g. the near-identical left/right kidney in OrganAMNIST);
+validate them, or let `--auto-target-prior` pick, before relying on them.
+
+**Split policy (`val_role`).** Each dataset's registry entry carries a
+`val_role` field that controls how `run_base_predictor_exp.py` uses the official
+`val` split. The default, `"test"`, merges `val` into the *test* subset
+(evaluation only) and carves the model-selection set out of `train` — this suits
+the datasets with small test splits (Fashion-MNIST, CIFAR, DermaMNIST,
+BloodMNIST, RetinaMNIST, **and OCTMNIST**, whose test split is only 1,000
+examples). PathMNIST, TissueMNIST and OrganAMNIST instead use `val_role="train"`:
+they train on the *whole* official `train` split, use the official `val` split
+as the model-selection set, and evaluate on the official `test` split alone —
+their test splits are large enough (7k–47k) that no merge is needed.
 
 ```bash
 python download_datasets.py                 # fetch all into data/

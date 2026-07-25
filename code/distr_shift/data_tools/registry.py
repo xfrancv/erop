@@ -30,6 +30,12 @@ class DatasetSpec:
     archive_dir: str = ""
     confusable_pair: tuple[str, str] | None = None
     tags: list[str] = field(default_factory=list)
+    # Role of the official ``val`` split in ``run_base_predictor_exp.py``:
+    # "test" merges val into the test subset (evaluation only) and carves the
+    # model-selection set out of train (default, current behaviour); "train"
+    # trains on the whole official train split, uses the official val split as
+    # the model-selection set, and evaluates on the official test split alone.
+    val_role: str = "test"
 
 
 _FASHION_BASE = (
@@ -196,5 +202,109 @@ DATASETS: dict[str, DatasetSpec] = {
         # "ordinal": grades are ordered, so the auto target-prior search only
         # considers adjacent-grade pairs (non-adjacent flips are meaningless).
         tags=["rgb", "medical", "ordinal"],
+    ),
+    "pathmnist": DatasetSpec(
+        key="pathmnist",
+        display_name="PathMNIST (MedMNIST v2)",
+        kind="medmnist",
+        files=[(_ZENODO + "pathmnist.npz?download=1", "pathmnist.npz")],
+        class_names=[
+            "adipose",
+            "background",
+            "debris",
+            "lymphocytes",
+            "mucus",
+            "smooth muscle",
+            "normal colon mucosa",
+            "cancer-associated stroma",
+            "colorectal adenocarcinoma epithelium",
+        ],
+        description=(
+            "Colorectal cancer histology tiles (NCT-CRC-HE-100K). Tissue-type "
+            "prevalence shifts between tissue sources and scanning protocols; "
+            "cancer-associated stroma vs. smooth muscle is a classic confusable "
+            "pair, with the other seven tissue types as aleatoric decoys. Large "
+            "test split, so the official val split is used for training."
+        ),
+        confusable_pair=("cancer-associated stroma", "smooth muscle"),
+        tags=["rgb", "medical"],
+        val_role="train",
+    ),
+    "octmnist": DatasetSpec(
+        key="octmnist",
+        display_name="OCTMNIST (MedMNIST v2)",
+        kind="medmnist",
+        files=[(_ZENODO + "octmnist.npz?download=1", "octmnist.npz")],
+        class_names=[
+            "choroidal neovascularization",
+            "diabetic macular edema",
+            "drusen",
+            "normal",
+        ],
+        description=(
+            "Retinal OCT scans, 4 diagnostic categories. Drusen vs. normal is a "
+            "subtle (early-AMD) boundary and the retinal-disease prevalence "
+            "shifts between screening and referral populations. The test split "
+            "is only 1,000 examples, so val is merged into test for evaluation, "
+            "as for the already-incorporated datasets."
+        ),
+        confusable_pair=("drusen", "normal"),
+        tags=["grayscale", "medical"],
+    ),
+    "tissuemnist": DatasetSpec(
+        key="tissuemnist",
+        display_name="TissueMNIST (MedMNIST v2)",
+        kind="medmnist",
+        files=[(_ZENODO + "tissuemnist.npz?download=1", "tissuemnist.npz")],
+        class_names=[
+            "Collecting Duct, Connecting Tubule",
+            "Distal Convoluted Tubule",
+            "Glomerular endothelial cells",
+            "Interstitial endothelial cells",
+            "Leukocytes",
+            "Podocytes",
+            "Proximal Tubule Segments",
+            "Thick Ascending Limb",
+        ],
+        description=(
+            "Human kidney cortex cells, 8 tissue types. The two endothelial cell "
+            "types (glomerular vs. interstitial) are near-identical at 28x28, a "
+            "natural weakly-identifiable pair. Large test split, so the official "
+            "val split is used for training."
+        ),
+        confusable_pair=(
+            "Glomerular endothelial cells",
+            "Interstitial endothelial cells",
+        ),
+        tags=["grayscale", "medical"],
+        val_role="train",
+    ),
+    "organamnist": DatasetSpec(
+        key="organamnist",
+        display_name="OrganAMNIST (MedMNIST v2)",
+        kind="medmnist",
+        files=[(_ZENODO + "organamnist.npz?download=1", "organamnist.npz")],
+        class_names=[
+            "bladder",
+            "femur-left",
+            "femur-right",
+            "heart",
+            "kidney-left",
+            "kidney-right",
+            "liver",
+            "lung-left",
+            "lung-right",
+            "pancreas",
+            "spleen",
+        ],
+        description=(
+            "Abdominal CT organs (axial view), 11 classes. Mirror-image organs "
+            "(left vs. right kidney) are near-identical at 28x28 -- a natural "
+            "weakly-identifiable pair -- while the other organs act as decoys. "
+            "Large test split, so the official val split is used for training."
+        ),
+        confusable_pair=("kidney-left", "kidney-right"),
+        tags=["grayscale", "medical"],
+        val_role="train",
     ),
 }
