@@ -73,6 +73,7 @@ ARCH_DEFAULTS = {
     "octmnist": "resnet18-28",
     "tissuemnist": "resnet18-28",
     "organamnist": "resnet18-28",
+    "organsmnist": "resnet18-28",
 }
 ARCH_CHOICES = ("lenet", "resnet18-32", "resnet18-28")
 

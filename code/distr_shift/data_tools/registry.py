@@ -307,4 +307,34 @@ DATASETS: dict[str, DatasetSpec] = {
         tags=["grayscale", "medical"],
         val_role="train",
     ),
+    "organsmnist": DatasetSpec(
+        key="organsmnist",
+        display_name="OrganSMNIST (MedMNIST v2)",
+        kind="medmnist",
+        files=[(_ZENODO + "organsmnist.npz?download=1", "organsmnist.npz")],
+        class_names=[
+            "bladder",
+            "femur-left",
+            "femur-right",
+            "heart",
+            "kidney-left",
+            "kidney-right",
+            "liver",
+            "lung-left",
+            "lung-right",
+            "pancreas",
+            "spleen",
+        ],
+        description=(
+            "Abdominal CT organs (sagittal view), 11 classes. Same organ labels "
+            "as OrganAMNIST but sliced sagittally; mirror-image organs (left vs. "
+            "right kidney) stay a natural weakly-identifiable pair while the "
+            "other organs act as decoys. The official train/val/test split is "
+            "kept intact -- the val split is the model-selection set and "
+            "evaluation uses the test split alone (val is not merged into test)."
+        ),
+        confusable_pair=("kidney-left", "kidney-right"),
+        tags=["grayscale", "medical"],
+        val_role="train",
+    ),
 }

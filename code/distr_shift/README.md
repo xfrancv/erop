@@ -525,9 +525,11 @@ curve. Passing `--percentile-band X` (both reject-option scripts, `X` in
 **median**. The band is then generally asymmetric (it always contains the
 median), and, unlike the s.e.m. band, describes the *spread of the replicate
 values* rather than the *uncertainty of their mean*, so it does not shrink as
-trials are added; at the default 10–20 replicates its edges are coarse. Only
-the figures change — the text tables stay mean-based, and the figure titles
-name the median so the two are not conflated.
+trials are added; at the default 10–20 replicates its edges are coarse. The
+text tables follow suit: under `--percentile-band` their central value is the
+**median** over replicates (matching each figure's solid line) instead of the
+mean, while the reported `± std` dispersion is unchanged. The figure titles name
+the median so the two are not conflated.
 
 **Restyling figures without re-running (figure specs).** Every `*.png` a
 reject-option script writes drops a reusable **figure spec** beside it:
@@ -609,15 +611,19 @@ library plus NumPy/matplotlib/tqdm — no torch/torchvision/medmnist.
 | OCTMNIST | `octmnist` | 28×28 grayscale | 4 | MedMNIST v2 `.npz` (Zenodo) | drusen / normal |
 | TissueMNIST | `tissuemnist` | 28×28 grayscale | 8 | MedMNIST v2 `.npz` (Zenodo) | glomerular / interstitial endothelial cells |
 | OrganAMNIST | `organamnist` | 28×28 grayscale | 11 | MedMNIST v2 `.npz` (Zenodo) | kidney-left / kidney-right |
+| OrganSMNIST | `organsmnist` | 28×28 grayscale | 11 | MedMNIST v2 `.npz` (Zenodo) | kidney-left / kidney-right |
 
 CIFAR-100's fast.ai mirror is laid out two levels deep
 (`<split>/<superclass>/<fine-class>/*.png`); the image-folder loader labels by
 the leaf (fine-class) folder, so it yields the 100 fine classes. RetinaMNIST is
 ordinal (5 diabetic-retinopathy severity grades), so its "confusable pair" is
 the adjacent mild/moderate boundary rather than two arbitrary classes. The
-confusable pairs for PathMNIST, OCTMNIST, TissueMNIST and OrganAMNIST are
-initial proposals (e.g. the near-identical left/right kidney in OrganAMNIST);
-validate them, or let `--auto-target-prior` pick, before relying on them.
+confusable pairs for PathMNIST, OCTMNIST, TissueMNIST, OrganAMNIST and
+OrganSMNIST are initial proposals (e.g. the near-identical left/right kidney in
+the two Organ datasets); validate them, or let `--auto-target-prior` pick,
+before relying on them. OrganSMNIST is the sagittal-view counterpart of the
+axial-view OrganAMNIST — the same 11 abdominal-organ labels, sliced along a
+different plane.
 
 **Split policy (`val_role`).** Each dataset's registry entry carries a
 `val_role` field that controls how `run_base_predictor_exp.py` uses the official
@@ -625,10 +631,11 @@ validate them, or let `--auto-target-prior` pick, before relying on them.
 (evaluation only) and carves the model-selection set out of `train` — this suits
 the datasets with small test splits (Fashion-MNIST, CIFAR, DermaMNIST,
 BloodMNIST, RetinaMNIST, **and OCTMNIST**, whose test split is only 1,000
-examples). PathMNIST, TissueMNIST and OrganAMNIST instead use `val_role="train"`:
-they train on the *whole* official `train` split, use the official `val` split
-as the model-selection set, and evaluate on the official `test` split alone —
-their test splits are large enough (7k–47k) that no merge is needed.
+examples). PathMNIST, TissueMNIST, OrganAMNIST and OrganSMNIST instead use
+`val_role="train"`: they train on the *whole* official `train` split, use the
+official `val` split as the model-selection set, and evaluate on the official
+`test` split alone — their test splits are large enough (7k–47k; OrganSMNIST
+has 8,827) that no merge is needed.
 
 ```bash
 python download_datasets.py                 # fetch all into data/
@@ -786,14 +793,16 @@ require **torch/torchvision** (unlike the download/analysis tools above).
 
    `--sweep` mirrors the synthetic sweep: it varies the adaptation-set size
    over `--sizes` (nested prefixes of one resampled pool per trial, scored on
-   a fixed evaluation set) and writes the AuRC-vs-n, AuRC50-vs-n,
+   a fixed evaluation set) and writes the AuRC-vs-n and AuReC-vs-n
+   (`aurc_vs_n_test.png`, `aurec_vs_n_test.png` — two independent single-panel
+   figures, one per curve, so each drops straight into a paper), AuRC50-vs-n,
    epistemic-metrics (two panels: regret/epistemic-uncertainty overlaid, and
    the negligible portion), and coverage-at-target figures plus the per-size
    coverage-curve figures in a `coverage_curves/` subfolder, plus a sweep
    report. It also writes `base_accuracy_vs_n_test.png`: the test accuracy of
-   the Bayesian learned-prior predictor and the supervised-prior plugin as
-   they adapt from the `n` examples, against the (flat) true-prior plugin as
-   the oracle ceiling.
+   the Bayesian learned-prior predictor as it adapts from the `n` examples,
+   against the (flat) training-prior plugin (no adaptation) and the (flat)
+   true-prior plugin as the oracle ceiling.
 
    It reports the four plugin/Bayesian predictors' accuracy (no optimal-Bayes
    upper bound — the true conditionals are unknown for real data), the
