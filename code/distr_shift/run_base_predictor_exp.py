@@ -261,11 +261,15 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-3,
                         help="Adam learning rate.")
-    parser.add_argument("--calibration", choices=("bcts", "temperature"),
-                        default="bcts",
-                        help="Post-hoc calibration: bias-corrected temperature "
-                             "scaling (per-class bias; needed for label-shift "
-                             "estimation downstream) or plain temperature.")
+    parser.add_argument("--calibration", choices=("none", "bcts", "temperature"),
+                        default="none",
+                        help="Post-hoc calibration of the posterior: 'none' "
+                             "(default) leaves the raw softmax uncalibrated -- an "
+                             "ablation to measure the method's sensitivity to "
+                             "miscalibration; 'bcts' is bias-corrected temperature "
+                             "scaling (per-class bias, best for label-shift "
+                             "estimation downstream); 'temperature' is plain "
+                             "temperature scaling.")
     args = parser.parse_args()
 
     if args.device == "cuda" and not torch.cuda.is_available():
@@ -378,10 +382,17 @@ def main() -> None:
 
     # --- calibration on the model-selection part ----------------------------
     val_logits = collect_logits(model, Xt_val, device)
-    temperature, calib_bias = fit_calibration(val_logits, yt_val,
-                                              mode=args.calibration)
+    if args.calibration == "none":
+        # Ablation: no post-hoc calibration. The identity transform (T=1, zero
+        # bias) leaves the raw softmax posterior untouched; downstream scripts
+        # that apply softmax(logits / T + bias) then see the uncalibrated model.
+        temperature, calib_bias = 1.0, np.zeros(Y)
+    else:
+        temperature, calib_bias = fit_calibration(val_logits, yt_val,
+                                                  mode=args.calibration)
     # Calibration-consistency check on the same held-out (train-distribution)
-    # split: mean calibrated posterior vs. empirical class frequency.
+    # split: mean (calibrated) posterior vs. empirical class frequency. With
+    # --calibration none this reports how miscalibrated the raw model is.
     post_val = torch.softmax(
         val_logits / temperature + torch.from_numpy(calib_bias).float(),
         dim=1).numpy()
@@ -436,7 +447,9 @@ def main() -> None:
         f"splits      : fit {len(y_fit)}  model-selection {len(y_val)}  "
         f"test {len(y_test)} ({test_desc})",
         f"best epoch  : {best_epoch}  (validation error {best_val_err:.4f})",
-        f"calibration : {args.calibration}  (fit on the model-selection part)",
+        f"calibration : {args.calibration}"
+        + ("  (none: raw softmax, ablation)" if args.calibration == "none"
+           else "  (fit on the model-selection part)"),
         f"temperature : {temperature:.4f}",
         f"calib bias  : {np.array2string(calib_bias, precision=3)}",
         f"train prior : {np.array2string(train_prior, precision=4)}",

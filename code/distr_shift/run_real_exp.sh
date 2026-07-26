@@ -9,24 +9,36 @@
 
 # Real-data reject-option experiments for ONE dataset.
 #
-#   ./run_all_real_exp.sh <dataset>
+#   ./run_all_real_exp.sh <dataset> [suffix]
 #   sbatch -J erop-cifar100 run_all_real_exp.sh cifar100
 #
 # <dataset> is one of the keys listed in DATASETS below, or "all" to run every
 # dataset in turn (the script's previous behaviour). Each dataset needs its
 # base predictor at runs/<dataset>/model.pt (run_base_predictor_exp.py).
+#
+# [suffix] is optional: when given, it is appended (with a leading underscore)
+# to the dataset name for the OUTPUT directory only, so results land in
+# runs/<dataset>_<suffix>/ instead of runs/<dataset>/ while still reusing the
+# base predictor at runs/<dataset>/model.pt. E.g.
+#
+#   ./run_all_real_exp.sh fashion_mnist no_adapt   -> runs/fashion_mnist_no_adapt/
 
 set -u
 
 DATASETS=(bloodmnist cifar10 dermamnist fashion_mnist cifar100)
 
 usage() {
-    echo "usage: $0 <dataset>" >&2
+    echo "usage: $0 <dataset> [suffix]" >&2
     echo "  <dataset>: ${DATASETS[*]} | all" >&2
+    echo "  [suffix] : optional output-dir suffix (runs/<dataset>_<suffix>/)" >&2
     exit 1
 }
 
-[ $# -eq 1 ] || usage
+{ [ $# -eq 1 ] || [ $# -eq 2 ]; } || usage
+
+# Optional output-dir suffix from the second argument (empty if not given).
+OUT_SUFFIX=""
+[ $# -eq 2 ] && OUT_SUFFIX="_$2"
 
 source .venv/bin/activate
 
@@ -37,13 +49,15 @@ REGRET_TARGETS="0.0001 0.001 0.01"
 run() {
     local ds=$1; shift
     local model="runs/$ds/model.pt"
+    local outdir="runs/${ds}${OUT_SUFFIX}/"
     if [ ! -f "$model" ]; then
         echo "error: $model not found; train it first with" >&2
         echo "       python run_base_predictor_exp.py $ds runs/$ds" >&2
         return 1
     fi
-    echo "=== $ds: $* ==="
-    python run_real_reject_option_exp.py "$model" "runs/$ds/" --sweep \
+    echo "=== $ds${OUT_SUFFIX:+ [$OUT_SUFFIX]}: $* ==="
+    mkdir -p "$outdir"
+    python run_real_reject_option_exp.py "$model" "$outdir" --sweep \
         --sizes $SIZES --regret-target $REGRET_TARGETS "$@"
 }
 

@@ -660,12 +660,16 @@ require **torch/torchvision** (unlike the download/analysis tools above).
 1. **`run_base_predictor_exp.py`** trains and calibrates a neural-network base
    predictor. It splits the training subset (class-stratified) into a fit part
    and a model-selection part, selects the best epoch by validation error, and
-   calibrates on the model-selection part — by default **bias-corrected
-   temperature scaling** (scalar `T` + per-class bias; `--calibration
-   temperature` for plain scaling). BCTS matters downstream: a single
-   temperature flattens overconfident logits globally, which inflates the mean
-   posterior of rare classes, and the label-shift MCMC misreads that bias as
-   prior shift (on DermaMNIST this put 60% of the learned prior on a 1% class).
+   optionally calibrates on the model-selection part. `--calibration` selects
+   the scheme: **`none`** (default) leaves the raw softmax posterior
+   uncalibrated — an ablation for measuring the method's sensitivity to
+   miscalibration; **`bcts`** is bias-corrected temperature scaling (scalar `T`
+   + per-class bias); **`temperature`** is plain scaling. BCTS matters
+   downstream: a single temperature flattens overconfident logits globally,
+   which inflates the mean posterior of rare classes, and the label-shift MCMC
+   misreads that bias as prior shift (on DermaMNIST this put 60% of the learned
+   prior on a 1% class) — so pass `--calibration bcts` for the best-calibrated
+   run; `none` isolates the uncalibrated baseline.
    The script reports a **calibration-consistency check** — mean calibrated
    posterior over the held-out split divided by class frequency, ~1 per class
    when healthy, stored in the bundle and re-printed with a warning by

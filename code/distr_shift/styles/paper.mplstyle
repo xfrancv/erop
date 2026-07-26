@@ -15,7 +15,9 @@ ytick.labelsize:    13
 
 # Figure size in inches [width, height]. Specs with figsize=null defer here;
 # a spec that sets its own figsize overrides this.
-figure.figsize:     13.0, 4.0
+#figure.figsize:     13.0, 4.0
+figure.figsize:     19.5, 4.5
+
 
 # Lines and grid
 lines.linewidth:    1.8
