@@ -145,6 +145,20 @@ def _agg_desc(reps: int) -> str:
     return _AGG_DESC.format(reps=reps)
 
 
+def _center(arr, axis=None):
+    """Center statistic for the report tables, matching the figures' solid
+    line: the mean over the replicate axis, or the pointwise median under
+    ``--percentile-band`` (``configure_percentile_band``). Keeps the tables and
+    figures reporting the same central value."""
+    return (np.median if _PCT_BAND is not None else np.mean)(arr, axis=axis)
+
+
+def _center_word() -> str:
+    """The name of the report tables' center statistic: 'mean', or 'median'
+    under ``--percentile-band``. For header text that names the aggregation."""
+    return "median" if _PCT_BAND is not None else "mean"
+
+
 def bayesian_posterior_and_aleatoric(
     train_posterior: np.ndarray,   # (n, Y) = p_tr(y | x)
     train_prior: np.ndarray,       # (Y,)
@@ -328,23 +342,25 @@ SWEEP_AVG_LABEL = "avg"
 
 def sweep_avg_row(data: dict, names, decimals: int, warn=None) -> str:
     """Format the ``avg`` row for a per-predictor sweep table (AuRC, AuRC50,
-    AuGRC, coverage-at-target): mean over sizes of each predictor column, in the
-    table's own field width (24) and ``decimals``. ``warn`` (the AuRC tables'
-    per-size warn array) adds the matching mean-warn cell when given."""
+    AuGRC, coverage-at-target): the center (mean, or median under
+    ``--percentile-band``) over sizes and replicates of each predictor column,
+    in the table's own field width (24) and ``decimals``. ``warn`` (the AuRC
+    tables' per-size warn array) adds the matching mean-warn cell when given."""
     row = f"{SWEEP_AVG_LABEL:>8}"
     if warn is not None:
         row += f"{float(np.mean(warn)):>8.2f}"
-    row += "".join(f"{float(np.mean(data[name])):>24.{decimals}f}" for name in names)
+    row += "".join(f"{float(_center(data[name])):>24.{decimals}f}" for name in names)
     return row
 
 
 def sweep_epi_avg_row(epi_metrics: np.ndarray) -> str:
     """Format the ``avg`` row for the epistemic-uncertainty metrics table, whose
     columns are the three fixed metrics (not per predictor). ``epi_metrics`` is
-    (sizes, replicates, 3); each column is averaged over sizes and replicates."""
-    return (f"{SWEEP_AVG_LABEL:>8}{epi_metrics[:, :, 0].mean():>14.4f}"
-            f"{epi_metrics[:, :, 1].mean():>14.4f}"
-            f"{epi_metrics[:, :, 2].mean():>14.3f}")
+    (sizes, replicates, 3); each column is centered (mean, or median under
+    ``--percentile-band``) over sizes and replicates."""
+    return (f"{SWEEP_AVG_LABEL:>8}{_center(epi_metrics[:, :, 0]):>14.4f}"
+            f"{_center(epi_metrics[:, :, 1]):>14.4f}"
+            f"{_center(epi_metrics[:, :, 2]):>14.3f}")
 
 
 def run_reject_trial(
@@ -513,14 +529,14 @@ def run_single_experiment(model, args, master_rng) -> None:
     print("-" * 76)
     for k, v in accs.items():
         label = REJECT_LABELS.get(k, k)
-        print(f"{label:<46}{np.mean(v):>12.4f}{np.std(v):>10.4f}")
+        print(f"{label:<46}{_center(v):>12.4f}{np.std(v):>10.4f}")
     print("-" * 76)
     print(f"{'reject-option predictor':<46}{'AuRC risk':>14}{'AuRC regret':>14}")
     print("-" * 76)
     for name in names:
         print(f"{REJECT_LABELS[name]:<46}"
-              f"{aurc_risk[name].mean():>8.4f} ± {aurc_risk[name].std():.4f}"
-              f"{aurc_regret[name].mean():>8.4f} ± {aurc_regret[name].std():.4f}")
+              f"{_center(aurc_risk[name]):>8.4f} ± {aurc_risk[name].std():.4f}"
+              f"{_center(aurc_regret[name]):>8.4f} ± {aurc_regret[name].std():.4f}")
     print("-" * 76)
     print(AURC50_NOTE)
     print(f"{'reject-option predictor':<46}{'AuRC50 risk':>14}"
@@ -528,8 +544,8 @@ def run_single_experiment(model, args, master_rng) -> None:
     print("-" * 76)
     for name in names:
         print(f"{REJECT_LABELS[name]:<46}"
-              f"{aurc50_risk[name].mean():>8.4f} ± {aurc50_risk[name].std():.4f}"
-              f"{aurc50_regret[name].mean():>8.4f} ± {aurc50_regret[name].std():.4f}")
+              f"{_center(aurc50_risk[name]):>8.4f} ± {aurc50_risk[name].std():.4f}"
+              f"{_center(aurc50_regret[name]):>8.4f} ± {aurc50_regret[name].std():.4f}")
     print(AURC50_CAVEAT)
     print("-" * 76)
     print("area under the generalized curves (normalized by n_eval, not by the "
@@ -538,12 +554,12 @@ def run_single_experiment(model, args, master_rng) -> None:
     print("-" * 76)
     for name in names:
         print(f"{REJECT_LABELS[name]:<46}"
-              f"{augrc_risk[name].mean():>8.4f} ± {augrc_risk[name].std():.4f}"
-              f"{augrc_regret[name].mean():>8.4f} ± {augrc_regret[name].std():.4f}")
+              f"{_center(augrc_risk[name]):>8.4f} ± {augrc_risk[name].std():.4f}"
+              f"{_center(augrc_regret[name]):>8.4f} ± {augrc_regret[name].std():.4f}")
     print("-" * 76)
     ref_note = ("  ('ref' = per-trial full-coverage risk of the true-prior "
                 "reference)" if args.risk_target is None else "")
-    print(f"coverage at target (mean±std over trials){ref_note}")
+    print(f"coverage at target ({_center_word()}±std over trials){ref_note}")
     header = f"{'reject-option predictor':<46}"
     header += "".join(f"{'risk<=' + d:>14}" for d in rt_descs)
     header += "".join(f"{f'regret<={e:g}':>14}" for e in args.regret_target)
@@ -552,7 +568,7 @@ def run_single_experiment(model, args, master_rng) -> None:
     for name in names:
         row = f"{REJECT_LABELS[name]:<46}"
         for cov in (*cov_risk, *cov_regret):
-            row += f"{cov[name].mean():>8.3f}±{cov[name].std():.3f}"
+            row += f"{_center(cov[name]):>8.3f}±{cov[name].std():.3f}"
         print(row)
     print("-" * 76)
     print("epistemic-uncertainty metrics of the Bayesian predictor "
@@ -561,7 +577,7 @@ def run_single_experiment(model, args, master_rng) -> None:
                        ("avg regret (full coverage)", 1),
                        ("portion with negligible epistemic uncertainty", 2)):
         print(f"  {label:<48}"
-              f"{epi_metrics[:, col].mean():>9.4f} ± {epi_metrics[:, col].std():.4f}")
+              f"{_center(epi_metrics[:, col]):>9.4f} ± {epi_metrics[:, col].std():.4f}")
     print("=" * 76)
 
     make_curve_figures(risk_curves, regret_curves, aurc_risk, aurc_regret,
@@ -598,7 +614,7 @@ def make_curve_figures(
         for name in REJECT_LABELS:
             center, lo, hi = _series(curves[name], 0, trials)
             label = (f"{REJECT_LABELS[name]}  "
-                     f"({area_label} {aurc[name].mean():.4f} ± "
+                     f"({area_label} {_center(aurc[name]):.4f} ± "
                      f"{aurc[name].std():.4f})")
             series.append(figspec.Series(
                 x=coverage, center=center, lower=lo, upper=hi,
@@ -660,7 +676,7 @@ def make_curves_at_n_figure(
                 x=coverage, center=center, lower=lo, upper=hi,
                 color=REJECT_COLORS[name],
                 label=f"{REJECT_LABELS[name]}  "
-                      f"({area_label} {area.mean():.4f} ± {area.std():.4f})"))
+                      f"({area_label} {_center(area):.4f} ± {area.std():.4f})"))
         panels.append(figspec.Panel(
             series=series,
             hlines=[figspec.HLine(0.0)] if is_regret else [],
@@ -797,7 +813,7 @@ def run_sweep_experiment(model, args, master_rng) -> None:
               + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             row = f"{n:>8}{warned[i].mean():>8.2f}"
-            row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
+            row += "".join(f"{_center(aurc[name][i]):>24.4f}" for name in names)
             print(row)
         print(sweep_avg_row(aurc, names, decimals=4, warn=warned))
     for metric, aurc50 in (("risk", aurc50_risk), ("regret", aurc50_regret)):
@@ -807,7 +823,7 @@ def run_sweep_experiment(model, args, master_rng) -> None:
               + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             print(f"{n:>8}"
-                  + "".join(f"{aurc50[name][i].mean():>24.4f}" for name in names))
+                  + "".join(f"{_center(aurc50[name][i]):>24.4f}" for name in names))
         print(sweep_avg_row(aurc50, names, decimals=4))
     print(AURC50_CAVEAT)
     for metric, augrc in (("risk", augrc_risk), ("regret", augrc_regret)):
@@ -817,7 +833,7 @@ def run_sweep_experiment(model, args, master_rng) -> None:
               + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             print(f"{n:>8}"
-                  + "".join(f"{augrc[name][i].mean():>24.4f}" for name in names))
+                  + "".join(f"{_center(augrc[name][i]):>24.4f}" for name in names))
         print(sweep_avg_row(augrc, names, decimals=4))
     risk_fig_descs = ["reference risk" if rt is None else d
                       for rt, d in zip(rts, rt_descs)]
@@ -834,16 +850,16 @@ def run_sweep_experiment(model, args, master_rng) -> None:
               + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             print(f"{n:>8}"
-                  + "".join(f"{cov[name][i].mean():>24.3f}" for name in names))
+                  + "".join(f"{_center(cov[name][i]):>24.3f}" for name in names))
         print(sweep_avg_row(cov, names, decimals=3))
     print("-" * 76)
     print("Epistemic-uncertainty metrics of the Bayesian predictor "
           f"(threshold={args.epi_threshold:g})")
     print(f"{'n_test':>8}{'avg epi':>14}{'avg regret':>14}{'portion negl':>14}")
     for i, n in enumerate(sizes):
-        print(f"{n:>8}{epi_metrics[i, :, 0].mean():>14.4f}"
-              f"{epi_metrics[i, :, 1].mean():>14.4f}"
-              f"{epi_metrics[i, :, 2].mean():>14.3f}")
+        print(f"{n:>8}{_center(epi_metrics[i, :, 0]):>14.4f}"
+              f"{_center(epi_metrics[i, :, 1]):>14.4f}"
+              f"{_center(epi_metrics[i, :, 2]):>14.3f}")
     print(sweep_epi_avg_row(epi_metrics))
     print("=" * 76)
     if warned.any():

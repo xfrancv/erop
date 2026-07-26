@@ -85,6 +85,8 @@ from run_synth_reject_option_exp import (
     AURC50_NOTE,
     REJECT_LABELS,
     _agg_desc,
+    _center,
+    _center_word,
     _resolve_risk_targets,
     _series,
     bayesian_posterior_and_aleatoric,
@@ -101,7 +103,6 @@ from run_synth_reject_option_exp import (
     make_gen_curve_figures,
     make_gen_curves_at_n_figure,
     make_gen_sweep_figure,
-    make_sweep_figure,
     make_trunc_sweep_figure,
     oracle_curves,
     selective_curves,
@@ -452,7 +453,7 @@ def run_real_trial(P, y, train_prior, target_prior, n_test, n_eval, loss, rng,
 
 def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
               master_rng, epi_threshold, risk_targets=None,
-              regret_targets=(0.002,), sampler="mh", beta=None, sup_beta=None,
+              regret_targets=(0.002,), sampler="mh", beta=None,
               adapt_replace=True, progress_desc="sweep"):
     """AuRC and epistemic metrics as a function of the adaptation-set size.
 
@@ -462,10 +463,10 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
     examples are nested prefixes of that pool, so neighbouring sizes share
     draws and the curves reflect ``n`` rather than re-sampling noise.
 
-    ``sup_beta`` and ``adapt_replace`` are the dirichlet-mode knobs of
-    ``run_real_trial``; with ``adapt_replace=False`` the truncated pool can be
-    shorter than a requested size, so the realized per-size adaptation counts
-    are returned alongside the metrics.
+    ``adapt_replace`` is a dirichlet-mode knob of ``run_real_trial``; with
+    ``adapt_replace=False`` the truncated pool can be shorter than a requested
+    size, so the realized per-size adaptation counts are returned alongside the
+    metrics.
     """
     Y = len(train_prior)
     N = len(y)
@@ -486,11 +487,11 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
     risk_curves = {n: np.zeros((len(sizes), trials, n_eval)) for n in names}
     regret_curves = {n: np.zeros((len(sizes), trials, n_eval)) for n in names}
     # Base-predictor accuracy vs. n: Bayesian learned prior, plugin with the
-    # true (target) prior, plugin with the supervised prior estimate. The
-    # true-prior plugin does not use the adaptation examples, so it is constant
-    # in n (flat curve); the other two adapt from the n examples.
+    # true (target) prior, plugin with the unadapted training prior. Only the
+    # Bayesian predictor uses the adaptation examples; the true- and
+    # training-prior plugins ignore them, so both are constant in n (flat curve).
     base_acc = {k: np.zeros((len(sizes), trials))
-                for k in ("bayes_learned", "plugin_true", "plugin_supervised")}
+                for k in ("bayes_learned", "plugin_true", "plugin_train")}
     short_adapt: set[int] = set()
     short_eval: set[int] = set()
     realized_n = np.zeros((len(sizes), trials), dtype=int)
@@ -512,6 +513,11 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
             resolved_rts = [float(losses_ref.mean()) if rt is None else rt
                             for rt in rts]
             acc_true = accuracy(h_true, y_ev)   # constant in n (no adaptation)
+            # Plugin with the unadapted training prior: alpha = train_prior
+            # leaves p_tr(y|x) unchanged, so this is the base classifier's Bayes
+            # decision and, like the true-prior plugin, is constant in n.
+            h_train = bayes_decision(post_ev, loss)
+            acc_train = accuracy(h_train, y_ev)
 
             for i, n in enumerate(sizes):
                 adapt_idx = pool_idx[:n]
@@ -527,19 +533,8 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                 h_bayes = cond_risk_bayes.argmin(axis=1)
                 total = cond_risk_bayes.min(axis=1)
 
-                counts = np.bincount(y[adapt_idx], minlength=Y).astype(float)
-                if sup_beta is None:
-                    supervised_prior = counts / counts.sum()
-                else:
-                    supervised_prior = ((counts + sup_beta)
-                                        / (counts.sum() + sup_beta.sum()))
-                post_sup = corrected_posterior(
-                    post_ev, train_prior, supervised_prior)
-                cond_risk_sup = post_sup @ loss.T
-                h_sup = cond_risk_sup.argmin(axis=1)
-
                 base_acc["bayes_learned"][i, t] = accuracy(h_bayes, y_ev)
-                base_acc["plugin_supervised"][i, t] = accuracy(h_sup, y_ev)
+                base_acc["plugin_train"][i, t] = acc_train
                 base_acc["plugin_true"][i, t] = acc_true
 
                 predictors = {
@@ -580,14 +575,15 @@ def base_accuracy_panel(
     """The base-predictor-accuracy-vs-size panel as a ``figspec.Panel``.
 
     Three predictors: Bayesian learned prior, plugin with the true (target)
-    prior, and plugin with the supervised prior estimate. Each ``base_acc``
-    entry is a (len(sizes), trials) array; the true-prior plugin is flat in n
-    (drawn as a curve for direct comparison). Split out so the panel can be
-    embedded in the combined accuracy + AuRC overview figure."""
+    prior, and plugin with the unadapted training prior. Each ``base_acc``
+    entry is a (len(sizes), trials) array; the true- and training-prior plugins
+    are flat in n (drawn as curves for direct comparison). Split out as its own
+    ``figspec.Panel`` so ``make_base_accuracy_figure`` can write it as an
+    independent single-panel figure."""
     x = np.asarray(sizes, dtype=float)
     style = (
         ("bayes_learned", "Bayesian, learned prior", "C1", "o", "-"),
-        ("plugin_supervised", "Plugin, supervised prior estimate", "C4", "s", "-"),
+        ("plugin_train", "Plugin, training prior (no adaptation)", "C4", "s", "-"),
         ("plugin_true", "Plugin, true test prior (oracle)", "C0", None, "--"),
     )
     series = []
@@ -614,28 +610,26 @@ def make_base_accuracy_figure(
     figspec.write(spec, f"{out_dir}/base_accuracy_vs_n_test.png")
 
 
-def make_overview_figure(
-    sizes: list[int], base_acc: dict, aurc_risk: dict, aurc_regret: dict,
+def make_sweep_area_figures(
+    sizes: list[int], aurc_risk: dict, aurc_regret: dict,
     reps: int, out_dir: str, short_name: str,
 ) -> None:
-    """Three-panel overview: base-predictor accuracy, AuRC (risk) and AuReC
-    (regret), all vs. the adaptation-set size, side by side.
+    """The AuRC (risk) and AuReC (regret) sweep panels as two *independent*
+    single-panel figures, ``aurc_vs_n_test.png`` and ``aurec_vs_n_test.png``.
 
-    Panel 1 is the ``base_accuracy_vs_n_test`` accuracy panel (retitled
-    ``<dataset>: Accuracy vs. adaptation set size``); panels 2-3 are exactly the
-    two panels of ``aurc_vs_n_test`` with their dataset-named titles preserved.
+    Written separately (rather than combined, or bundled with the accuracy panel
+    into one overview figure) so each curve drops into a paper on its own. The
+    accuracy panel is its own figure via ``make_base_accuracy_figure``.
     ``figsize=None`` so the size follows the render style sheet."""
     xlabel = "number of unlabeled adaptation examples $m$"
-    acc_panel = base_accuracy_panel(
-        sizes, base_acc, reps, xlabel=xlabel,
-        title=f"{short_name}: Accuracy vs. adaptation set size")
-    aurc_panels = sweep_panels(
+    risk_panel, regret_panel = sweep_panels(
         sizes, aurc_risk, aurc_regret, reps, xlabel=xlabel,
-        titles=(f"{short_name}: AuRC vs. adaptation set size",
-                f"{short_name}: AuReC vs. adaptation set size"))
-    spec = figspec.FigureSpec(panels=[acc_panel, *aurc_panels],
-                              nrows=1, ncols=3, figsize=None)
-    figspec.write(spec, f"{out_dir}/accuracy_and_aurc_vs_n_test.png")
+        titles=(f"{short_name}: AuRC vs. adaptation set size $m$",
+                f"{short_name}: AuReC vs. adaptation set size $m$"))
+    for panel, fname in ((risk_panel, "aurc_vs_n_test"),
+                         (regret_panel, "aurec_vs_n_test")):
+        figspec.write(figspec.FigureSpec(panels=[panel], figsize=None),
+                      f"{out_dir}/{fname}.png")
 
 
 def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
@@ -666,7 +660,7 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
                      + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             row = f"{n:>8}{warned[i].mean():>8.2f}"
-            row += "".join(f"{aurc[name][i].mean():>24.4f}" for name in names)
+            row += "".join(f"{_center(aurc[name][i]):>24.4f}" for name in names)
             lines.append(row)
         lines.append(sweep_avg_row(aurc, names, decimals=4, warn=warned))
     for metric, aurc50 in (("risk", aurc50_risk), ("regret", aurc50_regret)):
@@ -676,7 +670,7 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
                      + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             lines.append(f"{n:>8}"
-                         + "".join(f"{aurc50[name][i].mean():>24.4f}"
+                         + "".join(f"{_center(aurc50[name][i]):>24.4f}"
                                    for name in names))
         lines.append(sweep_avg_row(aurc50, names, decimals=4))
     lines.append(AURC50_CAVEAT)
@@ -688,7 +682,7 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
                      + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             lines.append(f"{n:>8}"
-                         + "".join(f"{augrc[name][i].mean():>24.4f}"
+                         + "".join(f"{_center(augrc[name][i]):>24.4f}"
                                    for name in names))
         lines.append(sweep_avg_row(augrc, names, decimals=4))
     rts, rt_descs = _resolve_risk_targets(args.risk_target)
@@ -707,16 +701,16 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
                      + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             lines.append(f"{n:>8}"
-                         + "".join(f"{cov[name][i].mean():>24.3f}" for name in names))
+                         + "".join(f"{_center(cov[name][i]):>24.3f}" for name in names))
         lines.append(sweep_avg_row(cov, names, decimals=3))
     lines.append("-" * 76)
     lines.append("Epistemic-uncertainty metrics of the Bayesian predictor "
                  f"(threshold={args.epi_threshold:g})")
     lines.append(f"{'n_test':>8}{'avg epi':>14}{'avg regret':>14}{'portion negl':>14}")
     for i, n in enumerate(sizes):
-        lines.append(f"{n:>8}{epi_metrics[i, :, 0].mean():>14.4f}"
-                     f"{epi_metrics[i, :, 1].mean():>14.4f}"
-                     f"{epi_metrics[i, :, 2].mean():>14.3f}")
+        lines.append(f"{n:>8}{_center(epi_metrics[i, :, 0]):>14.4f}"
+                     f"{_center(epi_metrics[i, :, 1]):>14.4f}"
+                     f"{_center(epi_metrics[i, :, 2]):>14.3f}")
     lines.append(sweep_epi_avg_row(epi_metrics))
     lines.append("=" * 76)
     if warned.any():
@@ -727,15 +721,12 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
     (out_dir / "real_reject_option_sweep_report.txt").write_text(report + "\n")
     print(report)
 
-    # aurc_vs_n_test: dataset-named title, "$m$" for the adaptation-set size,
-    # and figsize=None so the figure size follows the render style sheet.
+    # aurc_vs_n_test + aurec_vs_n_test: the AuRC (risk) and AuReC (regret) sweeps
+    # as two independent single-panel figures (dataset-named titles, "$m$" for
+    # the adaptation-set size, figsize=None so the size follows the style sheet).
     short_name = display_name.split(" (")[0] if display_name else "real data"
-    make_sweep_figure(
-        sizes, aurc_risk, aurc_regret, reps, args.out_dir,
-        xlabel="number of unlabeled adaptation examples $m$",
-        titles=(f"{short_name}: AuRC vs. adaptation set size $m$",
-                f"{short_name}: AuReC vs. adaptation set size $m$"),
-        figsize=None)
+    make_sweep_area_figures(sizes, aurc_risk, aurc_regret, reps, args.out_dir,
+                            short_name)
     make_gen_sweep_figure(sizes, augrc_risk, augrc_regret, reps, args.out_dir)
     make_trunc_sweep_figure(sizes, aurc50_risk, aurc50_regret, reps,
                             args.out_dir)
@@ -744,8 +735,6 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
     make_cov_target_figure(sizes, cov_risk, cov_regret, reps,
                            risk_fig_descs, regret_fig_descs, args.out_dir)
     make_base_accuracy_figure(sizes, base_acc, reps, args.out_dir)
-    make_overview_figure(sizes, base_acc, aurc_risk, aurc_regret, reps,
-                         args.out_dir, short_name)
     for i, n in enumerate(sizes):
         make_curves_at_n_figure(
             {name: risk_curves[name][i] for name in names},
@@ -757,9 +746,10 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
             n, args.out_dir)
     print(f"\nreport and figures written to {out_dir}/: "
           f"real_reject_option_sweep_report.txt, aurc_vs_n_test.png, "
-          f"gen_aurc_vs_n_test.png, {trunc_sweep_fname()}.png, "
+          f"aurec_vs_n_test.png, gen_aurc_vs_n_test.png, "
+          f"{trunc_sweep_fname()}.png, "
           f"epistemic_metrics_vs_n_test.png, cov_at_target_vs_n_test.png, "
-          f"base_accuracy_vs_n_test.png, accuracy_and_aurc_vs_n_test.png, "
+          f"base_accuracy_vs_n_test.png, "
           f"coverage_curves/[gen_]coverage_curves_n<n_test>.png "
           f"(two per size)")
 
@@ -934,7 +924,7 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
     regret_curves_d = {n: np.zeros((S, N, args.n_eval)) for n in names}
     base_acc_d = {k: np.zeros((S, N))
                   for k in ("bayes_learned", "plugin_true",
-                            "plugin_supervised")}
+                            "plugin_train")}
     realized_d = np.zeros((S, N))
     short_eval_all: set[int] = set()
     alphas = np.zeros((N, len(central_prior)))
@@ -948,7 +938,7 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
          realized_n) = run_sweep(
             P, y_pool, train_prior, alpha, sizes, T, args.n_eval, loss,
             prng, args.epi_threshold, args.risk_target, args.regret_target,
-            sampler=args.sampler, beta=model_beta, sup_beta=model_beta,
+            sampler=args.sampler, beta=model_beta,
             adapt_replace=False, progress_desc=f"prior {j + 1}/{N}")
         short_eval_all |= short_e
         for n in names:
@@ -1040,14 +1030,14 @@ def _single_outputs(args, out_dir: Path, lines: list[str], risk_curves,
     lines.append("-" * 76)
     for name, label in PREDICTOR_LABELS.items():
         v = accs[name]
-        lines.append(f"{label:<44}{np.mean(v):>12.4f}{np.std(v):>10.4f}")
+        lines.append(f"{label:<44}{_center(v):>12.4f}{np.std(v):>10.4f}")
     lines.append("-" * 76)
     lines.append(f"{'reject-option predictor':<46}{'AuRC risk':>14}{'AuRC regret':>14}")
     lines.append("-" * 76)
     for name in names:
         lines.append(f"{REJECT_LABELS[name]:<46}"
-                     f"{aurc_risk[name].mean():>8.4f} ± {aurc_risk[name].std():.4f}"
-                     f"{aurc_regret[name].mean():>8.4f} ± {aurc_regret[name].std():.4f}")
+                     f"{_center(aurc_risk[name]):>8.4f} ± {aurc_risk[name].std():.4f}"
+                     f"{_center(aurc_regret[name]):>8.4f} ± {aurc_regret[name].std():.4f}")
     lines.append("-" * 76)
     lines.append(AURC50_NOTE)
     lines.append(f"{'reject-option predictor':<46}{'AuRC50 risk':>14}"
@@ -1056,8 +1046,8 @@ def _single_outputs(args, out_dir: Path, lines: list[str], risk_curves,
     for name in names:
         lines.append(
             f"{REJECT_LABELS[name]:<46}"
-            f"{aurc50_risk[name].mean():>8.4f} ± {aurc50_risk[name].std():.4f}"
-            f"{aurc50_regret[name].mean():>8.4f} ± {aurc50_regret[name].std():.4f}")
+            f"{_center(aurc50_risk[name]):>8.4f} ± {aurc50_risk[name].std():.4f}"
+            f"{_center(aurc50_regret[name]):>8.4f} ± {aurc50_regret[name].std():.4f}")
     lines.append(AURC50_CAVEAT)
     lines.append("-" * 76)
     lines.append("area under the generalized curves (normalized by n_eval, not "
@@ -1067,12 +1057,12 @@ def _single_outputs(args, out_dir: Path, lines: list[str], risk_curves,
     lines.append("-" * 76)
     for name in names:
         lines.append(f"{REJECT_LABELS[name]:<46}"
-                     f"{augrc_risk[name].mean():>8.4f} ± {augrc_risk[name].std():.4f}"
-                     f"{augrc_regret[name].mean():>8.4f} ± {augrc_regret[name].std():.4f}")
+                     f"{_center(augrc_risk[name]):>8.4f} ± {augrc_risk[name].std():.4f}"
+                     f"{_center(augrc_regret[name]):>8.4f} ± {augrc_regret[name].std():.4f}")
     lines.append("-" * 76)
     ref_note = ("  ('ref' = per-trial full-coverage risk of the true-prior "
                 "reference)" if args.risk_target is None else "")
-    lines.append(f"coverage at target (mean±std over {rep_label}){ref_note}")
+    lines.append(f"coverage at target ({_center_word()}±std over {rep_label}){ref_note}")
     header = f"{'reject-option predictor':<46}"
     header += "".join(f"{'risk<=' + d:>14}" for d in rt_descs)
     header += "".join(f"{f'regret<={e:g}':>14}" for e in args.regret_target)
@@ -1081,7 +1071,7 @@ def _single_outputs(args, out_dir: Path, lines: list[str], risk_curves,
     for name in names:
         row = f"{REJECT_LABELS[name]:<46}"
         for cov in (*cov_risk, *cov_regret):
-            row += f"{cov[name].mean():>8.3f}±{cov[name].std():.3f}"
+            row += f"{_center(cov[name]):>8.3f}±{cov[name].std():.3f}"
         lines.append(row)
     lines.append("-" * 76)
     lines.append("epistemic-uncertainty metrics of the Bayesian predictor "
@@ -1090,7 +1080,7 @@ def _single_outputs(args, out_dir: Path, lines: list[str], risk_curves,
                        ("avg regret (full coverage)", 1),
                        ("portion with negligible epistemic uncertainty", 2)):
         lines.append(f"  {label:<48}"
-                     f"{epi_metrics[:, col].mean():>9.4f} ± {epi_metrics[:, col].std():.4f}")
+                     f"{_center(epi_metrics[:, col]):>9.4f} ± {epi_metrics[:, col].std():.4f}")
     lines.append("=" * 76)
     report = "\n".join(lines)
     (out_dir / "real_reject_option_report.txt").write_text(report + "\n")
