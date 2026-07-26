@@ -19,11 +19,12 @@
 # (both are the same directory) and whether the misspecified model prior is
 # used:
 #
-#   (none)    model & output: runs/<dataset>/           (default)
-#   noadapt   model & output: runs/<dataset>_noadapt/   (e.g. uncalibrated base)
-#   beta      model & output: runs/<dataset>/           + --beta $BETA_SUM
+#   (none)    model: runs/<dataset>/model.pt          output: runs/<dataset>/
+#   noadapt   model: runs/<dataset>_noadapt/model.pt  output: runs/<dataset>_noadapt/
+#   beta      model: runs/<dataset>/model.pt          output: runs/<dataset>/beta/
+#             (and appends --beta $BETA_SUM to run_real_reject_option_exp.py)
 #
-# Each chosen directory needs its base predictor at <dir>/model.pt
+# The model directory needs its base predictor at <dir>/model.pt
 # (run_base_predictor_exp.py).
 
 set -u
@@ -42,14 +43,16 @@ usage() {
 
 { [ $# -eq 1 ] || [ $# -eq 2 ]; } || usage
 
-# The second argument is a mode keyword; it maps to a directory suffix (used for
-# both the model input and the output) and to extra args for the Python script.
+# The second argument is a mode keyword. DIR_SUFFIX selects the model directory
+# (runs/<dataset><DIR_SUFFIX>/); OUT_SUBDIR is an extra output-only subdirectory;
+# EXTRA_ARGS are appended to the Python script.
 DIR_SUFFIX=""
+OUT_SUBDIR=""
 EXTRA_ARGS=()
 case "${2:-}" in
     "")       ;;                                   # default run
     noadapt)  DIR_SUFFIX="_noadapt" ;;
-    beta)     EXTRA_ARGS=(--beta "$BETA_SUM") ;;
+    beta)     OUT_SUBDIR="beta"; EXTRA_ARGS=(--beta "$BETA_SUM") ;;
     *)        echo "error: unknown mode '$2'" >&2; usage ;;
 esac
 
@@ -63,16 +66,17 @@ run() {
     local ds=$1; shift
     local dir="runs/${ds}${DIR_SUFFIX}"
     local model="$dir/model.pt"
+    local outdir="$dir${OUT_SUBDIR:+/$OUT_SUBDIR}/"
     if [ ! -f "$model" ]; then
         echo "error: $model not found; train it first with" >&2
         echo "       python run_base_predictor_exp.py $ds $dir" >&2
         return 1
     fi
-    echo "=== ${ds}${DIR_SUFFIX}${EXTRA_ARGS:+ (${EXTRA_ARGS[*]})}: $* ==="
-    mkdir -p "$dir"
+    echo "=== ${ds}${DIR_SUFFIX}${OUT_SUBDIR:+/$OUT_SUBDIR}${EXTRA_ARGS:+ (${EXTRA_ARGS[*]})}: $* ==="
+    mkdir -p "$outdir"
     # "${EXTRA_ARGS[@]+...}" guards against the empty-array-under-set-u error on
     # bash < 4.4 (older cluster nodes).
-    python run_real_reject_option_exp.py "$model" "$dir/" --sweep \
+    python run_real_reject_option_exp.py "$model" "$outdir" --sweep \
         --sizes $SIZES --regret-target $REGRET_TARGETS \
         "${EXTRA_ARGS[@]+${EXTRA_ARGS[@]}}" "$@"
 }
