@@ -30,11 +30,8 @@ usage() {
 
 source .venv/bin/activate
 
-# Shared sweep arguments. CIFAR-100 has only 100 pool examples per class, so
-# its adaptation sizes stop where the eval set would be starved.
-REGRET_TARGETS="0.0005 0.001 0.005 0.01 0.05"
-SIZES_DEFAULT="1 2 5 10 50 100 200 500"
-SIZES_CIFAR100="1 2 5 10 50 100"
+# 
+REGRET_TARGETS="0.0001 0.001 0.01"
 
 # run <dataset> <extra args...> -- one sweep of the reject-option experiment.
 run() {
@@ -52,168 +49,68 @@ run() {
 
 
 run_bloodmnist() {
-    SIZES="$SIZES_DEFAULT"
+    SIZES="1 2 5 10 50 100 200 500"
 
-
-    # base-acc: v   aurc: v  cov@reg: x
-#    run bloodmnist --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 20
-    # base-acc: v  aurc: (v)  cov@reg: (v)
-#    run bloodmnist --test-prior 0.45 0.01 0.01 0.25 0.01 0.01 0.25 0.01 --dirichlet 20
-    # base-acc: x  aurc: x  cov@reg: x
-#    run bloodmnist --test-prior 0.45 0.01 0.01 0.25 0.01 0.01 0.25 0.01 --dirichlet 100
-    # base-acc: (v)  aurc: v  cov@reg: x
-#    run bloodmnist --prior-classes 3 6 0 --prior-weights 1 1 1 --prior-rest-weight 1 --dirichlet 100
-    # base-acc: x  aurc: v  cov@reg:  x
-#    run bloodmnist --prior-classes 3 6 0 --prior-weights 2 2 3 --prior-rest-weight 1 --dirichlet 100
-    # base-acc: x  aurc: v  cov@reg: x
-#    run bloodmnist --prior-classes 3 6 0 --prior-weights 2 2 4 --prior-rest-weight 1 --dirichlet 100
-    # base-acc: x  aurc: x  cov@reg: x
-#    run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 100
-    # base-acc: x  aurc: x  cov@reg: x
-#    run bloodmnist --test-prior 0.45 0.01 0.01 0.25 0.01 0.01 0.25 0.01 --dirichlet 100
-    # base-acc: (v)  aurc: v  cov@reg: x
-#    run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 50
-    # base-acc: (v) aurc: v  cov@reg: x
-#    run bloodmnist --test-prior 0.45 0.01 0.01 0.25 0.01 0.01 0.25 0.01 --dirichlet 50 
-
-
-     # base-acc: (v)  aurc: (v)  cov@reg: (v)
-    run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 50 --trials-prior 10
-
-     # base-acc: v  aurc: v  cov@reg: (v)
-    run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 20 --trials-prior 10
-
-     # base-acc: v  aurc: v  cov@reg: (v)
-    run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 10 --trials-prior 10
+     #
+#     run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 20 --trials-prior 10
+     run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 20 --trials-prior 10 --percentile-band 50
 
 }
 
 
 run_cifar10() {
-    SIZES="$SIZES_DEFAULT"
+    SIZES="1 2 5 10 50 100 200 500"
 
+#      run cifar10 --test-prior 0.01 0.01 0.43 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 20  --trials-prior 10 
+      run cifar10 --test-prior 0.01 0.01 0.43 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 20  --trials-prior 10 --percentile-band 50
 
-     # base-acc:  (v)  aurc: v  cov@reg: v
-#     run cifar10 --prior-classes 3 5 2 --prior-weights 1 1 1 --prior-rest-weight 1 --dirichlet 100
-
-    # base-acc: (v) aurc: (v)  cov@reg: v
-#     run cifar10 --prior-classes 3 5 2 --prior-weights 2 2 3 --prior-rest-weight 1 --dirichlet 100
-
-    # base-acc: (v) aurc: (v)  cov@reg: v
-#     run cifar10 --test-prior 0.01 0.43 0.01 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 100
-
-    # base-acc: v aurc: v  cov@reg: v
-#     run cifar10 --test-prior 0.01 0.43 0.01 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 50
-
-
-
-     # base-acc: v  aurc: v  cov@reg: v
-     run cifar10 --test-prior 0.01 0.01 0.43 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 50  --trials-prior 10
-
-     # base-acc: v  aurc: v  cov@reg: v
-     run cifar10 --test-prior 0.01 0.01 0.43 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 20  --trials-prior 10
-
-     # base-acc: v  aurc: v  cov@reg: v
-     run cifar10 --test-prior 0.01 0.01 0.43 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 10  --trials-prior 10
 }
 
 
 run_dermamnist() {
-    SIZES="1 2 5 10 50 100"
+    SIZES="1 2 5 10 50 100 200"
 
-#    run dermamnist --pair-ratio 1 1 --pair-rest-ratio 1 1
-#    run dermamnist --test-prior 0.01 0.01 0.46 0.01 0.25 0.25 0.01
-#    run dermamnist --prior-classes 4 5 2 --prior-weights 1 1 1 --prior-rest-weight 1 --dirichlet 100
-    # base-acc: x  aurc:   cov@reg: 
-#    run dermamnist --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 100
-    # base-acc: (v)  aurc: (v)  cov@reg: v
-#    run dermamnist --prior-classes 4 5 2 --prior-weights 2 2 3 --prior-rest-weight 1 --dirichlet 100
-
-    # base-acc: x  aurc: x  cov@reg: v
-#    run dermamnist --test-prior 0.01 0.01 0.46 0.01 0.25 0.25 0.01 --dirichlet 100
-
-#    run dermamnist --prior-classes 4 5 2 --prior-weights 2 2 3 --prior-rest-weight 1 --dirichlet 100 --n-eval 200
-#    run dermamnist --test-prior 0.01 0.24 0.23 0.01 0.25 0.25 0.01 --dirichlet 50  --n-eval 200
-#    run dermamnist --test-prior 0.01 0.24 0.23 0.01 0.25 0.25 0.01 --dirichlet 20  --n-eval 200
-#    run dermamnist --test-prior 0.01 0.24 0.23 0.01 0.25 0.25 0.01 --dirichlet 10  --n-eval 200
-
-#
-    # base-acc: v  aurc: v  cov@reg: v
-    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 50  --n-eval 200
-
-    # base-acc: v  aurc: (v)  cov@reg: v
-    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 10  --n-eval 200
-
-    # base-acc: v  aurc: v  cov@reg: v
-    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 20  --n-eval 200
-
+#    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 20  --n-eval 200
+    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 20  --n-eval 200 --percentile-band 50
 
 }
 
 run_fashion_mnist() {
-    SIZES="$SIZES_DEFAULT"
+    SIZES="1 2 5 10 50 100 200 500"
 
-#    run fashion_mnist --pair-ratio 1 1 --pair-rest-ratio 1 1
-#    run fashion_mnist --pair-ratio 1 1 --pair-rest-ratio 1 1 --dirichlet 20
-#    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01
-#    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 20
-#    run fashion_mnist --prior-classes 0 6 2 --prior-weights 1 1 1 --prior-rest-weight 1 --dirichlet 100
-#    run fashion_mnist --prior-classes 0 6 2 --prior-weights 2 2 3 --prior-rest-weight 1 --dirichlet 100
-    # base-acc: v  aurc:  v  cov@reg: v
-#    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 50
-    # base-acc: x  aurc: v  cov@reg: v
-#    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 100
-
-
-    # base-acc: v  aurc: v  cov@reg: v
-    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 50   --trials-prior 10
-    
-    # base-acc: v  aurc: v  cov@reg: v
-    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 20   --trials-prior 10
-    
-    # base-acc: v  aurc: v  cov@reg: v
-    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 10   --trials-prior 10
-
+#    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 20  --trials-prior 10
+    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 20  --trials-prior 10  --percentile-band 50
 }
 
-run_retinamnist() {
-    SIZES="1 2 5 10 50"
+run_octmnist() {
+    SIZES="1 2 5 10 50 100 200 500"
 
-    run retinamnist --prior-classes 1 2 0 --prior-weights 1 1 1 --prior-rest-weight 1 --dirichlet 100 --n-eval 100
+    run octmnist --test-prior 0.25 0.25 0.25 0.25   --dirichlet 20 --percentile-band 50
+}
 
+run_organamnist() {
+    SIZES="1 2 5 10 50 100 200 500"
+
+    run organamnist --test-prior 0.09 0.09 0.09 0.09 0.09 0.09 0.09 0.09 0.09 0.09 0.1    --dirichlet 20 --percentile-band 50
+}
+
+run_tissuemnist() {
+    SIZES="1 2 5 10 50 100 200 500"
+
+    run tissuemnist --test-prior 0.2 0.1 0.1 0.1 0.1 0.1 0.2 0.1   --dirichlet 20 --percentile-band 50
 }
 
 
 run_cifar100() {
-    SIZES="$SIZES_DEFAULT"
+    SIZES="1 2 5 10 50 100 200 500"
 
-#    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 3
-#    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 3 --dirichlet 100
-#    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 3 --dirichlet 500
-#    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 5
-#    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 5 --dirichlet 100
-#    run cifar100 --pair-ratio 1 1 --pair-rest-ratio 1 5 --dirichlet 500
-#    run cifar100 --prior-classes 11 35 --prior-weights 1 1 --prior-rest-weight 1 --dirichlet 100
-    # base-acc: v  aurc: v  cov@reg: v
-#    run cifar100 --prior-classes 11 35 --prior-weights 1 1 --prior-rest-weight 5 --dirichlet 100
-    # base-acc: v  aurc: v  cov@reg: v
-#    run cifar100 --prior-classes 11 35 --prior-weights 1 1 --prior-rest-weight 5 --dirichlet 50
-
-
-     # base-acc: v  aurc: v  cov@reg: v
-#    run cifar100 --prior-classes 11 35 --prior-weights 1 1 --prior-rest-weight 5 --dirichlet 50   --trials-prior 10
-
-     # base-acc:   aurc:   cov@reg: 
-    run cifar100 --prior-classes 11 35 --prior-weights 1 1 --prior-rest-weight 5 --dirichlet 20   --trials-prior 10
-
-     # base-acc:   aurc:   cov@reg: 
-    run cifar100 --prior-classes 11 35 --prior-weights 1 1 --prior-rest-weight 5 --dirichlet 10   --trials-prior 10
+     run cifar100 --prior-classes 11 35 --prior-weights 1 1 --prior-rest-weight 5 --dirichlet 50   --trials-prior 10  --percentile-band 50
     
 }
 
 
 case "$1" in
-    bloodmnist|cifar10|dermamnist|fashion_mnist|cifar100|retinamnist)
+    bloodmnist|cifar10|dermamnist|fashion_mnist|cifar100|tissuemnist|organamnist|octmnist)
         "run_$1"
         ;;
     all)

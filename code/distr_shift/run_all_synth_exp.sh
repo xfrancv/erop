@@ -1,4 +1,14 @@
 #!/bin/bash
+#SBATCH --job-name=erop-synth-exp   # Job name
+#SBATCH --mail-type=ALL            # Mail events (NONE, BEGIN, END, FAIL, ALL)
+#SBATCH --mail-user=xfrancv@fel.cvut.cz   # Where to send mail
+#SBATCH --mem=20gb                   # Job Memory
+#SBATCH --output=./logs/array_%A-%a.log    # Standard output and error log
+#SBATCH --error=./logs/error_%A-%a.log    # Standard output and error log
+#SBATCH --partition=cpu
+
+source .venv/bin/activate
+
 
 # data: epistemic_showcase_near.json
 python run_synth_bayesian_learning_exp.py --config configs/epistemic_showcase_near.json --out-dir figures/epistemic_showcase_near/ \

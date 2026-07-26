@@ -14,3 +14,16 @@ python run_base_predictor_exp.py retinamnist runs/retinamnist --epochs 30 --devi
 
 
 
+python run_base_predictor_exp.py octmnist runs/octmnist --epochs 30 --device cuda --calibration bcts
+
+
+python run_base_predictor_exp.py organamnist runs/organamnist --epochs 30 --device cuda --calibration bcts
+
+python run_base_predictor_exp.py pathmnist runs/pathmnist --epochs 30 --device cuda --calibration bcts
+
+python run_base_predictor_exp.py tisuemnist runs/tisuemnist --epochs 30 --device cuda --calibration bcts
+
+
+
+
+
