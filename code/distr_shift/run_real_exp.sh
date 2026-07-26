@@ -9,56 +9,72 @@
 
 # Real-data reject-option experiments for ONE dataset.
 #
-#   ./run_all_real_exp.sh <dataset> [suffix]
+#   ./run_all_real_exp.sh <dataset> [mode]
 #   sbatch -J erop-cifar100 run_all_real_exp.sh cifar100
 #
 # <dataset> is one of the keys listed in DATASETS below, or "all" to run every
-# dataset in turn (the script's previous behaviour). Each dataset needs its
-# base predictor at runs/<dataset>/model.pt (run_base_predictor_exp.py).
+# dataset in turn (the script's previous behaviour).
 #
-# [suffix] is optional: when given, it is appended (with a leading underscore)
-# to the dataset name for the OUTPUT directory only, so results land in
-# runs/<dataset>_<suffix>/ instead of runs/<dataset>/ while still reusing the
-# base predictor at runs/<dataset>/model.pt. E.g.
+# [mode] is optional and selects which base predictor / output directory to use
+# (both are the same directory) and whether the misspecified model prior is
+# used:
 #
-#   ./run_all_real_exp.sh fashion_mnist no_adapt   -> runs/fashion_mnist_no_adapt/
+#   (none)    model & output: runs/<dataset>/           (default)
+#   noadapt   model & output: runs/<dataset>_noadapt/   (e.g. uncalibrated base)
+#   beta      model & output: runs/<dataset>/           + --beta $BETA_SUM
+#
+# Each chosen directory needs its base predictor at <dir>/model.pt
+# (run_base_predictor_exp.py).
 
 set -u
 
-DATASETS=(bloodmnist cifar10 dermamnist fashion_mnist cifar100)
+DATASETS=(bloodmnist cifar10 dermamnist fashion_mnist cifar100 octmnist organamnist tissuemnist)
+
+# Symmetric-Dirichlet model-prior concentration for the "beta" mode.
+BETA_SUM=20
 
 usage() {
-    echo "usage: $0 <dataset> [suffix]" >&2
+    echo "usage: $0 <dataset> [mode]" >&2
     echo "  <dataset>: ${DATASETS[*]} | all" >&2
-    echo "  [suffix] : optional output-dir suffix (runs/<dataset>_<suffix>/)" >&2
+    echo "  [mode]   : noadapt | beta   (omit for the default run)" >&2
     exit 1
 }
 
 { [ $# -eq 1 ] || [ $# -eq 2 ]; } || usage
 
-# Optional output-dir suffix from the second argument (empty if not given).
-OUT_SUFFIX=""
-[ $# -eq 2 ] && OUT_SUFFIX="_$2"
+# The second argument is a mode keyword; it maps to a directory suffix (used for
+# both the model input and the output) and to extra args for the Python script.
+DIR_SUFFIX=""
+EXTRA_ARGS=()
+case "${2:-}" in
+    "")       ;;                                   # default run
+    noadapt)  DIR_SUFFIX="_noadapt" ;;
+    beta)     EXTRA_ARGS=(--beta "$BETA_SUM") ;;
+    *)        echo "error: unknown mode '$2'" >&2; usage ;;
+esac
 
 source .venv/bin/activate
 
-# 
+#
 REGRET_TARGETS="0.0001 0.001 0.01"
 
 # run <dataset> <extra args...> -- one sweep of the reject-option experiment.
 run() {
     local ds=$1; shift
-    local model="runs/$ds/model.pt"
-    local outdir="runs/${ds}${OUT_SUFFIX}/"
+    local dir="runs/${ds}${DIR_SUFFIX}"
+    local model="$dir/model.pt"
     if [ ! -f "$model" ]; then
         echo "error: $model not found; train it first with" >&2
-        echo "       python run_base_predictor_exp.py $ds runs/$ds" >&2
+        echo "       python run_base_predictor_exp.py $ds $dir" >&2
         return 1
     fi
-    echo "=== $ds${OUT_SUFFIX:+ [$OUT_SUFFIX]}: $* ==="
-    mkdir -p "$outdir"
-    python run_real_reject_option_exp.py "$model" "$outdir" --sweep \
-        --sizes $SIZES --regret-target $REGRET_TARGETS "$@"
+    echo "=== ${ds}${DIR_SUFFIX}${EXTRA_ARGS:+ (${EXTRA_ARGS[*]})}: $* ==="
+    mkdir -p "$dir"
+    # "${EXTRA_ARGS[@]+...}" guards against the empty-array-under-set-u error on
+    # bash < 4.4 (older cluster nodes).
+    python run_real_reject_option_exp.py "$model" "$dir/" --sweep \
+        --sizes $SIZES --regret-target $REGRET_TARGETS \
+        "${EXTRA_ARGS[@]+${EXTRA_ARGS[@]}}" "$@"
 }
 
 
