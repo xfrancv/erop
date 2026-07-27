@@ -632,16 +632,53 @@ def make_sweep_area_figures(
                       f"{out_dir}/{fname}.png")
 
 
+def win_rate_block(metric: str, aurc: dict, sizes: list[int], names: list[str],
+                   ref: str = "bayes_total") -> list[str]:
+    """Report lines: how often ``ref`` beats each competitor over sampled priors.
+
+    Dirichlet-mode only. ``aurc[name]`` is the ``(len(sizes), N)`` array of
+    per-prior mean areas (the same quantity the AuRC table centres and the bands
+    summarise). For each competitor column the cell is the percentage of the
+    ``N`` sampled priors on which ``ref`` has the strictly lower (better) area
+    at that adaptation size -- a paired, per-prior head-to-head win rate. The
+    ``ref`` column itself is left blank (no self-comparison); the ``all`` row
+    pools the comparison over every (size, prior) pair."""
+    n_priors = aurc[ref].shape[1]
+    ref_label = REJECT_LABELS[ref]
+    out = [
+        "-" * 76,
+        f"win% ({metric}): sampled priors (of {n_priors}) where "
+        f"'{ref_label}' has the lower area than each competitor",
+        f"{'n_test':>8}{'':>8}"
+        + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names),
+    ]
+
+    def cell(win_arr) -> str:
+        return f"{100.0 * float(np.mean(win_arr)):>24.1f}"
+
+    for i, n in enumerate(sizes):
+        row = f"{n:>8}{'':>8}"
+        row += "".join(f"{'':>24}" if name == ref
+                       else cell(aurc[ref][i] < aurc[name][i]) for name in names)
+        out.append(row)
+    row = f"{'all':>8}{'':>8}"
+    row += "".join(f"{'':>24}" if name == ref
+                   else cell(aurc[ref] < aurc[name]) for name in names)
+    out.append(row)
+    return out
+
+
 def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
                    aurc_regret, warned, epi_metrics, cov_risk, cov_regret,
                    risk_curves, regret_curves, base_acc, reps: int,
-                   display_name: str = "") -> None:
+                   display_name: str = "", report_win_rate: bool = False) -> None:
     """Append the sweep metric tables to ``lines``, write/print the report and
     build every sweep figure. Shared by the fixed-prior sweep (replicate axis =
     trials) and the dirichlet sweep (replicate axis = sampled priors, arrays
     hold per-prior means; ``configure_aggregation`` is set by the caller so the
     figure bands/titles describe the right thing). ``reps`` is the replicate
-    count of the arrays' second axis."""
+    count of the arrays' second axis. ``report_win_rate`` (dirichlet mode only)
+    appends a per-competitor win-rate block after each AuRC table."""
     names = list(REJECT_LABELS.keys())
     # Generalized curves and their areas: a rescaling of the selective curves by
     # the coverage, so no re-ranking is needed.
@@ -663,6 +700,8 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
             row += "".join(f"{_center(aurc[name][i]):>24.4f}" for name in names)
             lines.append(row)
         lines.append(sweep_avg_row(aurc, names, decimals=4, warn=warned))
+        if report_win_rate:
+            lines.extend(win_rate_block(metric, aurc, sizes, names))
     for metric, aurc50 in (("risk", aurc50_risk), ("regret", aurc50_regret)):
         lines.append("-" * 76)
         lines.append(f"AuRC50 ({metric})  ({AURC50_NOTE})")
@@ -996,7 +1035,7 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
     _sweep_outputs(sizes, args, out_dir, lines, aurc_risk_d, aurc_regret_d,
                    warned_d, epi_d, cov_risk_d, cov_regret_d, risk_curves_d,
                    regret_curves_d, base_acc_d, N,
-                   display_name=spec.display_name)
+                   display_name=spec.display_name, report_win_rate=True)
 
     make_epi_regret_calibration_figure(sizes, epi_d, args.out_dir)
     print(f"calibration figure and sampled priors written to {out_dir}/: "
