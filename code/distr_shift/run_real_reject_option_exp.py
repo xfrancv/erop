@@ -632,22 +632,31 @@ def make_sweep_area_figures(
                       f"{out_dir}/{fname}.png")
 
 
+# The area-under-curve report tables (AuRC / AuRC50 / AuGRC, risk and regret)
+# print on a x1000 scale so more significant digits survive the fixed decimal
+# width. Applies to the text tables only -- figures and the raw arrays (hence
+# the win-rate comparisons, which are scale-invariant) are untouched.
+AREA_SCALE = 1000
+AREA_SCALE_TAG = "x1000"
+
+
 def win_rate_block(metric: str, aurc: dict, sizes: list[int], names: list[str],
-                   ref: str = "bayes_total") -> list[str]:
+                   ref: str = "bayes_total", measure: str = "AuRC") -> list[str]:
     """Report lines: how often ``ref`` beats each competitor over sampled priors.
 
     Dirichlet-mode only. ``aurc[name]`` is the ``(len(sizes), N)`` array of
-    per-prior mean areas (the same quantity the AuRC table centres and the bands
-    summarise). For each competitor column the cell is the percentage of the
-    ``N`` sampled priors on which ``ref`` has the strictly lower (better) area
-    at that adaptation size -- a paired, per-prior head-to-head win rate. The
-    ``ref`` column itself is left blank (no self-comparison); the ``all`` row
-    pools the comparison over every (size, prior) pair."""
+    per-prior mean areas of the ``measure`` in question (AuRC / AuRC50 / AuGRC,
+    risk or regret -- the same quantity the corresponding table centres). For
+    each competitor column the cell is the percentage of the ``N`` sampled
+    priors on which ``ref`` has the strictly lower (better) area at that
+    adaptation size -- a paired, per-prior head-to-head win rate. The ``ref``
+    column itself is left blank (no self-comparison); the ``all`` row pools the
+    comparison over every (size, prior) pair."""
     n_priors = aurc[ref].shape[1]
     ref_label = REJECT_LABELS[ref]
     out = [
         "-" * 76,
-        f"win% ({metric}): sampled priors (of {n_priors}) where "
+        f"win% {measure} ({metric}): sampled priors (of {n_priors}) where "
         f"'{ref_label}' has the lower area than each competitor",
         f"{'n_test':>8}{'':>8}"
         + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names),
@@ -692,38 +701,47 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
 
     for metric, aurc in (("risk", aurc_risk), ("regret", aurc_regret)):
         lines.append("-" * 76)
-        lines.append(f"AuRC ({metric})")
+        lines.append(f"AuRC ({metric})  [{AREA_SCALE_TAG}]")
         lines.append(f"{'n_test':>8}{'warn':>8}"
                      + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             row = f"{n:>8}{warned[i].mean():>8.2f}"
-            row += "".join(f"{_center(aurc[name][i]):>24.4f}" for name in names)
+            row += "".join(f"{_center(aurc[name][i]) * AREA_SCALE:>24.4f}"
+                           for name in names)
             lines.append(row)
-        lines.append(sweep_avg_row(aurc, names, decimals=4, warn=warned))
+        lines.append(sweep_avg_row(aurc, names, decimals=4, warn=warned,
+                                   scale=AREA_SCALE))
         if report_win_rate:
-            lines.extend(win_rate_block(metric, aurc, sizes, names))
+            lines.extend(win_rate_block(metric, aurc, sizes, names,
+                                        measure="AuRC"))
     for metric, aurc50 in (("risk", aurc50_risk), ("regret", aurc50_regret)):
         lines.append("-" * 76)
-        lines.append(f"AuRC50 ({metric})  ({AURC50_NOTE})")
+        lines.append(f"AuRC50 ({metric})  [{AREA_SCALE_TAG}]  ({AURC50_NOTE})")
         lines.append(f"{'n_test':>8}"
                      + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             lines.append(f"{n:>8}"
-                         + "".join(f"{_center(aurc50[name][i]):>24.4f}"
+                         + "".join(f"{_center(aurc50[name][i]) * AREA_SCALE:>24.4f}"
                                    for name in names))
-        lines.append(sweep_avg_row(aurc50, names, decimals=4))
+        lines.append(sweep_avg_row(aurc50, names, decimals=4, scale=AREA_SCALE))
+        if report_win_rate:
+            lines.extend(win_rate_block(metric, aurc50, sizes, names,
+                                        measure="AuRC50"))
     lines.append(AURC50_CAVEAT)
     for metric, augrc in (("risk", augrc_risk), ("regret", augrc_regret)):
         lines.append("-" * 76)
-        lines.append(f"AuGRC ({metric})  (normalized by n_eval; not on the "
-                     f"AuRC scale)")
+        lines.append(f"AuGRC ({metric})  [{AREA_SCALE_TAG}]  (normalized by "
+                     f"n_eval; not on the AuRC scale)")
         lines.append(f"{'n_test':>8}"
                      + "".join(f"{REJECT_LABELS[n][:22]:>24}" for n in names))
         for i, n in enumerate(sizes):
             lines.append(f"{n:>8}"
-                         + "".join(f"{_center(augrc[name][i]):>24.4f}"
+                         + "".join(f"{_center(augrc[name][i]) * AREA_SCALE:>24.4f}"
                                    for name in names))
-        lines.append(sweep_avg_row(augrc, names, decimals=4))
+        lines.append(sweep_avg_row(augrc, names, decimals=4, scale=AREA_SCALE))
+        if report_win_rate:
+            lines.extend(win_rate_block(metric, augrc, sizes, names,
+                                        measure="AuGRC"))
     rts, rt_descs = _resolve_risk_targets(args.risk_target)
     risk_fig_descs = ["reference risk" if rt is None else d
                       for rt, d in zip(rts, rt_descs)]
@@ -1071,33 +1089,40 @@ def _single_outputs(args, out_dir: Path, lines: list[str], risk_curves,
         v = accs[name]
         lines.append(f"{label:<44}{_center(v):>12.4f}{np.std(v):>10.4f}")
     lines.append("-" * 76)
-    lines.append(f"{'reject-option predictor':<46}{'AuRC risk':>14}{'AuRC regret':>14}")
+    lines.append(f"{'reject-option predictor':<46}{'AuRC risk':>14}"
+                 f"{'AuRC regret':>14}  [{AREA_SCALE_TAG}]")
     lines.append("-" * 76)
     for name in names:
         lines.append(f"{REJECT_LABELS[name]:<46}"
-                     f"{_center(aurc_risk[name]):>8.4f} ± {aurc_risk[name].std():.4f}"
-                     f"{_center(aurc_regret[name]):>8.4f} ± {aurc_regret[name].std():.4f}")
+                     f"{_center(aurc_risk[name]) * AREA_SCALE:>8.4f} ± "
+                     f"{aurc_risk[name].std() * AREA_SCALE:.4f}"
+                     f"{_center(aurc_regret[name]) * AREA_SCALE:>8.4f} ± "
+                     f"{aurc_regret[name].std() * AREA_SCALE:.4f}")
     lines.append("-" * 76)
     lines.append(AURC50_NOTE)
     lines.append(f"{'reject-option predictor':<46}{'AuRC50 risk':>14}"
-                 f"{'AuRC50 regret':>14}")
+                 f"{'AuRC50 regret':>14}  [{AREA_SCALE_TAG}]")
     lines.append("-" * 76)
     for name in names:
         lines.append(
             f"{REJECT_LABELS[name]:<46}"
-            f"{_center(aurc50_risk[name]):>8.4f} ± {aurc50_risk[name].std():.4f}"
-            f"{_center(aurc50_regret[name]):>8.4f} ± {aurc50_regret[name].std():.4f}")
+            f"{_center(aurc50_risk[name]) * AREA_SCALE:>8.4f} ± "
+            f"{aurc50_risk[name].std() * AREA_SCALE:.4f}"
+            f"{_center(aurc50_regret[name]) * AREA_SCALE:>8.4f} ± "
+            f"{aurc50_regret[name].std() * AREA_SCALE:.4f}")
     lines.append(AURC50_CAVEAT)
     lines.append("-" * 76)
     lines.append("area under the generalized curves (normalized by n_eval, not "
                  "by the accepted count: not on the AuRC scale above)")
     lines.append(f"{'reject-option predictor':<46}{'AuGRC risk':>14}"
-                 f"{'AuGRC regret':>14}")
+                 f"{'AuGRC regret':>14}  [{AREA_SCALE_TAG}]")
     lines.append("-" * 76)
     for name in names:
         lines.append(f"{REJECT_LABELS[name]:<46}"
-                     f"{_center(augrc_risk[name]):>8.4f} ± {augrc_risk[name].std():.4f}"
-                     f"{_center(augrc_regret[name]):>8.4f} ± {augrc_regret[name].std():.4f}")
+                     f"{_center(augrc_risk[name]) * AREA_SCALE:>8.4f} ± "
+                     f"{augrc_risk[name].std() * AREA_SCALE:.4f}"
+                     f"{_center(augrc_regret[name]) * AREA_SCALE:>8.4f} ± "
+                     f"{augrc_regret[name].std() * AREA_SCALE:.4f}")
     lines.append("-" * 76)
     ref_note = ("  ('ref' = per-trial full-coverage risk of the true-prior "
                 "reference)" if args.risk_target is None else "")

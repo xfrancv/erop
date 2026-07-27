@@ -340,16 +340,20 @@ def truncated_area(curve: np.ndarray,
 SWEEP_AVG_LABEL = "avg"
 
 
-def sweep_avg_row(data: dict, names, decimals: int, warn=None) -> str:
+def sweep_avg_row(data: dict, names, decimals: int, warn=None,
+                  scale: float = 1.0) -> str:
     """Format the ``avg`` row for a per-predictor sweep table (AuRC, AuRC50,
     AuGRC, coverage-at-target): the center (mean, or median under
     ``--percentile-band``) over sizes and replicates of each predictor column,
     in the table's own field width (24) and ``decimals``. ``warn`` (the AuRC
-    tables' per-size warn array) adds the matching mean-warn cell when given."""
+    tables' per-size warn array) adds the matching mean-warn cell when given.
+    ``scale`` multiplies each centered value before formatting (the area tables
+    report on a ``x1000`` scale); it must match the per-size rows' scaling."""
     row = f"{SWEEP_AVG_LABEL:>8}"
     if warn is not None:
         row += f"{float(np.mean(warn)):>8.2f}"
-    row += "".join(f"{float(_center(data[name])):>24.{decimals}f}" for name in names)
+    row += "".join(f"{float(_center(data[name])) * scale:>24.{decimals}f}"
+                   for name in names)
     return row
 
 
