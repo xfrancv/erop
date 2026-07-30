@@ -7,19 +7,22 @@
 #SBATCH --error=./logs/error_%A-%a.log    # Standard output and error log
 #SBATCH --partition=gpu
 
-# Base-predictor training for ONE dataset.
+# Base-predictor training run_base_pred_training.shfor ONE dataset.
 #
-#   ./run_base_pred_training.sh <dataset> [noadapt]
+#   ./run_base_pred_training.sh <dataset> [nocalib]
 #   sbatch -J erop-cifar100 run_base_pred_training.sh cifar100
 #
 # <dataset> is one of the keys listed in DATASETS below, or "all" to train every
 # dataset in turn.
 #
-# [noadapt] is optional and selects the misspecified-model-prior variant, i.e.
-# training *without* the BCTS calibration:
+# [nocalib] is optional and selects the uncalibrated variant, i.e. training
+# *without* the BCTS calibration:
 #
 #   (none)    output: runs/<dataset>/           --calibration bcts
-#   noadapt   output: runs/<dataset>_noadapt/   (no --calibration flag)
+#   nocalib   output: runs/<dataset>_nocalib/   (no --calibration flag)
+#
+# run_real_exp.sh's "noadapt" mode reads runs/<dataset>_nocalib/ for its
+# no-calibration ablation.
 
 set -u
 
@@ -29,9 +32,9 @@ EPOCHS=30
 DEVICE=cuda
 
 usage() {
-    echo "usage: $0 <dataset> [noadapt]" >&2
+    echo "usage: $0 <dataset> [nocalib]" >&2
     echo "  <dataset>: ${DATASETS[*]} | all" >&2
-    echo "  [noadapt]: omit for the default (BCTS-calibrated) run" >&2
+    echo "  [nocalib]: omit for the default (BCTS-calibrated) run" >&2
     exit 1
 }
 
@@ -41,7 +44,7 @@ DIR_SUFFIX=""
 EXTRA_ARGS=(--calibration bcts)
 case "${2:-}" in
     "")       ;;                                   # default run
-    noadapt)  DIR_SUFFIX="_noadapt"; EXTRA_ARGS=() ;;
+    nocalib)  DIR_SUFFIX="_nocalib"; EXTRA_ARGS=() ;;
     *)        echo "error: unknown mode '$2'" >&2; usage ;;
 esac
 

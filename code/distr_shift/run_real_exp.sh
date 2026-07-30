@@ -20,7 +20,9 @@
 # used:
 #
 #   (none)    model: runs/<dataset>/model.pt          output: runs/<dataset>/
-#   noadapt   model: runs/<dataset>_noadapt/model.pt  output: runs/<dataset>_noadapt/
+#   noadapt   model: runs/<dataset>_nocalib/model.pt  output: runs/<dataset>_nocalib/
+#             (the uncalibrated base predictor, i.e. the "nocalib" mode of
+#              run_base_pred_training.sh)
 #   beta      model: runs/<dataset>/model.pt          output: runs/<dataset>/beta/
 #             (and appends --beta $BETA_SUM to run_real_reject_option_exp.py)
 #
@@ -51,7 +53,7 @@ OUT_SUBDIR=""
 EXTRA_ARGS=()
 case "${2:-}" in
     "")       ;;                                   # default run
-    noadapt)  DIR_SUFFIX="_noadapt" ;;
+    noadapt)  DIR_SUFFIX="_nocalib" ;;
     beta)     OUT_SUBDIR="beta"; EXTRA_ARGS=(--beta "$BETA_SUM") ;;
     *)        echo "error: unknown mode '$2'" >&2; usage ;;
 esac
