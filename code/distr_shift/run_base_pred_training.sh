@@ -6,6 +6,7 @@
 #SBATCH --output=./logs/array_%A-%a.log    # Standard output and error log
 #SBATCH --error=./logs/error_%A-%a.log    # Standard output and error log
 #SBATCH --partition=gpu
+#SBATCH --gres=gpu:1                 # request one GPU (the gpu partition rejects jobs with none)
 
 # Base-predictor training for ONE dataset.
 #
