@@ -29,7 +29,7 @@
 
 set -u
 
-DATASETS=(bloodmnist cifar10 dermamnist fashion_mnist cifar100 octmnist organamnist tissuemnist)
+DATASETS=(bloodmnist cifar10 dermamnist fashion_mnist cifar100 organamnist organsmnist tissuemnist)
 
 # Symmetric-Dirichlet model-prior concentration for the "beta" mode.
 BETA_SUM=20
@@ -78,7 +78,8 @@ run() {
     # bash < 4.4 (older cluster nodes).
     python run_real_reject_option_exp.py "$model" "$outdir" --sweep \
         --sizes $SIZES --regret-target $REGRET_TARGETS \
-        "${EXTRA_ARGS[@]+${EXTRA_ARGS[@]}}" "$@"
+        "${EXTRA_ARGS[@]+${EXTRA_ARGS[@]}}" "$@" \
+        --trials-prior 20  --trials 20
 }
 
 
@@ -86,8 +87,7 @@ run_bloodmnist() {
     SIZES="1 2 5 10 50 100 200 500"
 
      #
-#     run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 20 --trials-prior 10
-     run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 20 --trials-prior 10 --percentile-band 50
+     run bloodmnist --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 20 --percentile-band 50
 
 }
 
@@ -95,8 +95,7 @@ run_bloodmnist() {
 run_cifar10() {
     SIZES="1 2 5 10 50 100 200 500"
 
-#      run cifar10 --test-prior 0.01 0.01 0.43 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 20  --trials-prior 10 
-      run cifar10 --test-prior 0.01 0.01 0.43 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 20  --trials-prior 10 --percentile-band 50
+      run cifar10 --test-prior 0.01 0.01 0.43 0.25 0.01 0.25 0.01 0.01 0.01 0.01 --dirichlet 20 --percentile-band 50 
 
 }
 
@@ -104,29 +103,22 @@ run_cifar10() {
 run_dermamnist() {
     SIZES="1 2 5 10 50 100 200"
 
-#    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 20  --n-eval 200
-    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 20  --n-eval 200 --percentile-band 50
+    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 20  --n-eval 150 --percentile-band 50
 
 }
 
 run_fashion_mnist() {
     SIZES="1 2 5 10 50 100 200 500"
 
-#    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 20  --trials-prior 10
-    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 20  --trials-prior 10  --percentile-band 50
-}
-
-run_octmnist() {
-    SIZES="1 2 5 10 50 100 200 500"
-
-    run octmnist --test-prior 0.25 0.25 0.25 0.25   --dirichlet 20 --percentile-band 50
+    run fashion_mnist --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 20  --percentile-band 50 
 }
 
 run_organamnist() {
     SIZES="1 2 5 10 50 100 200 500"
 
-    run organamnist --test-prior 0.09 0.09 0.09 0.09 0.09 0.09 0.09 0.09 0.09 0.09 0.1    --dirichlet 20 --percentile-band 50
+    run organamnist --test-prior 0.07 0.07 0.07 0.07 0.2 0.2 0.07 0.04 0.07 0.07 0.07    --dirichlet 20 --percentile-band 50 
 }
+
 
 run_tissuemnist() {
     SIZES="1 2 5 10 50 100 200 500"
@@ -138,13 +130,19 @@ run_tissuemnist() {
 run_cifar100() {
     SIZES="1 2 5 10 50 100 200 500"
 
-     run cifar100 --prior-classes 11 35 --prior-weights 1 1 --prior-rest-weight 5 --dirichlet 50   --trials-prior 10  --percentile-band 50
-    
+     run cifar100 --prior-classes 11 35 --prior-weights 1 1 --prior-rest-weight 5 --dirichlet 50 --percentile-band 50
+}
+
+
+run_organsmnist() {
+    SIZES="1 2 5 10 50 100 200 500"
+
+    run organsmnist --test-prior 0.07 0.07 0.07 0.07 0.2 0.2 0.07 0.04 0.07 0.07 0.07    --dirichlet 20 --percentile-band 50 
 }
 
 
 case "$1" in
-    bloodmnist|cifar10|dermamnist|fashion_mnist|cifar100|tissuemnist|organamnist|octmnist)
+    bloodmnist|cifar10|dermamnist|fashion_mnist|cifar100|tissuemnist|organamnist|organsmnist)
         "run_$1"
         ;;
     all)
