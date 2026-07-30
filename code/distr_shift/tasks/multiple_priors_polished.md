@@ -1,3 +1,11 @@
+> **Note.** Written when the repo still had the synthetic experiment
+> (`run_synth_*.py`, `configs/`) and the flags `--sweep` / `--n-test` /
+> `--risk-target` / `--optimal-rejection` / the pair-prior knobs. Those
+> are gone (see `tasks/refactor_run_real_reject_opt_exp_polished.md`);
+> the feature this spec describes lives in
+> `run_real_reject_option_exp.py`, `prior_shift/reject_option.py` and
+> `reject_figures.py`, which always sweep `--sizes`.
+
 # Sampled target priors: evaluate the reject-option experiment over a Dirichlet prior distribution
 
 ## Goal

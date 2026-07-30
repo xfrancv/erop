@@ -1,3 +1,8 @@
+> **Historical.** This spec describes a feature removed by
+> `tasks/refactor_run_real_reject_opt_exp_polished.md` (the synthetic
+> experiment and the pair-based target prior). Kept as a record of the
+> design; it no longer describes the code.
+
 # Plan 
 
 Implement research code which will evaluate an algorithm based on Bayesian inference to update a label prior from unsupervised examples.

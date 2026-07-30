@@ -1,8 +1,5 @@
 """Bayesian label-prior adaptation from unlabeled test data (label shift)."""
 
-from .base_model import BaseModel
-from .config import ExperimentConfig, load_experiment_config
-from .data import GaussianClassConditionalModel
 from .mcmc import (
     MCMCResult,
     posterior_label_probabilities,
@@ -17,12 +14,26 @@ from .predictors import (
     per_class_error,
     zero_one_loss_matrix,
 )
+from .reject_option import (
+    AURC50_CAVEAT,
+    AURC50_NOTE,
+    MIN_COVERAGE,
+    REJECT_COLORS,
+    REJECT_LABELS,
+    accuracy,
+    bayesian_posterior_and_aleatoric,
+    configure_aggregation,
+    configure_percentile_band,
+    coverage_at_target,
+    epistemic_metrics,
+    generalize_curve,
+    selective_curves,
+    sweep_avg_row,
+    sweep_epi_avg_row,
+    truncated_area,
+)
 
 __all__ = [
-    "BaseModel",
-    "ExperimentConfig",
-    "load_experiment_config",
-    "GaussianClassConditionalModel",
     "MCMCResult",
     "sample_prior_posterior",
     "posterior_label_probabilities",
@@ -33,4 +44,20 @@ __all__ = [
     "per_class_error",
     "format_per_class_error",
     "zero_one_loss_matrix",
+    "AURC50_CAVEAT",
+    "AURC50_NOTE",
+    "MIN_COVERAGE",
+    "REJECT_COLORS",
+    "REJECT_LABELS",
+    "accuracy",
+    "bayesian_posterior_and_aleatoric",
+    "configure_aggregation",
+    "configure_percentile_band",
+    "coverage_at_target",
+    "epistemic_metrics",
+    "generalize_curve",
+    "selective_curves",
+    "sweep_avg_row",
+    "sweep_epi_avg_row",
+    "truncated_area",
 ]

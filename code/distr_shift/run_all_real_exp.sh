@@ -1,31 +1,56 @@
-sbatch -J erop-blood ./run_real_exp.sh bloodmnist
-sbatch -J erop-blood ./run_real_exp.sh bloodmnist noadapt
-sbatch -J erop-blood ./run_real_exp.sh bloodmnist beta
+#!/bin/bash
+# Run all real-data experiments.
+#
+#   ./run_all_real_exp.sh           # run sequentially in this shell
+#   ./run_all_real_exp.sh sbatch    # submit each run as a Slurm job
 
-sbatch -J erop-cif10 ./run_real_exp.sh cifar10
-sbatch -J erop-cif10 ./run_real_exp.sh cifar10 noadapt
-sbatch -J erop-cif10 ./run_real_exp.sh cifar10 beta
+set -e
 
-sbatch -J erop-cif100 ./run_real_exp.sh cifar100
-sbatch -J erop-cif100 ./run_real_exp.sh cifar100 noadapt
-sbatch -J erop-cif100 ./run_real_exp.sh cifar100 beta
+USE_SBATCH=0
+case "${1:-}" in
+    "") ;;
+    sbatch) USE_SBATCH=1 ;;
+    *) echo "usage: $0 [sbatch]" >&2; exit 1 ;;
+esac
 
-sbatch -J erop-derma ./run_real_exp.sh dermamnist
-sbatch -J erop-derma ./run_real_exp.sh dermamnist noadapt
-sbatch -J erop-derma ./run_real_exp.sh dermamnist beta
+# run <job-name> <dataset> [mode]
+run() {
+    local job="$1"; shift
+    if [ "$USE_SBATCH" -eq 1 ]; then
+        sbatch -J "$job" ./run_real_exp.sh "$@"
+    else
+        ./run_real_exp.sh "$@"
+    fi
+}
 
-sbatch -J erop-fashion ./run_real_exp.sh fashion_mnist
-sbatch -J erop-fashion ./run_real_exp.sh fashion_mnist noadapt
-sbatch -J erop-fashion ./run_real_exp.sh fashion_mnist beta
+run erop-blood   bloodmnist
+run erop-blood   bloodmnist noadapt
+run erop-blood   bloodmnist beta
 
-sbatch -J erop-tissue ./run_real_exp.sh tissuemnist
-sbatch -J erop-tissue ./run_real_exp.sh tissuemnist noadapt
-sbatch -J erop-tissue ./run_real_exp.sh tissuemnist beta
+run erop-cif10   cifar10
+run erop-cif10   cifar10 noadapt
+run erop-cif10   cifar10 beta
 
-sbatch -J erop-organa ./run_real_exp.sh organamnist
-sbatch -J erop-organa ./run_real_exp.sh organamnist noadapt
-sbatch -J erop-organa ./run_real_exp.sh organamnist beta
+run erop-cif100  cifar100
+run erop-cif100  cifar100 noadapt
+run erop-cif100  cifar100 beta
 
-sbatch -J erop-organa ./run_real_exp.sh organsmnist
-sbatch -J erop-organa ./run_real_exp.sh organsmnist noadapt
-sbatch -J erop-organa ./run_real_exp.sh organsmnist beta
+run erop-derma   dermamnist
+run erop-derma   dermamnist noadapt
+run erop-derma   dermamnist beta
+
+run erop-fashion fashion_mnist
+run erop-fashion fashion_mnist noadapt
+run erop-fashion fashion_mnist beta
+
+run erop-tissue  tissuemnist
+run erop-tissue  tissuemnist noadapt
+run erop-tissue  tissuemnist beta
+
+run erop-organa  organamnist
+run erop-organa  organamnist noadapt
+run erop-organa  organamnist beta
+
+run erop-organa  organsmnist
+run erop-organa  organsmnist noadapt
+run erop-organa  organsmnist beta

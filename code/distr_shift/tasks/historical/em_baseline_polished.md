@@ -1,3 +1,8 @@
+> **Historical.** This spec describes a feature removed by
+> `tasks/refactor_run_real_reject_opt_exp_polished.md` (the synthetic
+> experiment and the pair-based target prior). Kept as a record of the
+> design; it no longer describes the code.
+
 # Plan
 
 Implement a new baseline method based on the EM algorithm and a plugin Bayes

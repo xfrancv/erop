@@ -5,6 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Rules
 
 * Claude never modifies TODO.md unless explicitely asked by the user.
+* Claude never uses git without explicitely asking the user for permission. 
+* Claude never modifies files in 'tasks/' directory without explicitely asking the user for permission.
+
 
 ## What this is
 
@@ -27,14 +30,16 @@ drafts). Run git from wherever, but treat `code/distr_shift/` as the project roo
 ## Environment & commands
 
 There is **no test suite, no linter, and no build step** — everything is run as
-plain scripts. Two dependency tiers:
+plain scripts. Dependencies:
 
-- **Synthetic experiments + data download/analysis**: `numpy scipy scikit-learn
-  matplotlib tqdm` only (see [requirements.txt](requirements.txt)).
-- **Real-data NN scripts** (`run_base_predictor_exp.py`,
+- **Data download/analysis** (`download_datasets.py`, `analyze_datasets.py`) and
+  the plotting helpers: `numpy scipy scikit-learn matplotlib tqdm` (see
+  [requirements.txt](requirements.txt)).
+- **The experiment scripts** (`run_base_predictor_exp.py`,
   `run_real_reject_option_exp.py`): additionally need **torch/torchvision**,
   pinned to the `cu126` wheels — this machine's NVIDIA driver caps at CUDA 12.9
-  and the default PyPI (cu130) wheel fails `torch.cuda.is_available()`.
+  and the default PyPI (cu130) wheel fails `torch.cuda.is_available()`. Since
+  the synthetic experiment was removed, every experiment run needs torch.
 
 Setup (conda recommended, Python 3.11; use `python -m pip` so installs land in the
 active env):
@@ -47,51 +52,54 @@ python -m pip install -r requirements.txt
 Common runs:
 
 ```bash
-# synthetic accuracy experiment (default config, 20 trials, writes figures + table)
-python run_synth_bayesian_learning_exp.py
-python run_synth_bayesian_learning_exp.py --sweep --sizes 100 1000 10000   # vs. #unlabeled
-python run_synth_bayesian_learning_exp.py --config configs/three_gaussians.json
-
-# synthetic reject-option (risk/regret-coverage curves + AuRC)
-python run_synth_reject_option_exp.py
-python run_synth_reject_option_exp.py --sweep --trials 10 --regret-target 0.005 0.01
-
-# regenerate all shipped synthetic figures (writes into figures/<config>/)
-./run_all_synth_exp.sh
-
-# real data: download + inspect (no torch needed)
+# data: download + inspect (no torch needed)
 python download_datasets.py --list
 python analyze_datasets.py fashion_mnist        # writes data/reports/<key>.html
 
-# real data: train a base predictor, then adapt (torch needed)
+# train a base predictor, then adapt (torch needed)
 python run_base_predictor_exp.py fashion_mnist runs/fashion
-python run_real_reject_option_exp.py runs/fashion/model.pt runs/fashion --auto-target-prior
+# always sweeps --sizes; the target prior defaults to the TRAINING prior (no
+# shift — the degenerate control), so a real experiment names one:
+python run_real_reject_option_exp.py runs/fashion/model.pt runs/fashion \
+    --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 20
+
+# every dataset, the paper configuration (locally, or via sbatch)
+./run_real_exp.sh bloodmnist
+./run_all_real_exp.sh [sbatch]
+
+# LaTeX-ish summary table across datasets
+python summary_table.py --reports runs/*/*/real_reject_option_sweep_report.txt \
+    --sizes 1 10 avg --output summary_table.txt
 ```
 
 Every experiment run also drops a `*_args.txt` (command line + timestamp + the
-args that mode actually reads + config priors) next to its figures, so past runs
-are self-documenting — read those to reproduce a figure.
+args + the resolved target prior and how it was obtained) next to its figures,
+so past runs are self-documenting — read those to reproduce a figure.
 
 ## Architecture
 
-The reusable library is the `prior_shift/` package; the six top-level
-`run_*.py` / `*_datasets.py` scripts are thin experiment drivers around it. Data
-outputs (`data/`, `figures/`, `runs/`) are gitignored and reproducible.
+The reusable library is the `prior_shift/` package; the top-level `run_*.py` /
+`*_datasets.py` scripts are thin experiment drivers around it, and
+`reject_figures.py` / `figspec.py` / `render_figspecs.py` are the plotting layer
+(kept out of the package so the library never imports matplotlib). Data outputs
+(`data/`, `figures/`, `runs/`) are gitignored and reproducible.
 
-Core method pipeline (synthetic): `data.py` generates 2-D Gaussian
-class-conditional data → `base_model.py` fits logistic regression for the
-training posterior `p_tr(y|x)` and empirical `p_tr(y)` → `mcmc.py` samples the
-test prior `α` from the label-shift posterior over unlabeled data → `predictors.py`
-applies the plugin label-shift correction and Bayes decision rule.
+Core method pipeline: `run_base_predictor_exp.py` trains and
+temperature/BCTS-calibrates a CNN for `p_tr(y|x)` and records the empirical
+`p_tr(y)` in its `model.pt` bundle → `run_real_reject_option_exp.py` resamples
+the labeled val+test pool to a chosen target prior → `mcmc.py` samples the test
+prior `α` from the label-shift posterior over the unlabeled adaptation inputs →
+`predictors.py` applies the plugin label-shift correction and Bayes decision
+rule → `reject_option.py` turns the result into selective risk/regret curves and
+their areas.
 
-- **`prior_shift/data.py`** — `GaussianClassConditionalModel`; closed-form exact
-  Bayes posterior for any prior (the oracle upper bound). `cov_from_axes(sx,sy,theta)`
-  builds SPD covariances from the readable rotated-axes form.
-- **`prior_shift/config.py`** — `ExperimentConfig`, the JSON loader/validator for a
-  generator setting (`means`, `covs`, `train_prior`, `test_prior`). Covariances are
-  either a full 2×2 list or `{"sx","sy","theta"}`; the loader validates SPD via
-  Cholesky and that priors are positive and sum to 1. Number of classes is implied
-  by `len(means)`.
+- **`prior_shift/reject_option.py`** — the reject-option computation layer
+  (`REJECT_LABELS`, `selective_curves`, `coverage_at_target`,
+  `bayesian_posterior_and_aleatoric`, `epistemic_metrics`, `truncated_area`,
+  `generalize_curve`) plus the replicate-axis aggregation (`configure_*`,
+  `_series`, `_center`) that keeps the report tables and the figures reporting
+  the same central value. Pure numpy; the matching figure builders live in
+  top-level `reject_figures.py`.
 - **`prior_shift/mcmc.py`** — `sample_prior_posterior(..., sampler=...)` with **two
   interchangeable chains targeting the same posterior**: `"mh"` (default,
   random-walk Metropolis–Hastings in a softmax-reparameterised unconstrained space
@@ -103,24 +111,28 @@ applies the plugin label-shift correction and Bayes decision rule.
   learned prior should not be trusted.
 - **`prior_shift/predictors.py`** — `zero_one_loss_matrix`, `bayes_decision` (argmin
   expected loss), `corrected_posterior` (the plugin `p(y|x) ∝ p_tr(y|x)·α(y)/p_tr(y)`).
-- **`prior_shift/target_prior_search.py`** — closed-form (no-MCMC) autonomous
-  selection of a *benchmark* target prior for real data (`--auto-target-prior`):
-  predicts pair identifiability from the mixture-likelihood Fisher information and
-  scores candidates by a plugin "flip test". Implements
-  [tasks/target_label_prior_selection.md](tasks/target_label_prior_selection.md).
 
 `data_tools/` (separate from `prior_shift/`) handles real datasets:
-`registry.py` (per-dataset URLs, class names, the designated *confusable pair*),
-`download.py`, `loaders.py` (each source → common uint8-image/int-label dataset),
-`report.py` (self-contained base64 HTML report).
+`registry.py` (per-dataset URLs, class names, the designated *confusable pair* —
+reporting only: it is named in the reports and the per-draw dirichlet lines, but
+never builds the target prior), `download.py`, `loaders.py` (each source →
+common uint8-image/int-label dataset), `report.py` (self-contained base64 HTML
+report).
+
+Target prior: two interfaces, `--test-prior` (explicit vector) and
+`--prior-classes`/`--prior-weights`/`--prior-rest-weight` (relative weights).
+With neither, the target **is** the training prior — no label shift, the
+deliberate degenerate control; the script says so in the report and warns on
+stdout, and `--dirichlet` still makes the individual draws shifted.
 
 ## Working conventions specific to this repo
 
 - **`tasks/*.md` are design specs, not TODOs.** Each is a written proposal that a
-  script/module implements; source docstrings cite them by filename (e.g.
-  `target_prior_search.py` ↔ `target_label_prior_selection.md`). When changing a
-  feature, read its task spec first and keep the two consistent. `TODO.md` is the
-  actual short task list.
+  script/module implements; source docstrings cite them by filename (e.g. the
+  dirichlet mode ↔ `multiple_priors_polished.md`). When changing a feature, read
+  its task spec first and keep the two consistent. `tasks/historical/` holds the
+  specs of features removed with the synthetic experiment — read as history, not
+  as a description of the code. `TODO.md` is the actual short task list.
 - **README.md is a living lab notebook**, not just install docs — it records the
   quantitative results and their interpretation. If you change behavior that
   affects the reported numbers, figures, or metric definitions, update the relevant
@@ -128,4 +140,10 @@ applies the plugin label-shift correction and Bayes decision rule.
 - The `mh` and `gibbs` samplers must stay statistically equivalent — they are two
   routes to the same posterior; a change to one usually needs the matching change
   (or a deliberate note) for the other.
+- **Do not rename what `summary_table.py` parses**: the report table titles
+  `AuRC (regret)` / `win% AuRC (regret)`, the truncated column headers
+  `Bayesian, epistemic un` / `Bayesian, total uncert`, and the report filename
+  `real_reject_option_sweep_report.txt` (also hard-wired in `summary_table*.sh`).
+  The `n_test` spelling in figure filenames is likewise load-bearing for
+  `figures.sh`.
 - `figures/`, `runs/`, and `data/` are gitignored; don't commit generated outputs.

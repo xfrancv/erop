@@ -76,7 +76,7 @@ run() {
     mkdir -p "$outdir"
     # "${EXTRA_ARGS[@]+...}" guards against the empty-array-under-set-u error on
     # bash < 4.4 (older cluster nodes).
-    python run_real_reject_option_exp.py "$model" "$outdir" --sweep \
+    python run_real_reject_option_exp.py "$model" "$outdir" \
         --sizes $SIZES --regret-target $REGRET_TARGETS \
         "${EXTRA_ARGS[@]+${EXTRA_ARGS[@]}}" "$@" \
         --trials-prior 20  --trials 20
