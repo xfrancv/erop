@@ -2,7 +2,7 @@
 # Refresh the paper's RC-curve figures from the LATEST run of each dataset, then
 # re-render them as styled PDFs.
 #
-#   ./figures.sh
+#   ./make_figures.sh
 #
 # Two phases:
 #
@@ -18,6 +18,8 @@
 #      picks up the freshly copied *.figspec.npz data.
 
 set -u
+
+source .venv/bin/activate
 
 DATASETS=(bloodmnist cifar10 cifar100 dermamnist fashion_mnist organamnist organsmnist tissuemnist)
 FIGURES=(aurc_vs_n_test aurec_vs_n_test)

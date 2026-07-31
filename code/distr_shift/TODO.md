@@ -1,3 +1,5 @@
+- [ ] do not split test data to eval and adaptation set. Run everyting on one set, which
+is actually theoretically correct.
 - [ ] allow different loss for evaluation and the total/epistemic uncertainty computation
 
 # Done

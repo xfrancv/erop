@@ -3,8 +3,8 @@
 # configurations -- default, misspecified model prior (beta), and uncalibrated
 # base predictor (nocalib).
 #
-#   ./summary_table_ablation.sh                # writes summary_table_ablation.txt
-#   ./summary_table_ablation.sh --sizes 1 10   # extra args go to summary_table.py
+#   ./make_ablation_table.sh                # writes summary_table_ablation.txt
+#   ./make_ablation_table.sh --sizes 1 10   # extra args go to summary_table.py
 #
 # The three configurations live in
 #   runs/<dataset>/<timestamp>/           (default)
@@ -14,6 +14,8 @@
 # actually contains a sweep report is used.
 
 set -u
+
+source .venv/bin/activate
 
 DATASETS=(bloodmnist cifar10 cifar100 dermamnist fashion_mnist organamnist organsmnist tissuemnist)
 REPORT=real_reject_option_sweep_report.txt

@@ -1,16 +1,18 @@
 #!/bin/bash
 # Summary table across datasets, built from the LATEST run of each.
 #
-#   ./summary_tables.sh                 # writes summary_table.txt
-#   ./summary_tables.sh --sizes 1 10    # extra args are passed to summary_table.py
+#   ./make_summary_table.sh                 # writes summary_table.txt
+#   ./make_summary_table.sh --sizes 1 10    # extra args are passed to summary_table.py
 #
 # Each dataset's output directory runs/<dataset>/ holds one timestamped
 # subdirectory per run (YYYYmmdd_HHMMSS); this script picks the most recent one
 # that actually contains a sweep report. Subdirectories without a report
 # directly inside them (e.g. runs/<dataset>/beta/, which nests its own
-# timestamps) are skipped -- see summary_table_ablation.sh for those.
+# timestamps) are skipped -- see make_ablation_table.sh for those.
 
 set -u
+
+source .venv/bin/activate
 
 DATASETS=(bloodmnist cifar10 cifar100 dermamnist fashion_mnist organamnist organsmnist tissuemnist)
 REPORT=real_reject_option_sweep_report.txt
