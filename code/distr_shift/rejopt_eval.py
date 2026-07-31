@@ -1,7 +1,7 @@
 """Reject-option / test-prior adaptation on real datasets.
 
 Consumes a **trained, temperature-calibrated neural-network base predictor**
-produced by ``run_base_predictor_exp.py`` (its ``model.pt`` bundle); everything
+produced by ``base_predictor_training.py`` (its ``model.pt`` bundle); everything
 downstream -- the MCMC prior learning, the plugin corrections, the
 reject-option predictors and their risk/regret-coverage curves -- comes from
 ``prior_shift`` (the metrics in ``prior_shift.reject_option``) and
@@ -36,9 +36,9 @@ and by epistemic uncertainty.
 
 Run with::
 
-    python run_base_predictor_exp.py bloodmnist runs/blood      # train base model
-    python run_real_reject_option_exp.py runs/blood/model.pt runs/blood
-    python run_real_reject_option_exp.py runs/blood/model.pt runs/blood \\
+    python base_predictor_training.py bloodmnist runs/blood      # train base model
+    python rejopt_eval.py runs/blood/model.pt runs/blood
+    python rejopt_eval.py runs/blood/model.pt runs/blood \\
         --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 --dirichlet 20
 
 Two interfaces set the target prior: ``--test-prior`` (an explicit vector) and
@@ -210,7 +210,7 @@ def calibrated_posterior(model, X, bundle, device, batch_size=512):
     return np.concatenate(out)
 
 
-# Same threshold as run_base_predictor_exp.CALIB_RATIO_THRESHOLD.
+# Same threshold as base_predictor_training.CALIB_RATIO_THRESHOLD.
 CALIB_RATIO_THRESHOLD = 1.5
 
 
@@ -230,7 +230,7 @@ def calibration_lines(bundle, class_names) -> list[str]:
     ratio = bundle.get("marginal_ratio")
     if ratio is None:
         lines.append("calib check  : unavailable (bundle predates the "
-                     "consistency check; retrain with run_base_predictor_exp.py)")
+                     "consistency check; retrain with base_predictor_training.py)")
         return lines
     ratio = np.asarray(ratio, dtype=float)
     lines.append(f"calib check  : mean posterior / class frequency = "
@@ -991,7 +991,7 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", type=str,
-                        help="Path to a model.pt bundle from run_base_predictor_exp.py.")
+                        help="Path to a model.pt bundle from base_predictor_training.py.")
     parser.add_argument("out_dir", type=str,
                         help="Directory receiving the report and figures.")
     parser.add_argument("--trials", type=int, default=10)
@@ -1311,7 +1311,7 @@ def main() -> None:
             if misspec_line is None else
             f"symmetric beta = {args.beta:g} per class (MISSPECIFIED)")
     ignored = set() if dirichlet_mode else {"dirichlet", "trials_prior"}
-    save_run_args(args, "run_real_reject_option_exp_args.txt",
+    save_run_args(args, "rejopt_eval_args.txt",
                   extra=extra, ignored=ignored)
 
     if dirichlet_mode:

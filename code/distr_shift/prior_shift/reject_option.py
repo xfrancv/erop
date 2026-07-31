@@ -7,7 +7,7 @@ areas (AuRC, AuRC50, AuGRC).
 
 Pure numpy and strings -- no plotting. The figure builders that consume these
 arrays live in the top-level ``reject_figures`` module, the experiment driver
-in ``run_real_reject_option_exp.py``.
+in ``rejopt_eval.py``.
 """
 
 from __future__ import annotations

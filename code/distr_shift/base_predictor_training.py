@@ -26,8 +26,8 @@ reported and stored in the bundle.
 
 Run with::
 
-    python run_base_predictor_exp.py fashion_mnist runs/fashion
-    python run_base_predictor_exp.py bloodmnist runs/blood --epochs 30 --device cuda
+    python base_predictor_training.py fashion_mnist runs/fashion
+    python base_predictor_training.py bloodmnist runs/blood --epochs 30 --device cuda
 
 Outputs in the given directory: ``model.pt`` (weights + T + train prior +
 normalization), ``report.txt`` (metrics, confusion matrices, and per-class
@@ -68,9 +68,6 @@ ARCH_DEFAULTS = {
     "cifar100": "resnet18-32",
     "dermamnist": "resnet18-28",
     "bloodmnist": "resnet18-28",
-    "retinamnist": "resnet18-28",
-    "pathmnist": "resnet18-28",
-    "octmnist": "resnet18-28",
     "tissuemnist": "resnet18-28",
     "organamnist": "resnet18-28",
     "organsmnist": "resnet18-28",

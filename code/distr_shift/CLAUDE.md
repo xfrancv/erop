@@ -35,8 +35,8 @@ plain scripts. Dependencies:
 - **Data download/analysis** (`download_datasets.py`, `analyze_datasets.py`) and
   the plotting helpers: `numpy scipy scikit-learn matplotlib tqdm` (see
   [requirements.txt](requirements.txt)).
-- **The experiment scripts** (`run_base_predictor_exp.py`,
-  `run_real_reject_option_exp.py`): additionally need **torch/torchvision**,
+- **The experiment scripts** (`base_predictor_training.py`,
+  `rejopt_eval.py`): additionally need **torch/torchvision**,
   pinned to the `cu126` wheels — this machine's NVIDIA driver caps at CUDA 12.9
   and the default PyPI (cu130) wheel fails `torch.cuda.is_available()`. Since
   the synthetic experiment was removed, every experiment run needs torch.
@@ -57,15 +57,17 @@ python download_datasets.py --list
 python analyze_datasets.py fashion_mnist        # writes data/reports/<key>.html
 
 # train a base predictor, then adapt (torch needed)
-python run_base_predictor_exp.py fashion_mnist runs/fashion
+python base_predictor_training.py fashion_mnist runs/fashion
 # always sweeps --sizes; the target prior defaults to the TRAINING prior (no
 # shift — the degenerate control), so a real experiment names one:
-python run_real_reject_option_exp.py runs/fashion/model.pt runs/fashion \
+python rejopt_eval.py runs/fashion/model.pt runs/fashion \
     --test-prior 0.25 0.01 0.43 0.01 0.01 0.01 0.25 0.01 0.01 0.01 --dirichlet 20
 
-# every dataset, the paper configuration (locally, or via sbatch)
-./run_real_exp.sh bloodmnist
-./run_all_real_exp.sh [sbatch]
+# the paper configuration: per dataset (or 'all'), then every dataset at once
+./run_base_pred_training.sh bloodmnist [nocalib]
+./run_rejopt_eval.sh bloodmnist [nocalib | beta]
+./run_all_base_pred_training.sh [sbatch]
+./run_all_rejopt_eval.sh [sbatch]
 
 # LaTeX-ish summary table across datasets
 python summary_table.py --reports runs/*/*/real_reject_option_sweep_report.txt \
@@ -78,15 +80,17 @@ so past runs are self-documenting — read those to reproduce a figure.
 
 ## Architecture
 
-The reusable library is the `prior_shift/` package; the top-level `run_*.py` /
-`*_datasets.py` scripts are thin experiment drivers around it, and
+The reusable library is the `prior_shift/` package; the top-level
+`base_predictor_training.py` / `rejopt_eval.py` / `*_datasets.py` scripts are
+thin experiment drivers around it, the `run_*.sh` wrappers pin the paper
+configuration, and
 `reject_figures.py` / `figspec.py` / `render_figspecs.py` are the plotting layer
 (kept out of the package so the library never imports matplotlib). Data outputs
 (`data/`, `figures/`, `runs/`) are gitignored and reproducible.
 
-Core method pipeline: `run_base_predictor_exp.py` trains and
+Core method pipeline: `base_predictor_training.py` trains and
 temperature/BCTS-calibrates a CNN for `p_tr(y|x)` and records the empirical
-`p_tr(y)` in its `model.pt` bundle → `run_real_reject_option_exp.py` resamples
+`p_tr(y)` in its `model.pt` bundle → `rejopt_eval.py` resamples
 the labeled val+test pool to a chosen target prior → `mcmc.py` samples the test
 prior `α` from the label-shift posterior over the unlabeled adaptation inputs →
 `predictors.py` applies the plugin label-shift correction and Bayes decision
@@ -118,6 +122,24 @@ reporting only: it is named in the reports and the per-draw dirichlet lines, but
 never builds the target prior), `download.py`, `loaders.py` (each source →
 common uint8-image/int-label dataset), `report.py` (self-contained base64 HTML
 report).
+
+**The shell wrapper layer** (four scripts, each usable directly or via `sbatch`;
+their headers carry the Slurm directives):
+
+- `run_base_pred_training.sh <dataset|all> [nocalib]` → `base_predictor_training.py`.
+  Default trains with `--calibration bcts` into `runs/<ds>/`; `nocalib` omits the
+  flag (raw softmax) and writes `runs/<ds>_nocalib/`.
+- `run_rejopt_eval.sh <dataset|all> [nocalib|beta]` → `rejopt_eval.py`, holding the
+  per-dataset paper configuration (target prior, `--sizes`, `--dirichlet`,
+  `--percentile-band`) in one `run_<dataset>` function each. `nocalib` reads/writes
+  `runs/<ds>_nocalib/` (the uncalibrated ablation); `beta` adds `--beta $BETA_SUM`
+  (misspecified model prior) and writes `runs/<ds>/beta/`.
+- `run_all_base_pred_training.sh [sbatch]` / `run_all_rejopt_eval.sh [sbatch]` — loop
+  the single-dataset wrappers over every dataset and every mode, either in the
+  current shell or as one Slurm job per run.
+
+Keep the two `nocalib` spellings in sync: it is both the wrappers' mode keyword
+and the `_nocalib` run-directory suffix that `summary_table_ablation.sh` reads.
 
 Target prior: two interfaces, `--test-prior` (explicit vector) and
 `--prior-classes`/`--prior-weights`/`--prior-rest-weight` (relative weights).

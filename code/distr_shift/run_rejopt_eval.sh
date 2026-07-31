@@ -9,25 +9,25 @@
 
 # Real-data reject-option experiments for ONE dataset.
 #
-#   ./run_all_real_exp.sh <dataset> [mode]
-#   sbatch -J erop-cifar100 run_all_real_exp.sh cifar100
+#   ./run_rejopt_eval.sh <dataset> [mode]
+#   sbatch -J erop-cifar100 run_rejopt_eval.sh cifar100
 #
 # <dataset> is one of the keys listed in DATASETS below, or "all" to run every
-# dataset in turn (the script's previous behaviour).
+# dataset in turn.
 #
 # [mode] is optional and selects which base predictor / output directory to use
 # (both are the same directory) and whether the misspecified model prior is
 # used:
 #
 #   (none)    model: runs/<dataset>/model.pt          output: runs/<dataset>/
-#   noadapt   model: runs/<dataset>_nocalib/model.pt  output: runs/<dataset>_nocalib/
+#   nocalib   model: runs/<dataset>_nocalib/model.pt  output: runs/<dataset>_nocalib/
 #             (the uncalibrated base predictor, i.e. the "nocalib" mode of
 #              run_base_pred_training.sh)
 #   beta      model: runs/<dataset>/model.pt          output: runs/<dataset>/beta/
-#             (and appends --beta $BETA_SUM to run_real_reject_option_exp.py)
+#             (and appends --beta $BETA_SUM to rejopt_eval.py)
 #
 # The model directory needs its base predictor at <dir>/model.pt
-# (run_base_predictor_exp.py).
+# (base_predictor_training.py).
 
 set -u
 
@@ -71,7 +71,7 @@ run() {
     local outdir="$dir${OUT_SUBDIR:+/$OUT_SUBDIR}/"
     if [ ! -f "$model" ]; then
         echo "error: $model not found; train it first with" >&2
-        echo "       python run_base_predictor_training.py $ds $dir" >&2
+        echo "       python base_predictor_training.py $ds $dir" >&2
         return 1
     fi
     echo "=== ${ds}${DIR_SUFFIX}${OUT_SUBDIR:+/$OUT_SUBDIR}${EXTRA_ARGS:+ (${EXTRA_ARGS[*]})}: $* ==="

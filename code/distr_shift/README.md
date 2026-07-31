@@ -4,6 +4,63 @@ Research code that learns the **test label prior from unlabeled test data** by
 Bayesian inference, and uses it to correct a discriminative classifier under
 *label shift* (a.k.a. prior / target shift).
 
+
+## Replicating experimens in the paper
+
+### Everything at once
+
+```
+./run_all_base_pred_training.sh          # every dataset, calibrated + nocalib
+./run_all_rejopt_eval.sh                 # then every evaluation, all three modes
+```
+Both take an optional `sbatch` argument that submits each run as a separate
+Slurm job instead of running them sequentially in the current shell
+(`./run_all_base_pred_training.sh sbatch`).
+
+### Single dataset
+
+**Train base predictor:** 
+Two predictors trained, one with and the other without posterior calibration:
+```
+./run_base_pred_training.sh bloodmnist 
+./run_base_pred_training.sh bloodmnist nocalib
+```
+The calibrated one lands in `runs/bloodmnist/`, the uncalibrated one in
+`runs/bloodmnist_nocalib/`.
+The script uses CUDA. If not available, change `DEVICE=cuda` to `DEVICE=cpu` in the header.
+
+**Evaluate label-prior-adaption with rejec toption** 
+Evaluation of Bayesian label-prior-shift with Bayesian and Epistemic reject-option strategies.
+For ablation, the methods are evaluated: i) with misspecified prior (beta) and ii) without posterior calibration (nocalib).
+```
+./run_rejopt_eval.sh bloodmnist
+./run_rejopt_eval.sh bloodmnist beta
+./run_rejopt_eval.sh bloodmnist nocalib
+```
+Outputs go to a timestamped directory under `runs/bloodmnist/`,
+`runs/bloodmnist/beta/` and `runs/bloodmnist_nocalib/` respectively; the
+`nocalib` mode reads the uncalibrated base predictor trained above.
+
+### All datasets
+
+Either use the two `run_all_*` scripts above, or pass `all` as the dataset:
+```
+./run_base_pred_training.sh all 
+./run_base_pred_training.sh all nocalib
+```
+After it finishes, run:
+```
+./run_rejopt_eval.sh all
+./run_rejopt_eval.sh all beta
+./run_rejopt_eval.sh all nocalib
+```
+
+### Slurm
+Update the header of './run_base_pred_training.sh' and './run_rejopt_eval.sh'. 
+Invoke the scripts with 'sbatch' prepend, or let `./run_all_base_pred_training.sh sbatch`
+and `./run_all_rejopt_eval.sh sbatch` submit one job per run.
+
+
 ## Problem
 
 A base model is trained on supervised data drawn from `p_tr(x, y)`, giving an
@@ -59,10 +116,10 @@ $h(x) = \arg\min_{\hat y} \sum_y \hat p(y| x, D) \ell( \hat y, y) $ (argmax for 
 The experiment runs on **real datasets** (Fashion-MNIST, CIFAR-10/100 and six
 MedMNIST v2 sets -- see [Real datasets](#real-datasets)). A neural base
 predictor is trained and calibrated on the training split by
-`run_base_predictor_exp.py`; label shift is then *simulated* by resampling the
+`base_predictor_training.py`; label shift is then *simulated* by resampling the
 labeled val+test pool to a target prior, so the class conditionals `p(x|y)` are
 untouched and only the mixing proportions change.
-`run_real_reject_option_exp.py` adapts the prior from the unlabeled adaptation
+`rejopt_eval.py` adapts the prior from the unlabeled adaptation
 inputs by MCMC and scores every predictor on a disjoint labeled evaluation set.
 The details -- the two target-prior interfaces and their degenerate default, the
 adaptation-first split, the dirichlet mode -- are in [Running the adaptation
@@ -229,8 +286,10 @@ independent single-panel figures), `gen_aurc_vs_n_test.png`,
 `aurc50_vs_n_test.png`, `epistemic_metrics_vs_n_test.png`,
 `cov_at_target_vs_n_test.png`, `base_accuracy_vs_n_test.png`, and the per-size
 risk/regret-coverage curves under `coverage_curves/`. The argument setting is
-saved alongside them as `run_real_reject_option_exp_args.txt`, which also
-records the resolved target prior and **how it was obtained**.
+saved alongside them as `rejopt_eval_args.txt`, which also
+records the resolved target prior and **how it was obtained**. (Runs made
+before the script was renamed carry the same file as
+`run_real_reject_option_exp_args.txt`.)
 **Uncertainty bands.** By default every figure shades a `mean ± s.e.m.` band
 (the real-data dirichlet mode uses `± std` over sampled priors) around the mean
 curve. Passing `--percentile-band X` (both reject-option scripts, `X` in
@@ -291,22 +350,22 @@ pip install -r requirements.txt
 
 ```bash
 # 1. train + calibrate a base predictor on a real dataset
-python run_base_predictor_exp.py bloodmnist runs/blood --calibration bcts
+python base_predictor_training.py bloodmnist runs/blood --calibration bcts
 
 # 2. adapt + evaluate the reject option. Always a sweep over --sizes.
 #    With no target-prior flag the target IS the training prior: no label
 #    shift, the degenerate control (the script warns).
-python run_real_reject_option_exp.py runs/blood/model.pt runs/blood \
+python rejopt_eval.py runs/blood/model.pt runs/blood \
     --sizes 1 10 100 500 --trials 20
 
 # an explicit shifted target prior, repeated over priors drawn around it
-python run_real_reject_option_exp.py runs/blood/model.pt runs/blood \
+python rejopt_eval.py runs/blood/model.pt runs/blood \
     --sizes 1 2 5 10 50 100 200 500 --trials 20 \
     --test-prior 0.17 0.01 0.01 0.25 0.15 0.15 0.25 0.01 \
     --dirichlet 20 --trials-prior 20 --percentile-band 50
 
 # the same, as shipped: the paper configuration per dataset
-./run_real_exp.sh bloodmnist            # or: ./run_all_real_exp.sh sbatch
+./run_rejopt_eval.sh bloodmnist            # or: ./run_all_rejopt_eval.sh sbatch
 
 # collect several runs into one table
 python summary_table.py --reports runs/*/*/real_reject_option_sweep_report.txt \
@@ -327,19 +386,14 @@ standard library plus NumPy/matplotlib/tqdm — no torch/torchvision/medmnist.
 | CIFAR-100 | `cifar100` | 32×32 RGB | 100 | fast.ai PNG-folder mirror (nested by superclass) | boy / girl |
 | DermaMNIST | `dermamnist` | 28×28 RGB | 7 | MedMNIST v2 `.npz` (Zenodo) | melanoma / nevus |
 | BloodMNIST | `bloodmnist` | 28×28 RGB | 8 | MedMNIST v2 `.npz` (Zenodo) | neutrophil / immature granulocyte |
-| RetinaMNIST | `retinamnist` | 28×28 RGB | 5 | MedMNIST v2 `.npz` (Zenodo) | grade 1 / grade 2 (adjacent DR severity) |
-| PathMNIST | `pathmnist` | 28×28 RGB | 9 | MedMNIST v2 `.npz` (Zenodo) | cancer-associated stroma / smooth muscle |
-| OCTMNIST | `octmnist` | 28×28 grayscale | 4 | MedMNIST v2 `.npz` (Zenodo) | drusen / normal |
 | TissueMNIST | `tissuemnist` | 28×28 grayscale | 8 | MedMNIST v2 `.npz` (Zenodo) | glomerular / interstitial endothelial cells |
 | OrganAMNIST | `organamnist` | 28×28 grayscale | 11 | MedMNIST v2 `.npz` (Zenodo) | kidney-left / kidney-right |
 | OrganSMNIST | `organsmnist` | 28×28 grayscale | 11 | MedMNIST v2 `.npz` (Zenodo) | kidney-left / kidney-right |
 
 CIFAR-100's fast.ai mirror is laid out two levels deep
 (`<split>/<superclass>/<fine-class>/*.png`); the image-folder loader labels by
-the leaf (fine-class) folder, so it yields the 100 fine classes. RetinaMNIST is
-ordinal (5 diabetic-retinopathy severity grades), so its "confusable pair" is
-the adjacent mild/moderate boundary rather than two arbitrary classes. The
-confusable pairs for PathMNIST, OCTMNIST, TissueMNIST, OrganAMNIST and
+the leaf (fine-class) folder, so it yields the 100 fine classes. The
+confusable pairs for TissueMNIST, OrganAMNIST and
 OrganSMNIST are initial proposals (e.g. the near-identical left/right kidney in
 the two Organ datasets); validate them before relying on them. The pair is
 **reporting only** — it is named in the reports and in the per-draw dirichlet
@@ -349,16 +403,16 @@ axial-view OrganAMNIST — the same 11 abdominal-organ labels, sliced along a
 different plane.
 
 **Split policy (`val_role`).** Each dataset's registry entry carries a
-`val_role` field that controls how `run_base_predictor_exp.py` uses the official
+`val_role` field that controls how `base_predictor_training.py` uses the official
 `val` split. The default, `"test"`, merges `val` into the *test* subset
 (evaluation only) and carves the model-selection set out of `train` — this suits
-the datasets with small test splits (Fashion-MNIST, CIFAR, DermaMNIST,
-BloodMNIST, RetinaMNIST, **and OCTMNIST**, whose test split is only 1,000
-examples). PathMNIST, TissueMNIST, OrganAMNIST and OrganSMNIST instead use
+the datasets with small test splits (DermaMNIST and BloodMNIST) as well as
+Fashion-MNIST and CIFAR, which ship no official `val` split at all and so have
+nothing to merge. TissueMNIST, OrganAMNIST and OrganSMNIST instead use
 `val_role="train"`: they train on the *whole* official `train` split, use the
 official `val` split as the model-selection set, and evaluate on the official
-`test` split alone — their test splits are large enough (7k–47k; OrganSMNIST
-has 8,827) that no merge is needed.
+`test` split alone — their test splits are large enough (8,827–47,280) that no
+merge is needed.
 
 ```bash
 python download_datasets.py                 # fetch all into data/
@@ -387,7 +441,7 @@ seconds rather than ~100 s.
 Two further scripts carry the reject-option story onto the real datasets. These
 require **torch/torchvision** (unlike the download/analysis tools above).
 
-1. **`run_base_predictor_exp.py`** trains and calibrates a neural-network base
+1. **`base_predictor_training.py`** trains and calibrates a neural-network base
    predictor. It splits the training subset (class-stratified) into a fit part
    and a model-selection part, selects the best epoch by validation error, and
    optionally calibrates on the model-selection part. `--calibration` selects
@@ -403,7 +457,7 @@ require **torch/torchvision** (unlike the download/analysis tools above).
    The script reports a **calibration-consistency check** — mean calibrated
    posterior over the held-out split divided by class frequency, ~1 per class
    when healthy, stored in the bundle and re-printed with a warning by
-   `run_real_reject_option_exp.py` (it is the bias-detecting complement of the
+   `rejopt_eval.py` (it is the bias-detecting complement of the
    variance-detecting `ident_ratio`). The saved `model.pt` bundle holds the
    best-epoch weights + `T` + bias + the check + estimated training prior +
    normalization.
@@ -412,11 +466,11 @@ require **torch/torchvision** (unlike the download/analysis tools above).
    for CIFAR-10 and the MedMNIST sets.
 
    ```bash
-   python run_base_predictor_exp.py fashion_mnist runs/fashion
-   python run_base_predictor_exp.py bloodmnist runs/blood --epochs 30 --device cuda
+   python base_predictor_training.py fashion_mnist runs/fashion
+   python base_predictor_training.py bloodmnist runs/blood --epochs 30 --device cuda
    ```
 
-2. **`run_real_reject_option_exp.py`** loads a `model.pt` base predictor,
+2. **`rejopt_eval.py`** loads a `model.pt` base predictor,
    computes calibrated posteriors on the (val+test) pool, **simulates label
    shift** by resampling that labeled pool to a target prior, and runs the
    adaptation, the predictors and the reject-option curves. It always sweeps
@@ -464,9 +518,9 @@ require **torch/torchvision** (unlike the download/analysis tools above).
    class conditionals `p(x|y)` are untouched.
 
    ```bash
-   python run_real_reject_option_exp.py runs/blood/model.pt runs/blood \
+   python rejopt_eval.py runs/blood/model.pt runs/blood \
        --sizes 1 10 100 500
-   python run_real_reject_option_exp.py runs/blood/model.pt runs/blood \
+   python rejopt_eval.py runs/blood/model.pt runs/blood \
        --sizes 1 10 100 500 --test-prior 0.1 0.1 0.1 0.35 0.1 0.1 0.05 0.1
    ```
 
@@ -545,15 +599,18 @@ data_tools/
   download.py    stream files into data/<key>/ (skip-if-present, progress bars)
   loaders.py     load each source into a common uint8-image / int-label Dataset
   report.py      render the self-contained HTML analysis report
-run_base_predictor_exp.py       train + calibrate a NN base predictor on a real dataset
-run_real_reject_option_exp.py   adaptation + reject-option experiment (always a sweep)
-reject_figures.py               figure builders for the experiment's outputs
-figspec.py / render_figspecs.py declarative figure specs + offline re-rendering
-summary_table.py                one LaTeX-ish table across datasets and sizes
-download_datasets.py            download the real datasets into data/
-analyze_datasets.py             build a self-contained HTML report per dataset
-run_real_exp.sh                 the paper configuration for one dataset
-run_all_real_exp.sh [sbatch]    every dataset, locally or as Slurm jobs
+base_predictor_training.py        train + calibrate a NN base predictor on a real dataset
+rejopt_eval.py                    adaptation + reject-option experiment (always a sweep)
+reject_figures.py                 figure builders for the experiment's outputs
+figspec.py / render_figspecs.py   declarative figure specs + offline re-rendering
+summary_table.py                  one LaTeX-ish table across datasets and sizes
+download_datasets.py              download the real datasets into data/
+analyze_datasets.py               build a self-contained HTML report per dataset
+run_base_pred_training.sh         train one dataset (or 'all'); [nocalib] variant
+run_rejopt_eval.sh                the paper configuration for one dataset (or 'all');
+                                  [nocalib | beta] ablation modes
+run_all_base_pred_training.sh     train every dataset, both variants; [sbatch]
+run_all_rejopt_eval.sh            every dataset, all three modes; [sbatch]
 ```
 
 Requires `numpy`, `scipy`, `scikit-learn`, `matplotlib`, `tqdm` and -- for the
