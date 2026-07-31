@@ -1,8 +1,8 @@
 #!/bin/bash
 # Run all real-data experiments.
 #
-#   ./run_all_real_exp.sh           # run sequentially in this shell
-#   ./run_all_real_exp.sh sbatch    # submit each run as a Slurm job
+#   ./run_all_base_pred_training.sh           # run sequentially in this shell
+#   ./run_all_base_pred_training.sh sbatch    # submit each run as a Slurm job
 
 set -e
 
@@ -27,22 +27,22 @@ run erop-blood   bloodmnist
 run erop-blood   bloodmnist nocalib
 
 run erop-cif10   cifar10
-run erop-cif10   cifar10 noadapt
+run erop-cif10   cifar10 nocalib
 
 run erop-cif100  cifar100
-run erop-cif100  cifar100 noadapt
+run erop-cif100  cifar100 nocalib
 
 run erop-derma   dermamnist
-run erop-derma   dermamnist noadapt
+run erop-derma   dermamnist nocalib
 
 run erop-fashion fashion_mnist
-run erop-fashion fashion_mnist noadapt
+run erop-fashion fashion_mnist nocalib
 
 run erop-tissue  tissuemnist
-run erop-tissue  tissuemnist noadapt
+run erop-tissue  tissuemnist nocalib
 
 run erop-organa  organamnist
-run erop-organa  organamnist noadapt
+run erop-organa  organamnist nocalib
 
 run erop-organa  organsmnist
-run erop-organa  organsmnist noadapt
+run erop-organa  organsmnist nocalib

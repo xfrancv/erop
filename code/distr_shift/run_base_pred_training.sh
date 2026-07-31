@@ -22,7 +22,7 @@
 #   (none)    output: runs/<dataset>/           --calibration bcts
 #   nocalib   output: runs/<dataset>_nocalib/   (no --calibration flag)
 #
-# run_real_exp.sh's "noadapt" mode reads runs/<dataset>_nocalib/ for its
+# run_rejopt_eval.sh's "nocalib" mode reads runs/<dataset>_nocalib/ for its
 # no-calibration ablation.
 
 set -u
@@ -58,7 +58,7 @@ run() {
     echo "=== ${ds}${DIR_SUFFIX}${EXTRA_ARGS:+ (${EXTRA_ARGS[*]})} ==="
     # "${EXTRA_ARGS[@]+...}" guards against the empty-array-under-set-u error on
     # bash < 4.4 (older cluster nodes).
-    python run_base_predictor_exp.py "$ds" "$dir" \
+    python base_predictor_training.py "$ds" "$dir" \
         --epochs "$EPOCHS" --device "$DEVICE" \
         "${EXTRA_ARGS[@]+${EXTRA_ARGS[@]}}"
 }

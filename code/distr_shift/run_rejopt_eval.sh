@@ -39,7 +39,7 @@ BETA_SUM=20
 usage() {
     echo "usage: $0 <dataset> [mode]" >&2
     echo "  <dataset>: ${DATASETS[*]} | all" >&2
-    echo "  [mode]   : noadapt | beta   (omit for the default run)" >&2
+    echo "  [mode]   : nocalib | beta   (omit for the default run)" >&2
     exit 1
 }
 
@@ -53,7 +53,7 @@ OUT_SUBDIR=""
 EXTRA_ARGS=()
 case "${2:-}" in
     "")       ;;                                   # default run
-    noadapt)  DIR_SUFFIX="_nocalib" ;;
+    nocalib) DIR_SUFFIX="_nocalib" ;;
     beta)     OUT_SUBDIR="beta"; EXTRA_ARGS=(--beta "$BETA_SUM") ;;
     *)        echo "error: unknown mode '$2'" >&2; usage ;;
 esac
@@ -71,14 +71,14 @@ run() {
     local outdir="$dir${OUT_SUBDIR:+/$OUT_SUBDIR}/"
     if [ ! -f "$model" ]; then
         echo "error: $model not found; train it first with" >&2
-        echo "       python run_base_predictor_exp.py $ds $dir" >&2
+        echo "       python run_base_predictor_training.py $ds $dir" >&2
         return 1
     fi
     echo "=== ${ds}${DIR_SUFFIX}${OUT_SUBDIR:+/$OUT_SUBDIR}${EXTRA_ARGS:+ (${EXTRA_ARGS[*]})}: $* ==="
     mkdir -p "$outdir"
     # "${EXTRA_ARGS[@]+...}" guards against the empty-array-under-set-u error on
     # bash < 4.4 (older cluster nodes).
-    python run_real_reject_option_exp.py "$model" "$outdir" \
+    python rejopt_eval.py "$model" "$outdir" \
         --sizes $SIZES --regret-target $REGRET_TARGETS \
         "${EXTRA_ARGS[@]+${EXTRA_ARGS[@]}}" "$@" \
         --trials-prior 20  --trials 20

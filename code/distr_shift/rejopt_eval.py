@@ -110,7 +110,7 @@ from reject_figures import (
     sweep_panels,
     trunc_sweep_fname,
 )
-from run_base_predictor_exp import make_model, to_tensor
+from base_predictor_training import make_model, to_tensor
 
 try:  # progress bars are optional -- the script runs without tqdm installed.
     from tqdm import tqdm
