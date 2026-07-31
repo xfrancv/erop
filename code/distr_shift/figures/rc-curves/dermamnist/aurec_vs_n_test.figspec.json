@@ -1,0 +1,95 @@
+{
+  "panels": [
+    {
+      "series": [
+        {
+          "x": {
+            "__np__": "a0"
+          },
+          "center": {
+            "__np__": "a1"
+          },
+          "label": "Bayesian",
+          "color": "C1",
+          "kind": "line",
+          "lower": {
+            "__np__": "a2"
+          },
+          "upper": {
+            "__np__": "a3"
+          },
+          "marker": "o",
+          "linestyle": "-",
+          "linewidth": 1.8,
+          "band_alpha": 0.2,
+          "size": 36.0,
+          "alpha": 1.0,
+          "edgecolors": "none",
+          "zorder": null
+        },
+        {
+          "x": {
+            "__np__": "a4"
+          },
+          "center": {
+            "__np__": "a5"
+          },
+          "label": "Epistemic",
+          "color": "C2",
+          "kind": "line",
+          "lower": {
+            "__np__": "a6"
+          },
+          "upper": {
+            "__np__": "a7"
+          },
+          "marker": "o",
+          "linestyle": "-",
+          "linewidth": 1.8,
+          "band_alpha": 0.2,
+          "size": 36.0,
+          "alpha": 1.0,
+          "edgecolors": "none",
+          "zorder": null
+        }
+      ],
+      "hlines": [
+        {
+          "y": 0.0,
+          "color": "0.4",
+          "linestyle": "--",
+          "linewidth": 1.0
+        }
+      ],
+      "xlabel": "# of adaptation examples $m$",
+      "ylabel": "AuReC (selective regret)",
+      "title": "DermaMNIST",
+      "xscale": "log",
+      "yscale": "linear",
+      "xticks": [
+        1,
+        2,
+        5,
+        10,
+        50,
+        100,
+        200,
+        500
+      ],
+      "ylim": null,
+      "grid": true,
+      "grid_which": "both",
+      "grid_alpha": 0.25,
+      "legend": true,
+      "legend_loc": null,
+      "legend_fontsize": null,
+      "axis_off": false
+    }
+  ],
+  "nrows": 1,
+  "ncols": 1,
+  "figsize": null,
+  "suptitle": null,
+  "tight_rect": null,
+  "dpi": 130
+}
