@@ -1,24 +1,48 @@
 #!/bin/bash
-#SBATCH --job-name=erop   # Job name
-#SBATCH --mail-type=ALL            # Mail events (NONE, BEGIN, END, FAIL, ALL)
-#SBATCH --mail-user=xfrancv@fel.cvut.cz   # Where to send mail
-#SBATCH --mem=20gb                   # Job Memory
-#SBATCH --output=./logs/array_%A-%a.log    # Standard output and error log
-#SBATCH --error=./logs/error_%A-%a.log    # Standard output and error log
-#SBATCH --partition=gpu
+# Run all real-data experiments.
+#
+#   ./run_all_real_exp.sh           # run sequentially in this shell
+#   ./run_all_real_exp.sh sbatch    # submit each run as a Slurm job
 
-source .venv/bin/activate
+set -e
 
-python run_base_predictor_exp.py bloodmnist runs/bloodmnist --epochs 30 --device cuda --calibration bcts
-python run_base_predictor_exp.py cifar10 runs/cifar10 --epochs 30 --device cuda --calibration bcts
-python run_base_predictor_exp.py dermamnist runs/dermamnist --epochs 30 --device cuda --calibration bcts
-python run_base_predictor_exp.py fashion_mnist runs/fashion_mnist --epochs 30 --device cuda --calibration bcts
-python run_base_predictor_exp.py cifar100 runs/cifar100 --epochs 30 --device cuda --calibration bcts
-python run_base_predictor_exp.py organamnist runs/organamnist --epochs 30 --device cuda --calibration bcts
-python run_base_predictor_exp.py organsmnist runs/organsmnist --epochs 30 --device cuda --calibration bcts
-python run_base_predictor_exp.py tissuemnist runs/tissuemnist --epochs 30 --device cuda --calibration bcts
+USE_SBATCH=0
+case "${1:-}" in
+    "") ;;
+    sbatch) USE_SBATCH=1 ;;
+    *) echo "usage: $0 [sbatch]" >&2; exit 1 ;;
+esac
 
+# run <job-name> <dataset> [mode]
+run() {
+    local job="$1"; shift
+    if [ "$USE_SBATCH" -eq 1 ]; then
+        sbatch -J "$job" ./run_base_pred_training.sh "$@"
+    else
+        ./run_base_pred_training.sh "$@"
+    fi
+}
 
+run erop-blood   bloodmnist
+run erop-blood   bloodmnist nocalib
 
+run erop-cif10   cifar10
+run erop-cif10   cifar10 noadapt
 
+run erop-cif100  cifar100
+run erop-cif100  cifar100 noadapt
 
+run erop-derma   dermamnist
+run erop-derma   dermamnist noadapt
+
+run erop-fashion fashion_mnist
+run erop-fashion fashion_mnist noadapt
+
+run erop-tissue  tissuemnist
+run erop-tissue  tissuemnist noadapt
+
+run erop-organa  organamnist
+run erop-organa  organamnist noadapt
+
+run erop-organa  organsmnist
+run erop-organa  organsmnist noadapt
