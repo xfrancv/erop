@@ -1,12 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=erop   # Job name
 #SBATCH --mail-type=ALL            # Mail events (NONE, BEGIN, END, FAIL, ALL)
-#SBATCH --mail-user=xfrancv@fel.cvut.cz   # Where to send mail
+##SBATCH --mail-user=your@email   # Where to send mail
 #SBATCH --mem=20gb                   # Job Memory
 #SBATCH --output=./logs/array_%A-%a.log    # Standard output and error log
 #SBATCH --error=./logs/error_%A-%a.log    # Standard output and error log
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1                 # request one GPU (the gpu partition rejects jobs with none)
+
 
 # Base-predictor training run_base_pred_training.shfor ONE dataset.
 #
