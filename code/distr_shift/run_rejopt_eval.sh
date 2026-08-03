@@ -31,6 +31,11 @@
 #              same examples; the disjoint-split run is the default mode, so
 #              the two are directly comparable)
 #
+# Every mode also carries its own sampling effort -- the number of sampled
+# target priors and the number of trials at each -- as the <MODE>_TRIALS_PRIOR
+# and <MODE>_TRIALS constants below, so one mode can be run cheaper or deeper
+# than the rest. They all start at the paper's 20 x 20.
+#
 # The model directory needs its base predictor at <dir>/model.pt
 # (base_predictor_training.py).
 
@@ -40,6 +45,25 @@ DATASETS=(bloodmnist cifar10 dermamnist fashion_mnist cifar100 organamnist organ
 
 # Symmetric-Dirichlet model-prior concentration for the "beta" mode.
 BETA_SUM=20
+
+# Sampling effort, per mode: <MODE>_TRIALS_PRIOR is the number of sampled target
+# priors (--trials-prior) and <MODE>_TRIALS the number of trials run at each of
+# them (--trials), so one mode costs TRIALS_PRIOR x TRIALS sweeps per dataset.
+# Each mode carries its own pair, so an expensive mode can be run at reduced
+# effort without touching the others. All four are set to the 20 x 20 the paper
+# runs use; the mode dispatch below copies the selected pair into
+# TRIALS_PRIOR / TRIALS.
+DEFAULT_TRIALS_PRIOR=20
+DEFAULT_TRIALS=100
+
+NOCALIB_TRIALS_PRIOR=20
+NOCALIB_TRIALS=20
+
+BETA_TRIALS_PRIOR=20
+BETA_TRIALS=20
+
+TRANSDUCTIVE_TRIALS_PRIOR=20
+TRANSDUCTIVE_TRIALS=100
 
 usage() {
     echo "usage: $0 <dataset> [mode]" >&2
@@ -52,7 +76,8 @@ usage() {
 
 # The second argument is a mode keyword. DIR_SUFFIX selects the model directory
 # (runs/<dataset><DIR_SUFFIX>/); OUT_SUBDIR is an extra output-only subdirectory;
-# EXTRA_ARGS are appended to the Python script.
+# EXTRA_ARGS are appended to the Python script; TRIALS_PRIOR / TRIALS take the
+# mode's pair from the constants above.
 DIR_SUFFIX=""
 OUT_SUBDIR=""
 EXTRA_ARGS=()
@@ -60,12 +85,19 @@ EXTRA_ARGS=()
 # --eval-on-adapt has no separate evaluation set and rejects --n-eval.
 DERMA_NEVAL=(--n-eval 150)
 case "${2:-}" in
-    "")       ;;                                   # default run
-    nocalib) DIR_SUFFIX="_nocalib" ;;
-    beta)     OUT_SUBDIR="beta"; EXTRA_ARGS=(--beta "$BETA_SUM") ;;
+    "")       TRIALS_PRIOR=$DEFAULT_TRIALS_PRIOR
+              TRIALS=$DEFAULT_TRIALS ;;           # default run
+    nocalib)  DIR_SUFFIX="_nocalib"
+              TRIALS_PRIOR=$NOCALIB_TRIALS_PRIOR
+              TRIALS=$NOCALIB_TRIALS ;;
+    beta)     OUT_SUBDIR="beta"; EXTRA_ARGS=(--beta "$BETA_SUM")
+              TRIALS_PRIOR=$BETA_TRIALS_PRIOR
+              TRIALS=$BETA_TRIALS ;;
     transductive)
               OUT_SUBDIR="transductive"; EXTRA_ARGS=(--eval-on-adapt)
-              DERMA_NEVAL=() ;;
+              DERMA_NEVAL=()
+              TRIALS_PRIOR=$TRANSDUCTIVE_TRIALS_PRIOR
+              TRIALS=$TRANSDUCTIVE_TRIALS ;;
     *)        echo "error: unknown mode '$2'" >&2; usage ;;
 esac
 
@@ -85,14 +117,15 @@ run() {
         echo "       python base_predictor_training.py $ds $dir" >&2
         return 1
     fi
-    echo "=== ${ds}${DIR_SUFFIX}${OUT_SUBDIR:+/$OUT_SUBDIR}${EXTRA_ARGS:+ (${EXTRA_ARGS[*]})}: $* ==="
+    echo "=== ${ds}${DIR_SUFFIX}${OUT_SUBDIR:+/$OUT_SUBDIR}${EXTRA_ARGS:+ (${EXTRA_ARGS[*]})}" \
+         "[${TRIALS_PRIOR} priors x ${TRIALS} trials]: $* ==="
     mkdir -p "$outdir"
     # "${EXTRA_ARGS[@]+...}" guards against the empty-array-under-set-u error on
     # bash < 4.4 (older cluster nodes).
     python rejopt_eval.py "$model" "$outdir" \
         --sizes $SIZES --regret-target $REGRET_TARGETS \
         "${EXTRA_ARGS[@]+${EXTRA_ARGS[@]}}" "$@" \
-        --trials-prior 20  --trials 20
+        --trials-prior "$TRIALS_PRIOR" --trials "$TRIALS"
 }
 
 
