@@ -36,8 +36,13 @@ to `data/reports/`.
 
 ```
 ./run_all_base_pred_training.sh          # every dataset, calibrated + nocalib
-./run_all_rejopt_eval.sh                 # then every evaluation, all three modes
+./run_all_rejopt_eval.sh                 # then every evaluation, all four modes
 ```
+
+The four evaluation modes per dataset are the default run, `nocalib` (the
+uncalibrated base predictor), `beta` (a misspecified model prior) and
+`transductive` (`--eval-on-adapt`: the prior is learned from the very batch that
+is then classified, so adaptation and evaluation use the same examples).
 
 Training uses CUDA; if no GPU is available, change `DEVICE=cuda` to
 `DEVICE=cpu` in the header of `run_base_pred_training.sh`. Both scripts take an

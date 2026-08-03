@@ -92,9 +92,11 @@ predictor is trained and calibrated on the training split by
 labeled val+test pool to a target prior, so the class conditionals `p(x|y)` are
 untouched and only the mixing proportions change.
 `rejopt_eval.py` adapts the prior from the unlabeled adaptation
-inputs by MCMC and scores every predictor on a disjoint labeled evaluation set.
-The details -- the two target-prior interfaces and their degenerate default, the
-adaptation-first split, the dirichlet mode -- are in [Running the adaptation
+inputs by MCMC and scores every predictor on a disjoint labeled evaluation set
+-- or, with `--eval-on-adapt`, on the adaptation examples themselves (the
+transductive deployment setting). The details -- the two target-prior
+interfaces and their degenerate default, the adaptation-first split and its
+transductive alternative, the dirichlet mode -- are in [Running the adaptation
 experiment on real data](#running-the-adaptation-experiment-on-real-data).
 
 ### When can this fail? The identifiability warning
@@ -228,18 +230,20 @@ ranking score, their gaps compress. A smaller AuRC50 gap is not evidence the
 rankings agree more. The areas get their own two-panel figure,
 `aurc50_vs_n_test.png`.
 
-**No in-sample bias.** Every predictor is scored on a **labeled evaluation set
-disjoint from the adaptation examples** used to learn the prior. The supervised
-plugin reference counts its prior from the *labels of the adaptation set*, never
-from the evaluation set.
+**No in-sample bias (default mode).** By default every predictor is scored on a
+**labeled evaluation set disjoint from the adaptation examples** used to learn
+the prior. The supervised plugin reference counts its prior from the *labels of
+the adaptation set*, never from the evaluation set. `--eval-on-adapt` gives up
+that disjointness on purpose — see **Transductive evaluation** below.
 
 ### Sweep: the adaptation-set size
 
 Every measure is reported as a curve over `--sizes`, the number `n` of unlabeled
-adaptation examples, each point scored on the same fixed labeled evaluation set.
-Per trial the `n` adaptation examples are nested prefixes of one resampled pool,
-so neighbouring sizes share draws and the curves reflect `n` rather than
-re-sampling noise. Pass a single size for a one-point run.
+adaptation examples. Per trial the `n` adaptation examples are nested prefixes
+of one resampled pool, so neighbouring sizes share draws and the curves reflect
+`n` rather than re-sampling noise; by default each point is scored on the same
+fixed labeled evaluation set (under `--eval-on-adapt`, on the `n` adaptation
+examples themselves). Pass a single size for a one-point run.
 
 **Single-number summary (`avg` row).** Every per-size sweep table above —
 AuRC, AuRC50, AuGRC, coverage-at-target and the epistemic-uncertainty metrics —
@@ -522,7 +526,8 @@ require **torch/torchvision** (unlike the download/analysis tools above).
    `sampled_priors.txt` (every draw, as an audit trail).
 
    The sweep varies the adaptation-set size over `--sizes` (nested prefixes of
-   one resampled pool per trial, scored on a fixed evaluation set) and writes
+   one resampled pool per trial, scored on a fixed evaluation set — or, with
+   `--eval-on-adapt`, on the prefix itself) and writes
    the AuRC-vs-n and AuReC-vs-n figures (`aurc_vs_n_test.png`,
    `aurec_vs_n_test.png` — two independent single-panel figures, one per curve,
    so each drops straight into a paper), AuRC50-vs-n, AuGRC-vs-n, the
@@ -533,8 +538,9 @@ require **torch/torchvision** (unlike the download/analysis tools above).
    `real_reject_option_sweep_report.txt`. It also writes
    `base_accuracy_vs_n_test.png`: the test accuracy of the Bayesian
    learned-prior predictor as it adapts from the `n` examples, against the
-   (flat) training-prior plugin (no adaptation) and the (flat) true-prior
-   plugin as the oracle ceiling.
+   training-prior plugin (no adaptation) and the true-prior plugin as the oracle
+   ceiling — both flat in `n`, since neither uses the adaptation examples
+   (under `--eval-on-adapt` they do vary, through the evaluation sample).
 
    The report tables cover the four plugin/Bayesian predictors' accuracy (no
    optimal-Bayes upper bound — the true conditionals are unknown for real
@@ -562,6 +568,46 @@ require **torch/torchvision** (unlike the download/analysis tools above).
    shrinks the auto `n_eval` (the script errors clearly if it would leave a
    wanted class with no evaluation examples). Note the `--n-eval` **default
    changed** from a fixed `2000` to this auto-max.
+
+   **Transductive evaluation (`--eval-on-adapt`).** With this flag there is no
+   second draw: the `n` adaptation examples *are* the evaluation set
+   (`merge_eval_adapt_sets_polished.md`). This is the deployment setting — a
+   batch of unlabeled inputs arrives, its prior is learned from it, and that
+   same batch has to be classified — and the setting in which the epistemic
+   term is exactly the posterior-expected regret *on the scored points* rather
+   than on a separate sample. `--n-eval` is rejected under it (the evaluation
+   size is `--sizes`), and the pool-competition guards disappear. What to expect:
+
+   - **Regret may go negative.** The reference stays the plugin at the true
+     target prior, which on a finite batch is not the loss-minimising prior;
+     a method that infers the batch's own prior can beat it. The report's
+     **transductive floor** table (the plugin at the batch's *empirical* prior:
+     mean regret against the oracle, its accuracy, the number of classes the
+     batch actually contains, and the realized evaluation size) says how much
+     of the observed regret is finite-batch prior mismatch rather than method
+     quality. `coverage @ regret <= eps` is then a budget against the
+     *population* oracle, not against an attainable optimum.
+   - The floor is usually **small**, because the batch is *resampled* to the
+     target prior class-by-class rather than drawn i.i.d. from it: its
+     empirical prior differs from the target only by the integer rounding of
+     `target_counts`. It grows as `n` shrinks (coarser rounding).
+   - **Error bars grow and change meaning.** The disjoint default scores nearly
+     the whole pool every trial, so its error bars are almost pure adaptation
+     variance and the non-adaptive baselines have near-zero spread. Here the
+     evaluation set is `n` examples, so evaluation-sampling noise returns and
+     dominates at small `n`, and the two plugin baselines acquire visible
+     spread.
+   - **The sweep confounds two effects**: AuRC vs. `n` mixes "adaptation
+     improves with `n`" with "evaluation gets less noisy with `n`". That is
+     intrinsic to the design (a deployed batch of 50 *is* both estimated from
+     and scored on 50 points); raising `--trials` averages the noise down but
+     does not remove the confound.
+   - **Coverage granularity is `1/n`**, so at small `n` the low-coverage tail is
+     0/1-grained; AuRC50 and AuGRC are the robust readings there. At `n` below
+     the class count (e.g. 50 on CIFAR-100) the batch simply cannot contain
+     every class — the honest transductive answer, reported as `classes seen`.
+   - The supervised-prior baseline is *not* computed here; under
+     `--eval-on-adapt` it would coincide exactly with the transductive floor.
 
 ## Layout
 

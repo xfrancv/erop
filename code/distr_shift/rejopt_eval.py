@@ -11,25 +11,40 @@ Label shift is *simulated*: the real test pool (the base script's val+test
 merge) is labeled, so it can be resampled to a chosen target prior
 ``p_te(y)``. The script always **sweeps** the adaptation-set size: every
 measure is reported as a curve over ``--sizes`` (pass a single size for a
-one-point run). Per trial the split is **adaptation-first**: an adaptation pool
-of ``max(--sizes)`` examples is drawn at the target prior from the whole pool
--- per class, so it is stratified -- and the disjoint remainder feeds the
-evaluation set; the swept sizes are nested prefixes of that pool. ``--n-eval``
-defaults to the largest all-distinct evaluation set the remainder supports,
-which maximises the eval size and so minimises the variance of the reported
-metrics. The adaptation inputs feed the MCMC (and their labels the
-supervised-prior baseline); every predictor is scored on the evaluation set.
+one-point run). Per trial an adaptation pool of ``max(--sizes)`` examples is
+drawn at the target prior from the whole pool -- per class, so it is stratified
+-- and the swept sizes are nested prefixes of that pool.
+
+Two evaluation designs, selected by ``--eval-on-adapt``
+(``merge_eval_adapt_sets_polished.md``):
+
+- **disjoint** (default): the remainder of the pool feeds a separate evaluation
+  set, whose size ``--n-eval`` defaults to the largest all-distinct set that
+  remainder supports -- maximising the eval size and so minimising the variance
+  of the reported metrics.
+- **transductive** (``--eval-on-adapt``): the adaptation set *is* the
+  evaluation set, the deployment setting (the prior is learned from the very
+  batch that has to be classified) and the one in which the epistemic term is
+  exactly the posterior-expected regret on the scored points. ``--n-eval`` is
+  then meaningless and rejected: the evaluation size is ``--sizes``.
+
 There is no optimal-Bayes upper bound here (the true class conditionals are
 unknown for real data); the regret reference is the plugin given the true
-(target) test prior.
+(target) test prior -- in transductive mode that population oracle is *not*
+optimal on the finite batch, so regret may be negative; the reported
+"transductive floor" (the plugin at the batch's empirical prior) says how much
+of that is finite-batch prior mismatch.
 
 Predictors / baselines:
 
 - Plugin, training prior (no adaptation)
 - Plugin, true test prior (oracle target prior)
-- Plugin, supervised prior estimate (prior counted from the adaptation-set
-  labels -- ``baseline_learned_prior_subervised_data.md``)
 - Bayesian, learned prior (MCMC from the unlabeled adaptation inputs)
+
+The supervised-prior baseline (prior counted from the adaptation-set labels --
+``baseline_learned_prior_subervised_data.md``) is not computed here; under
+``--eval-on-adapt`` it would coincide exactly with the empirical-prior plugin
+reported as the transductive floor.
 
 and the two reject-option predictors: the Bayesian predictor ranked by total
 and by epistemic uncertainty.
@@ -66,6 +81,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -370,6 +386,14 @@ def resample_to_prior(source_idx, labels, target_prior, m, rng,
     return idx, short, absent
 
 
+def eval_set_report_field(args) -> str:
+    """The report header's evaluation-set field: a size for the disjoint split,
+    a statement of identity under ``--eval-on-adapt`` (where the evaluation size
+    is the swept size, so no single number describes it)."""
+    return ("eval set = adaptation set" if args.eval_on_adapt
+            else f"n_eval {args.n_eval}")
+
+
 def max_distinct_eval(eval_avail, target_prior):
     """Largest all-distinct evaluation size at ``target_prior`` given per-class
     availability ``eval_avail``: ``floor(min_c eval_avail[c] / target[c])`` over
@@ -381,7 +405,9 @@ def max_distinct_eval(eval_avail, target_prior):
 
 def split_adapt_eval(all_idx, y, target_prior, n_adapt, n_eval, rng,
                      adapt_replace=True):
-    """Adaptation-first stratified split of the whole pool.
+    """Adaptation-first stratified split of the whole pool (the default,
+    disjoint evaluation design -- ``--eval-on-adapt`` draws no evaluation set of
+    its own and does not call this).
 
     Draw ``n_adapt`` adaptation indices at the target prior from the whole pool
     (``resample_to_prior`` draws per class, so this is stratified by
@@ -401,22 +427,78 @@ def split_adapt_eval(all_idx, y, target_prior, n_adapt, n_eval, rng,
     return adapt_idx, eval_idx, short_a, short_e, absent_a | absent_e
 
 
+@dataclass
+class SweepResult:
+    """Everything one sweep reports, on a common ``(len(sizes), reps)`` layout.
+
+    ``run_sweep`` fills it with ``reps = trials``; the dirichlet driver builds
+    the same shape with ``reps = trials_prior`` from per-prior means, so
+    ``_sweep_outputs`` serves both. Every scalar area (AuRC, AuRC50, AuGRC) is
+    computed per replicate from that replicate's *full* selective curve, so the
+    numbers never depend on the ragged-curve truncation below.
+
+    ``risk_curves`` / ``regret_curves`` map a predictor name to a **list over
+    sizes** of ``(reps, curve_len[i])`` arrays -- a list, not one array,
+    because under ``--eval-on-adapt`` the curve length is the evaluation size,
+    which is the swept size itself. They exist only for the per-size
+    coverage-curve figures.
+    """
+    aurc_risk: dict
+    aurc_regret: dict
+    aurc50_risk: dict
+    aurc50_regret: dict
+    augrc_risk: dict
+    augrc_regret: dict
+    cov_regret: list
+    risk_curves: dict
+    regret_curves: dict
+    curve_len: np.ndarray
+    warned: np.ndarray
+    epi_metrics: np.ndarray
+    base_acc: dict
+    floor: dict
+    realized_n: np.ndarray
+    short_adapt: set
+    short_eval: set
+
+
+def stack_curves(per_size_lists):
+    """Stack ragged per-replicate selective curves into one array per size.
+
+    ``per_size_lists[i]`` is the list of that size's per-replicate curves.
+    Replicates can differ in length (dirichlet-mode truncation of the
+    adaptation pool, which under ``--eval-on-adapt`` is also the evaluation
+    set), and the figures need a rectangular array, so each size's curves are
+    cut to the shortest replicate. Returns ``(stacked, lengths)`` with
+    ``stacked[i]`` of shape ``(reps, lengths[i])``; the lengths are reported so
+    a cut is visible rather than silent.
+    """
+    stacked, lengths = [], []
+    for curves in per_size_lists:
+        m = min(len(c) for c in curves)
+        stacked.append(np.stack([np.asarray(c)[:m] for c in curves]))
+        lengths.append(m)
+    return stacked, np.asarray(lengths, dtype=int)
+
+
 def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
               master_rng, epi_threshold, regret_targets=(0.002,),
-              sampler="mh", beta=None,
-              adapt_replace=True, progress_desc="sweep"):
+              sampler="mh", beta=None, adapt_replace=True,
+              eval_on_adapt=False, progress_desc="sweep"):
     """AuRC and epistemic metrics as a function of the adaptation-set size.
 
-    Per trial the adaptation pool of size ``max(sizes)`` is drawn first at the
-    target prior from the whole pool, and the disjoint remainder feeds the
-    fixed ``n_eval`` evaluation set (``split_adapt_eval``). The ``n`` adaptation
-    examples are nested prefixes of that pool, so neighbouring sizes share
-    draws and the curves reflect ``n`` rather than re-sampling noise.
+    Per trial the adaptation pool of size ``max(sizes)`` is drawn at the target
+    prior from the whole pool (``resample_to_prior`` draws per class, so it is
+    stratified) and the ``n`` adaptation examples are nested prefixes of it, so
+    neighbouring sizes share draws and the curves reflect ``n`` rather than
+    re-sampling noise. With ``eval_on_adapt`` that prefix is *also* the
+    evaluation set (``merge_eval_adapt_sets_polished.md``); otherwise the
+    disjoint remainder feeds a fixed ``n_eval`` evaluation set
+    (``split_adapt_eval``).
 
-    ``adapt_replace`` is a dirichlet-mode knob; with
-    ``adapt_replace=False`` the truncated pool can be shorter than a requested
-    size, so the realized per-size adaptation counts are returned alongside the
-    metrics.
+    ``adapt_replace`` is a dirichlet-mode knob; with ``adapt_replace=False``
+    the truncated pool can be shorter than a requested size, so the realized
+    per-size counts are reported in ``SweepResult.realized_n``.
     """
     Y = len(train_prior)
     N = len(y)
@@ -424,49 +506,80 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
     sizes = sorted(sizes)
     n_max = sizes[-1]
     names = list(REJECT_LABELS.keys())
-    aurc_risk = {n: np.zeros((len(sizes), trials)) for n in names}
-    aurc_regret = {n: np.zeros((len(sizes), trials)) for n in names}
-    warned = np.zeros((len(sizes), trials), dtype=bool)
-    epi_metrics = np.zeros((len(sizes), trials, 3))
-    cov_regret = [{n: np.zeros((len(sizes), trials)) for n in names}
-                  for _ in regret_targets]
-    # Full per-size curves, kept for the per-n coverage-curve figures.
-    risk_curves = {n: np.zeros((len(sizes), trials, n_eval)) for n in names}
-    regret_curves = {n: np.zeros((len(sizes), trials, n_eval)) for n in names}
+    S = len(sizes)
+
+    def per_predictor():
+        return {n: np.zeros((S, trials)) for n in names}
+
+    aurc_risk, aurc_regret = per_predictor(), per_predictor()
+    aurc50_risk, aurc50_regret = per_predictor(), per_predictor()
+    augrc_risk, augrc_regret = per_predictor(), per_predictor()
+    cov_regret = [per_predictor() for _ in regret_targets]
+    warned = np.zeros((S, trials), dtype=bool)
+    epi_metrics = np.zeros((S, trials, 3))
+    # Full per-size curves, kept for the per-n coverage-curve figures. Ragged
+    # until stack_curves cuts each size to its shortest replicate.
+    risk_curves = {n: [[] for _ in sizes] for n in names}
+    regret_curves = {n: [[] for _ in sizes] for n in names}
     # Base-predictor accuracy vs. n: Bayesian learned prior, plugin with the
     # true (target) prior, plugin with the unadapted training prior. Only the
-    # Bayesian predictor uses the adaptation examples; the true- and
-    # training-prior plugins ignore them, so both are constant in n (flat curve).
-    base_acc = {k: np.zeros((len(sizes), trials))
+    # Bayesian predictor uses the adaptation examples, but under
+    # ``eval_on_adapt`` the evaluation set changes with n, so the two plugins
+    # vary with n too (through the evaluation sample, not through adaptation).
+    base_acc = {k: np.zeros((S, trials))
                 for k in ("bayes_learned", "plugin_true", "plugin_train")}
+    # Transductive floor: the plugin at the evaluation batch's own empirical
+    # prior -- what any prior-adaptation method could at best reach on that
+    # batch, and hence how much of the (possibly negative) regret against the
+    # population oracle is plain finite-batch prior mismatch.
+    floor = {k: np.zeros((S, trials))
+             for k in ("regret", "accuracy", "classes")}
     short_adapt: set[int] = set()
     short_eval: set[int] = set()
-    realized_n = np.zeros((len(sizes), trials), dtype=int)
+    realized_n = np.zeros((S, trials), dtype=int)
 
     with _progress(total=trials * len(sizes), desc=progress_desc) as bar:
         for t in range(trials):
             rng = np.random.default_rng(master_rng.integers(1 << 32))
-            pool_idx, eval_idx, short_a, short_e, _absent = split_adapt_eval(
-                all_idx, y, target_prior, n_max, n_eval, rng,
-                adapt_replace=adapt_replace)
+            if eval_on_adapt:
+                pool_idx, short_a, _absent = resample_to_prior(
+                    all_idx, y, target_prior, n_max, rng,
+                    replace_short=adapt_replace)
+                eval_idx = None
+            else:
+                pool_idx, eval_idx, short_a, short_e, _absent = (
+                    split_adapt_eval(all_idx, y, target_prior, n_max, n_eval,
+                                     rng, adapt_replace=adapt_replace))
+                short_eval |= short_e
             short_adapt |= short_a
-            short_eval |= short_e
-
-            post_ev = P[eval_idx]
-            y_ev = y[eval_idx]
-            h_true = bayes_decision(
-                corrected_posterior(post_ev, train_prior, target_prior), loss)
-            losses_ref = loss[h_true, y_ev]
-            acc_true = accuracy(h_true, y_ev)   # constant in n (no adaptation)
-            # Plugin with the unadapted training prior: alpha = train_prior
-            # leaves p_tr(y|x) unchanged, so this is the base classifier's Bayes
-            # decision and, like the true-prior plugin, is constant in n.
-            h_train = bayes_decision(post_ev, loss)
-            acc_train = accuracy(h_train, y_ev)
 
             for i, n in enumerate(sizes):
                 adapt_idx = pool_idx[:n]
                 realized_n[i, t] = len(adapt_idx)
+                idx_ev = adapt_idx if eval_on_adapt else eval_idx
+                post_ev = P[idx_ev]
+                y_ev = y[idx_ev]
+                # The regret reference and the two non-adaptive plugins. They
+                # are loop-invariant only with a fixed evaluation set; under
+                # eval_on_adapt the evaluation set is the size-n prefix, so
+                # they are recomputed per size.
+                h_true = bayes_decision(
+                    corrected_posterior(post_ev, train_prior, target_prior),
+                    loss)
+                losses_ref = loss[h_true, y_ev]
+                # Plugin with the unadapted training prior: alpha = train_prior
+                # leaves p_tr(y|x) unchanged, so this is the base classifier's
+                # own Bayes decision.
+                h_train = bayes_decision(post_ev, loss)
+
+                emp_prior = np.bincount(y_ev, minlength=Y) / len(y_ev)
+                h_emp = bayes_decision(
+                    corrected_posterior(post_ev, train_prior, emp_prior), loss)
+                floor["regret"][i, t] = float(
+                    np.mean(loss[h_emp, y_ev] - losses_ref))
+                floor["accuracy"][i, t] = accuracy(h_emp, y_ev)
+                floor["classes"][i, t] = int(np.count_nonzero(emp_prior))
+
                 mcmc = sample_prior_posterior(
                     P[adapt_idx], train_prior, rng=rng, sampler=sampler,
                     beta=beta)
@@ -479,8 +592,8 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                 total = cond_risk_bayes.min(axis=1)
 
                 base_acc["bayes_learned"][i, t] = accuracy(h_bayes, y_ev)
-                base_acc["plugin_train"][i, t] = acc_train
-                base_acc["plugin_true"][i, t] = acc_true
+                base_acc["plugin_train"][i, t] = accuracy(h_train, y_ev)
+                base_acc["plugin_true"][i, t] = accuracy(h_true, y_ev)
 
                 predictors = {
                     "bayes_total": (h_bayes, total),
@@ -491,10 +604,16 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                     for name, (h, u) in predictors.items()
                 }
                 for name, (risk, regret) in curve_set.items():
-                    risk_curves[name][i, t] = risk
-                    regret_curves[name][i, t] = regret
+                    risk_curves[name][i].append(risk)
+                    regret_curves[name][i].append(regret)
+                    # Every area from the full realized curve, so ragged
+                    # lengths never reach the reported numbers.
                     aurc_risk[name][i, t] = risk.mean()
                     aurc_regret[name][i, t] = regret.mean()
+                    aurc50_risk[name][i, t] = truncated_area(risk)
+                    aurc50_regret[name][i, t] = truncated_area(regret)
+                    augrc_risk[name][i, t] = generalize_curve(risk).mean()
+                    augrc_regret[name][i, t] = generalize_curve(regret).mean()
                     for ei, eps in enumerate(regret_targets):
                         cov_regret[ei][name][i, t] = coverage_at_target(regret, eps)
                 epi_metrics[i, t] = epistemic_metrics(
@@ -502,9 +621,20 @@ def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
                     epi_threshold)
                 bar.update(1)
 
-    return (aurc_risk, aurc_regret, warned, epi_metrics, short_adapt,
-            short_eval, cov_regret, risk_curves, regret_curves,
-            base_acc, realized_n)
+    stacked_risk, curve_len = {}, None
+    stacked_regret = {}
+    for name in names:
+        stacked_risk[name], curve_len = stack_curves(risk_curves[name])
+        stacked_regret[name], _ = stack_curves(regret_curves[name])
+
+    return SweepResult(
+        aurc_risk=aurc_risk, aurc_regret=aurc_regret,
+        aurc50_risk=aurc50_risk, aurc50_regret=aurc50_regret,
+        augrc_risk=augrc_risk, augrc_regret=augrc_regret,
+        cov_regret=cov_regret, risk_curves=stacked_risk,
+        regret_curves=stacked_regret, curve_len=curve_len, warned=warned,
+        epi_metrics=epi_metrics, base_acc=base_acc, floor=floor,
+        realized_n=realized_n, short_adapt=short_adapt, short_eval=short_eval)
 
 
 def base_accuracy_panel(
@@ -516,8 +646,10 @@ def base_accuracy_panel(
 
     Three predictors: Bayesian learned prior, plugin with the true (target)
     prior, and plugin with the unadapted training prior. Each ``base_acc``
-    entry is a (len(sizes), trials) array; the true- and training-prior plugins
-    are flat in n (drawn as curves for direct comparison). Split out as its own
+    entry is a (len(sizes), trials) array. The two plugins ignore the
+    adaptation examples, so with a fixed evaluation set they are flat in n;
+    under ``--eval-on-adapt`` they vary with n through the evaluation sample
+    itself. Split out as its own
     ``figspec.Panel`` so ``make_base_accuracy_figure`` can write it as an
     independent single-panel figure."""
     x = np.asarray(sizes, dtype=float)
@@ -617,27 +749,32 @@ def win_rate_block(metric: str, aurc: dict, sizes: list[int], names: list[str],
     return out
 
 
-def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
-                   aurc_regret, warned, epi_metrics, cov_regret,
-                   risk_curves, regret_curves, base_acc, reps: int,
-                   display_name: str = "", report_win_rate: bool = False) -> None:
+def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str],
+                   res: SweepResult, reps: int, display_name: str = "",
+                   report_win_rate: bool = False) -> None:
     """Append the sweep metric tables to ``lines``, write/print the report and
     build every sweep figure. Shared by the fixed-prior sweep (replicate axis =
     trials) and the dirichlet sweep (replicate axis = sampled priors, arrays
     hold per-prior means; ``configure_aggregation`` is set by the caller so the
     figure bands/titles describe the right thing). ``reps`` is the replicate
     count of the arrays' second axis. ``report_win_rate`` (dirichlet mode only)
-    appends a per-competitor win-rate block after each AuRC table."""
+    appends a per-competitor win-rate block after each AuRC table.
+
+    Every area comes from ``res`` (computed per replicate from its full curve);
+    only the *generalized curves* are derived here, and only for the per-size
+    figures -- a rescaling of the selective curves by the coverage, so no
+    re-ranking is needed."""
     names = list(REJECT_LABELS.keys())
-    # Generalized curves and their areas: a rescaling of the selective curves by
-    # the coverage, so no re-ranking is needed.
-    gen_risk_curves = {n: generalize_curve(risk_curves[n]) for n in names}
-    gen_regret_curves = {n: generalize_curve(regret_curves[n]) for n in names}
-    augrc_risk = {n: gen_risk_curves[n].mean(axis=-1) for n in names}
-    augrc_regret = {n: gen_regret_curves[n].mean(axis=-1) for n in names}
-    # Areas over the high-coverage window only: a slice of the same curves.
-    aurc50_risk = {n: truncated_area(risk_curves[n]) for n in names}
-    aurc50_regret = {n: truncated_area(regret_curves[n]) for n in names}
+    aurc_risk, aurc_regret = res.aurc_risk, res.aurc_regret
+    aurc50_risk, aurc50_regret = res.aurc50_risk, res.aurc50_regret
+    augrc_risk, augrc_regret = res.augrc_risk, res.augrc_regret
+    warned, epi_metrics, cov_regret = res.warned, res.epi_metrics, res.cov_regret
+    risk_curves, regret_curves, base_acc = (res.risk_curves, res.regret_curves,
+                                            res.base_acc)
+    gen_risk_curves = {n: [generalize_curve(c) for c in risk_curves[n]]
+                       for n in names}
+    gen_regret_curves = {n: [generalize_curve(c) for c in regret_curves[n]]
+                         for n in names}
 
     for metric, aurc in (("risk", aurc_risk), ("regret", aurc_regret)):
         lines.append("-" * 76)
@@ -703,6 +840,30 @@ def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str], aurc_risk,
                      f"{_center(epi_metrics[i, :, 1]):>14.4f}"
                      f"{_center(epi_metrics[i, :, 2]):>14.3f}")
     lines.append(sweep_epi_avg_row(epi_metrics))
+    # Transductive floor: the best a prior-adaptation method could do on the
+    # evaluated batch, measured against the same population-oracle reference as
+    # every regret above. Under --eval-on-adapt it is the honest lower bound on
+    # regret, and a negative value says the population oracle is beatable on a
+    # batch that size -- the reason regret may go negative.
+    lines.append("-" * 76)
+    lines.append("Transductive floor: plugin at the evaluation batch's "
+                 f"empirical prior  [{AREA_SCALE_TAG}]")
+    lines.append(f"{'n_test':>8}{'regret vs oracle':>18}{'accuracy':>12}"
+                 f"{'classes seen':>14}{'eval size':>12}")
+    floor = res.floor
+    for i, n in enumerate(sizes):
+        lines.append(f"{n:>8}{_center(floor['regret'][i]) * AREA_SCALE:>18.4f}"
+                     f"{_center(floor['accuracy'][i]):>12.4f}"
+                     f"{_center(floor['classes'][i]):>14.1f}"
+                     f"{res.curve_len[i]:>12}")
+    if float(np.min(floor["regret"])) < 0:
+        lines.append("  note: a negative floor means the plugin at the batch's "
+                     "empirical prior beats the")
+        lines.append("        population oracle on that batch, so the regret "
+                     "of every method may go negative;")
+        lines.append("        'coverage @ regret <= eps' is then a budget "
+                     "against the population oracle,")
+        lines.append("        not against an attainable optimum.")
     lines.append("=" * 76)
     if warned.any():
         lines.append("!!! IDENTIFIABILITY WARNING: 'warn' = fraction of trials "
@@ -751,13 +912,12 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
     """Drive the fixed-prior sweep, print/save the report, write the figures."""
     sizes = sorted(args.sizes)
     master_rng = np.random.default_rng(args.seed)
-    (aurc_risk, aurc_regret, warned, epi_metrics, short_adapt, short_eval,
-     cov_regret, risk_curves, regret_curves, base_acc,
-     _realized_n) = run_sweep(
+    res = run_sweep(
         P, y_pool, train_prior, target_prior, sizes, args.trials,
         args.n_eval, loss, master_rng, args.epi_threshold,
-        args.regret_target, sampler=args.sampler, beta=args.beta)
-    shortfalls = short_adapt | short_eval
+        args.regret_target, sampler=args.sampler, beta=args.beta,
+        eval_on_adapt=args.eval_on_adapt)
+    shortfalls = res.short_adapt | res.short_eval
 
     lines = [
         "=" * 76,
@@ -769,7 +929,7 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
         f"arch {bundle['arch']}",
         *calibration_lines(bundle, class_names),
         f"pool size    : {len(y_pool)}   trials {args.trials}   "
-        f"n_eval {args.n_eval}   sizes {sizes}",
+        f"{eval_set_report_field(args)}   sizes {sizes}",
         f"prior beta   : {args.beta:g} per class (symmetric Dirichlet)",
         *header_lines,
         f"train prior  : {np.array2string(train_prior, precision=3)}",
@@ -779,9 +939,11 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
         pretty = ", ".join(class_names[c] for c in sorted(shortfalls))
         lines.append(f"note         : classes resampled WITH replacement "
                      f"(pool too small at this target prior): {pretty}")
-    _sweep_outputs(sizes, args, out_dir, lines, aurc_risk, aurc_regret,
-                   warned, epi_metrics, cov_regret, risk_curves,
-                   regret_curves, base_acc, args.trials,
+        if args.eval_on_adapt:
+            lines.append("               under --eval-on-adapt those "
+                         "duplicates are evaluation examples too, which "
+                         "inflates the apparent coverage")
+    _sweep_outputs(sizes, args, out_dir, lines, res, args.trials,
                    display_name=spec.display_name)
 
 
@@ -902,46 +1064,69 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
     prior_seeds = master.integers(1 << 32, size=N)
     beta_gen = args.dirichlet * central_prior
 
-    aurc_risk_d = {n: np.zeros((S, N)) for n in names}
-    aurc_regret_d = {n: np.zeros((S, N)) for n in names}
-    warned_d = np.zeros((S, N))
-    epi_d = np.zeros((S, N, 3))
-    cov_regret_d = [{n: np.zeros((S, N)) for n in names}
-                    for _ in args.regret_target]
-    risk_curves_d = {n: np.zeros((S, N, args.n_eval)) for n in names}
-    regret_curves_d = {n: np.zeros((S, N, args.n_eval)) for n in names}
-    base_acc_d = {k: np.zeros((S, N))
-                  for k in ("bayes_learned", "plugin_true",
-                            "plugin_train")}
-    realized_d = np.zeros((S, N))
-    short_eval_all: set[int] = set()
+    def per_predictor():
+        return {n: np.zeros((S, N)) for n in names}
+
+    # Per-prior means, on the same layout run_sweep uses for per-trial values.
+    # Every area collapses by averaging, and AuRC / AuRC50 / AuGRC are all
+    # rank-means of a curve, so averaging the per-trial areas is exactly the
+    # area of the averaged curve -- the numbers match the pre-refactor path.
+    d = SweepResult(
+        aurc_risk=per_predictor(), aurc_regret=per_predictor(),
+        aurc50_risk=per_predictor(), aurc50_regret=per_predictor(),
+        augrc_risk=per_predictor(), augrc_regret=per_predictor(),
+        cov_regret=[per_predictor() for _ in args.regret_target],
+        risk_curves={n: [[] for _ in sizes] for n in names},
+        regret_curves={n: [[] for _ in sizes] for n in names},
+        curve_len=np.zeros(S, dtype=int), warned=np.zeros((S, N)),
+        epi_metrics=np.zeros((S, N, 3)),
+        base_acc={k: np.zeros((S, N))
+                  for k in ("bayes_learned", "plugin_true", "plugin_train")},
+        floor={k: np.zeros((S, N)) for k in ("regret", "accuracy", "classes")},
+        realized_n=np.zeros((S, N)), short_adapt=set(), short_eval=set())
     alphas = np.zeros((N, len(central_prior)))
 
     for j in range(N):
         prng = np.random.default_rng(prior_seeds[j])
         alpha = sample_target_prior(prng, beta_gen)
         alphas[j] = alpha
-        (aurc_risk, aurc_regret, warned, epi_metrics, _short_a, short_e,
-         cov_regret, risk_curves, regret_curves, base_acc,
-         realized_n) = run_sweep(
+        r = run_sweep(
             P, y_pool, train_prior, alpha, sizes, T, args.n_eval, loss,
             prng, args.epi_threshold, args.regret_target,
-            sampler=args.sampler, beta=model_beta,
-            adapt_replace=False, progress_desc=f"prior {j + 1}/{N}")
-        short_eval_all |= short_e
+            sampler=args.sampler, beta=model_beta, adapt_replace=False,
+            eval_on_adapt=args.eval_on_adapt,
+            progress_desc=f"prior {j + 1}/{N}")
+        d.short_adapt |= r.short_adapt
+        d.short_eval |= r.short_eval
+        for area_d, area in ((d.aurc_risk, r.aurc_risk),
+                             (d.aurc_regret, r.aurc_regret),
+                             (d.aurc50_risk, r.aurc50_risk),
+                             (d.aurc50_regret, r.aurc50_regret),
+                             (d.augrc_risk, r.augrc_risk),
+                             (d.augrc_regret, r.augrc_regret)):
+            for n in names:
+                area_d[n][:, j] = area[n].mean(axis=1)
         for n in names:
-            aurc_risk_d[n][:, j] = aurc_risk[n].mean(axis=1)
-            aurc_regret_d[n][:, j] = aurc_regret[n].mean(axis=1)
-            risk_curves_d[n][:, j] = risk_curves[n].mean(axis=1)
-            regret_curves_d[n][:, j] = regret_curves[n].mean(axis=1)
-        warned_d[:, j] = warned.mean(axis=1)
-        epi_d[:, j] = epi_metrics.mean(axis=1)
+            for i in range(S):
+                d.risk_curves[n][i].append(r.risk_curves[n][i].mean(axis=0))
+                d.regret_curves[n][i].append(r.regret_curves[n][i].mean(axis=0))
+        d.warned[:, j] = r.warned.mean(axis=1)
+        d.epi_metrics[:, j] = r.epi_metrics.mean(axis=1)
         for ei in range(len(args.regret_target)):
             for n in names:
-                cov_regret_d[ei][n][:, j] = cov_regret[ei][n].mean(axis=1)
-        for k in base_acc_d:
-            base_acc_d[k][:, j] = base_acc[k].mean(axis=1)
-        realized_d[:, j] = realized_n.mean(axis=1)
+                d.cov_regret[ei][n][:, j] = r.cov_regret[ei][n].mean(axis=1)
+        for k in d.base_acc:
+            d.base_acc[k][:, j] = r.base_acc[k].mean(axis=1)
+        for k in d.floor:
+            d.floor[k][:, j] = r.floor[k].mean(axis=1)
+        d.realized_n[:, j] = r.realized_n.mean(axis=1)
+
+    # Sampled priors differ, so per-prior mean curves can differ in length too
+    # (truncation of the adaptation pool); cut each size to its shortest draw.
+    for n in names:
+        d.risk_curves[n], d.curve_len = stack_curves(d.risk_curves[n])
+        d.regret_curves[n], _ = stack_curves(d.regret_curves[n])
+    realized_d = d.realized_n
 
     _write_sampled_priors(out_dir, alphas, prior_seeds, beta_gen)
     configure_aggregation(
@@ -959,7 +1144,7 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
         f"arch {bundle['arch']}",
         *calibration_lines(bundle, class_names),
         f"pool size    : {len(y_pool)}   priors {N} x trials {T}   "
-        f"n_eval {args.n_eval}   sizes {sizes}",
+        f"{eval_set_report_field(args)}   sizes {sizes}",
         *_dirichlet_header_lines(args, misspec_line),
         *header_lines,
         f"train prior  : {np.array2string(train_prior, precision=3)}",
@@ -970,20 +1155,20 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
         per_size = ", ".join(
             f"{n}->{realized_d[i].mean():.1f}" for i, n in enumerate(sizes)
             if realized_d[i].mean() < n)
-        lines.append(f"note         : adaptation sets truncated to pool "
+        what = ("adaptation/evaluation sets" if args.eval_on_adapt
+                else "adaptation sets")
+        lines.append(f"note         : {what} truncated to pool "
                      f"availability (no replacement); mean realized n: "
                      f"{per_size}")
-    if short_eval_all:
+    if d.short_eval:
         lines.append("note         : evaluation sets drawn WITH replacement "
                      "where a class's pool fell short (expected in dirichlet "
                      "mode)")
 
-    _sweep_outputs(sizes, args, out_dir, lines, aurc_risk_d, aurc_regret_d,
-                   warned_d, epi_d, cov_regret_d, risk_curves_d,
-                   regret_curves_d, base_acc_d, N,
+    _sweep_outputs(sizes, args, out_dir, lines, d, N,
                    display_name=spec.display_name, report_win_rate=True)
 
-    make_epi_regret_calibration_figure(sizes, epi_d, args.out_dir)
+    make_epi_regret_calibration_figure(sizes, d.epi_metrics, args.out_dir)
     print(f"calibration figure and sampled priors written to {out_dir}/: "
           f"epi_vs_regret_calibration.png, sampled_priors.txt")
 
@@ -996,13 +1181,27 @@ def main() -> None:
                         help="Directory receiving the report and figures.")
     parser.add_argument("--trials", type=int, default=10)
     parser.add_argument("--n-eval", type=int, default=None,
-                        help="Labeled evaluation-set size. Default: the maximum "
+                        help="Labeled evaluation-set size, disjoint from the "
+                             "adaptation set. Default: the maximum "
                              "all-distinct size at the target prior (the "
                              "adaptation set is drawn first, the rest go to "
                              "evaluation); in dirichlet mode, where that "
                              "maximum is undefined, a fixed 1000 drawn with "
                              "replacement where needed. Pass an integer to "
-                             "pin it.")
+                             "pin it. Rejected with --eval-on-adapt, which "
+                             "has no separate evaluation set.")
+    parser.add_argument(
+        "--eval-on-adapt", action="store_true",
+        help="Transductive evaluation: score every predictor on the very "
+             "examples the test prior was learned from, i.e. the evaluation "
+             "set IS the adaptation set and its size is --sizes. The "
+             "deployment setting (a batch arrives, its prior is learned from "
+             "it, it has to be classified), and the setting in which the "
+             "epistemic term is exactly the posterior-expected regret on the "
+             "scored points. Regret is still measured against the plugin at "
+             "the true target prior, which on a finite batch is not optimal, "
+             "so regret may go negative -- see the transductive-floor table. "
+             "Default: the disjoint adaptation/evaluation split.")
     parser.add_argument(
         "--sizes", type=int, nargs="+",
         default=[50, 100, 200, 500, 1000, 2000],
@@ -1080,6 +1279,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.percentile_band is not None and not 0 <= args.percentile_band <= 100:
         parser.error("--percentile-band must be in [0, 100]")
+    if args.eval_on_adapt and args.n_eval is not None:
+        parser.error("--n-eval is meaningless with --eval-on-adapt: the "
+                     "evaluation set is the adaptation set, so its size is "
+                     "--sizes")
 
     configure_percentile_band(args.percentile_band)
 
@@ -1247,7 +1450,24 @@ def main() -> None:
     # the largest all-distinct evaluation set that remainder supports.
     n_adapt = max(args.sizes)
     pool_counts = np.bincount(y_pool, minlength=Y)
-    if dirichlet_mode:
+    if args.eval_on_adapt:
+        # No separate evaluation draw, so no evaluation feasibility to check:
+        # the only pool requirement is that the target prior's classes are
+        # present at all (a shortfall is handled by replacement/truncation, as
+        # for any adaptation draw).
+        wanted = [c for c in range(Y)
+                  if dirichlet_mode or target_prior[c] > 0]
+        missing = [c for c in wanted if pool_counts[c] == 0]
+        if missing:
+            names = ", ".join(f"{class_names[c]} (class {c})" for c in missing)
+            sys.exit(f"error: the pool has no examples of: {names}; "
+                     + ("dirichlet mode needs every class present in the pool."
+                        if dirichlet_mode else
+                        "adjust --test-prior / --prior-weights."))
+        n_eval_auto = False
+        print(f"adapt size   : {n_adapt}   eval size : same set "
+              f"(--eval-on-adapt; evaluation size = each swept size)")
+    elif dirichlet_mode:
         # Per-draw feasibility is handled by truncation (adaptation) and
         # replacement (evaluation); only a class with no pool examples at all
         # is fatal, since every class has positive mass under every draw.
@@ -1300,10 +1520,12 @@ def main() -> None:
                             f"(classes {pair_idx[0]}, {pair_idx[1]}; "
                             f"{pair_source}; reporting only)"),
         "target_prior_from": prior_how,
-        "n_eval_resolved": f"{args.n_eval}"
-                           + ((" (dirichlet-mode default)" if dirichlet_mode
-                               else " (auto max at target prior)")
-                              if n_eval_auto else " (explicit)"),
+        "eval_set": ("same as adaptation set (--eval-on-adapt; size = --sizes)"
+                     if args.eval_on_adapt else
+                     f"disjoint, n_eval {args.n_eval}"
+                     + ((" (dirichlet-mode default)" if dirichlet_mode
+                         else " (auto max at target prior)")
+                        if n_eval_auto else " (explicit)")),
     }
     if dirichlet_mode:
         extra["model_prior"] = (
@@ -1311,6 +1533,8 @@ def main() -> None:
             if misspec_line is None else
             f"symmetric beta = {args.beta:g} per class (MISSPECIFIED)")
     ignored = set() if dirichlet_mode else {"dirichlet", "trials_prior"}
+    if args.eval_on_adapt:
+        ignored.add("n_eval")   # rejected at parse time; never read
     save_run_args(args, "rejopt_eval_args.txt",
                   extra=extra, ignored=ignored)
 

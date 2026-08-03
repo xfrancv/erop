@@ -25,6 +25,11 @@
 #              run_base_pred_training.sh)
 #   beta      model: runs/<dataset>/model.pt          output: runs/<dataset>/beta/
 #             (and appends --beta $BETA_SUM to rejopt_eval.py)
+#   transductive
+#             model: runs/<dataset>/model.pt          output: runs/<dataset>/transductive/
+#             (and appends --eval-on-adapt: adaptation and evaluation on the
+#              same examples; the disjoint-split run is the default mode, so
+#              the two are directly comparable)
 #
 # The model directory needs its base predictor at <dir>/model.pt
 # (base_predictor_training.py).
@@ -39,7 +44,7 @@ BETA_SUM=20
 usage() {
     echo "usage: $0 <dataset> [mode]" >&2
     echo "  <dataset>: ${DATASETS[*]} | all" >&2
-    echo "  [mode]   : nocalib | beta   (omit for the default run)" >&2
+    echo "  [mode]   : nocalib | beta | transductive   (omit for the default run)" >&2
     exit 1
 }
 
@@ -51,10 +56,16 @@ usage() {
 DIR_SUFFIX=""
 OUT_SUBDIR=""
 EXTRA_ARGS=()
+# dermamnist is the one dataset that pins a small disjoint evaluation set;
+# --eval-on-adapt has no separate evaluation set and rejects --n-eval.
+DERMA_NEVAL=(--n-eval 150)
 case "${2:-}" in
     "")       ;;                                   # default run
     nocalib) DIR_SUFFIX="_nocalib" ;;
     beta)     OUT_SUBDIR="beta"; EXTRA_ARGS=(--beta "$BETA_SUM") ;;
+    transductive)
+              OUT_SUBDIR="transductive"; EXTRA_ARGS=(--eval-on-adapt)
+              DERMA_NEVAL=() ;;
     *)        echo "error: unknown mode '$2'" >&2; usage ;;
 esac
 
@@ -105,7 +116,8 @@ run_cifar10() {
 run_dermamnist() {
     SIZES="1 2 5 10 50 100 200"
 
-    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 20  --n-eval 150 --percentile-band 50
+    run dermamnist --test-prior 0.1 0.1 0.1 0.1 0.25 0.25 0.1 --dirichlet 20 \
+        "${DERMA_NEVAL[@]+${DERMA_NEVAL[@]}}" --percentile-band 50
 
 }
 
