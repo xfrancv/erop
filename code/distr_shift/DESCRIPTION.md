@@ -69,9 +69,23 @@ $$
 > $\sum_y R(x_i, y) \alpha(y)$ used above. This is the standard label-shift
 > (Saerens et al., 2002) likelihood.
 
-We draw $\theta$ from $p(\theta | D)$ with a **random-walk Metropolis–Hastings**
-chain. To respect the simplex constraint the sampler works in an unconstrained
-$z \in {\mathbb R}^{Y−1}$ via an additive-logistic (softmax) reparameterisation and adds the change-of-variables Jacobian $\sum_y \log \alpha(y)$, so the chain targets the correct density on the simplex.
+We draw $\theta$ from $p(\theta | D)$ with a **latent-variable Gibbs sampler**
+(`--sampler gibbs`, the default). Each likelihood term
+$\sum_y R(x_i, y)\alpha(y)$ is the marginal of a latent class $z_i$ with
+$p(z_i = y \mid \alpha) \propto R(x_i, y)\alpha(y)$; given the assignments the
+posterior of $\alpha$ is conjugate, $\alpha \mid z \sim
+\text{Dirichlet}(\beta + \text{counts}(z))$. The sampler alternates these two
+exact conditionals, so every move is accepted.
+
+A **random-walk Metropolis–Hastings** chain (`--sampler mh`) targets the same
+posterior and is kept as an independent cross-check. To respect the simplex
+constraint it works in an unconstrained $z \in {\mathbb R}^{Y−1}$ via an
+additive-logistic (softmax) reparameterisation and adds the change-of-variables
+Jacobian $\sum_y \log \alpha(y)$. It is not the default: random-walk MH needs
+$O((Y-1)^2)$ steps to traverse the posterior, so at the built-in chain length it
+does not mix on the larger label sets (Gelman–Rubin $\hat R$ up to 2.4 at
+$Y = 100$, against $\approx 1.000$ for Gibbs), and it is also 4–6× slower. See
+the `prior_shift/mcmc.py` docstring for the measurements.
 
 The Bayesian label posterior averages the normalised re-weighting over the
 posterior draws,

@@ -157,57 +157,6 @@ def calibrated_posterior(model, X, bundle, device, batch_size=512):
     return np.concatenate(out)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _sweep_outputs(sizes, args, out_dir: Path, lines: list[str],
                    res: SweepResult, reps: int, agg: Aggregation,
                    meta: dict, display_name: str = "",
@@ -295,7 +244,6 @@ def run_sweep_report(P, y_pool, train_prior, target_prior, bundle, spec,
     }
     _sweep_outputs(sizes, args, out_dir, lines, res, args.trials, agg, meta,
                    display_name=spec.display_name)
-
 
 
 def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
@@ -439,8 +387,6 @@ def run_dirichlet_sweep_report(P, y_pool, train_prior, central_prior, bundle,
           f"epi_vs_regret_calibration.png, sampled_priors.txt")
 
 
-
-
 def build_parser() -> argparse.ArgumentParser:
     """The command-line interface. Split out of ``main`` so the flags can be
     read (and tested) without running an experiment."""
@@ -534,10 +480,14 @@ def build_parser() -> argparse.ArgumentParser:
              "each runs the full --trials loop, so N * trials runs total. "
              "Requires --dirichlet.")
     parser.add_argument(
-        "--sampler", choices=("mh", "gibbs"), default="mh",
-        help="Posterior sampler for the test prior: random-walk "
-             "Metropolis-Hastings (mh, default) or the latent-variable "
-             "Gibbs sampler (gibbs).")
+        "--sampler", choices=("gibbs", "mh"), default="gibbs",
+        help="Posterior sampler for the test prior: the latent-variable Gibbs "
+             "sampler (gibbs, default) or random-walk Metropolis-Hastings "
+             "(mh). Both target the same posterior, but at the built-in chain "
+             "length only gibbs converges (R-hat ~1.000 vs up to 2.4 at 100 "
+             "classes) and it is also 4-6x faster; mh is kept as an "
+             "independent cross-check and needs a much longer chain to be "
+             "trusted. See prior_shift/mcmc.py.")
     parser.add_argument(
         "--percentile-band", type=float, default=None, metavar="X",
         help="Draw the figures' uncertainty bands as the central X%% "

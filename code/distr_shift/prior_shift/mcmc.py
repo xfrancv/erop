@@ -27,13 +27,7 @@ With a Dirichlet(beta) prior on theta the log posterior (up to a constant) is
 This module samples theta from ``p(theta | D)`` with one of two chains,
 selected by the ``sampler`` argument of :func:`sample_prior_posterior`:
 
-``"mh"`` (default)
-    Random-walk Metropolis-Hastings.  To respect the simplex constraint we
-    reparameterise theta with an additive-logistic (softmax) map from an
-    unconstrained ``z in R^{Y-1}`` and include the change-of-variables
-    Jacobian, so the chain targets the correct density on the simplex.
-
-``"gibbs"``
+``"gibbs"`` (default)
     Latent-variable Gibbs sampler (see
     'tasks/latent_variable_sampling_dirichlet_posterior_dollar_math.md').
     Each likelihood term ``sum_y R(x_i, y) alpha(y)`` is the marginal of a
@@ -41,6 +35,39 @@ selected by the ``sampler`` argument of :func:`sample_prior_posterior`:
     R(x_i, y) alpha(y)``; conditioned on the latent assignments the posterior
     of alpha is conjugate, ``alpha | z ~ Dirichlet(beta + counts(z))``.  The
     sampler alternates the two exact conditionals, so every move is accepted.
+
+``"mh"``
+    Random-walk Metropolis-Hastings.  To respect the simplex constraint we
+    reparameterise theta with an additive-logistic (softmax) map from an
+    unconstrained ``z in R^{Y-1}`` and include the change-of-variables
+    Jacobian, so the chain targets the correct density on the simplex.
+
+Why Gibbs is the default
+------------------------
+The two chains target the same posterior, but at the default settings only
+Gibbs reaches it.  Measured with 4 chains from different seeds on the real
+BloodMNIST (Y=8) and CIFAR-100 (Y=100) posteriors, over adaptation sizes
+n = 5, 50, 500::
+
+                        max R-hat            effective sample size
+                                             (of 12000 kept draws)
+    gibbs               1.0001 - 1.0007      7400 - 11200
+    mh                  1.05   - 2.40          28 -    95
+
+Random-walk MH needs O((Y-1)^2) steps to traverse the posterior, so at Y=100
+the 20000-iteration chain never mixes (R-hat 2.4 means the chains had not
+found a common distribution).  This is *not* a burn-in problem and more
+burn-in does not fix it: 5x longer chains only bring CIFAR-100 from R-hat 1.31
+to 1.11.  The under-mixing also biases the result in a specific direction --
+the posterior looks narrower than it is, so the epistemic uncertainty is
+underestimated (by 6-8% on CIFAR-100, where the two samplers' point decisions
+differ on 5-9% of evaluation examples).
+
+Gibbs additionally costs 4-6x less wall clock (it draws exact conditionals
+instead of evaluating a log-density per proposal), so nothing is traded away.
+``"mh"`` is kept as the independent second route to the same posterior -- the
+cross-check that the model, not the sampler, produces the answer -- but for a
+run of record it needs a far longer chain and a step size tuned to Y and n.
 """
 
 from __future__ import annotations
@@ -108,15 +135,18 @@ def sample_prior_posterior(
     thin: int = 5,
     step_size: float = 0.15,
     rng: np.random.Generator | None = None,
-    sampler: str = "mh",
+    sampler: str = "gibbs",
 ) -> MCMCResult:
     """Sample the test-prior posterior ``p(alpha | D)``.
 
-    ``sampler`` selects the chain: ``"mh"`` runs the random-walk
-    Metropolis-Hastings sampler (default), ``"gibbs"`` the latent-variable
-    Gibbs sampler.  Both target the same posterior; ``step_size`` only
-    applies to ``"mh"`` and is ignored by ``"gibbs"``, whose moves are
+    ``sampler`` selects the chain: ``"gibbs"`` (default) runs the
+    latent-variable Gibbs sampler, ``"mh"`` the random-walk
+    Metropolis-Hastings sampler.  Both target the same posterior; ``step_size``
+    only applies to ``"mh"`` and is ignored by ``"gibbs"``, whose moves are
     exact conditional draws (``acceptance_rate`` is reported as 1).
+
+    Gibbs is the default because at these settings it is the only one of the
+    two that actually converges -- see the module docstring.
 
     ``beta`` is the Dirichlet concentration: a (Y,) vector, or a scalar for a
     symmetric Dirichlet(beta, ..., beta).  Default: Dirichlet(1).  Note that

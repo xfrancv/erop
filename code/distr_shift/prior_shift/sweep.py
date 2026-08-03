@@ -118,7 +118,7 @@ def stack_curves(per_size_lists):
 
 def run_sweep(P, y, train_prior, target_prior, sizes, trials, n_eval, loss,
               master_rng, epi_threshold, regret_targets=(0.002,),
-              sampler="mh", beta=None, adapt_replace=True,
+              sampler="gibbs", beta=None, adapt_replace=True,
               eval_on_adapt=False, progress_desc="sweep"):
     """AuRC and epistemic metrics as a function of the adaptation-set size.
 

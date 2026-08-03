@@ -122,9 +122,13 @@ their areas.
   a `SweepResult` on the common `(len(sizes), replicates)` layout that the
   reporting and figure layers consume.
 - **`prior_shift/mcmc.py`** — `sample_prior_posterior(..., sampler=...)` with **two
-  interchangeable chains targeting the same posterior**: `"mh"` (default,
-  random-walk Metropolis–Hastings in a softmax-reparameterised unconstrained space
-  with the change-of-variables Jacobian) and `"gibbs"` (latent-variable sampler).
+  chains targeting the same posterior**: `"gibbs"` (default, latent-variable
+  sampler) and `"mh"` (random-walk Metropolis–Hastings in a
+  softmax-reparameterised unconstrained space with the change-of-variables
+  Jacobian). Gibbs is the default because at the built-in chain length it is the
+  only one that converges — R-hat ≈1.000 vs. up to 2.4 at 100 classes, ~100× the
+  effective sample size, and 4–6× faster; the module docstring carries the
+  measurements. `mh` is the independent cross-check, not a run-of-record option.
   Returns an `MCMCResult` carrying the built-in **identifiability diagnostic**
   (`ident_ratio`, `identifiability_warning()`): posterior std of `α(y)` vs. the std
   of counting the same number of labels; ratio > 3× ⇒ the prior is only weakly
@@ -178,7 +182,10 @@ stdout, and `--dirichlet` still makes the individual draws shifted.
   README section in the same change.
 - The `mh` and `gibbs` samplers must stay statistically equivalent — they are two
   routes to the same posterior; a change to one usually needs the matching change
-  (or a deliberate note) for the other.
+  (or a deliberate note) for the other. *Equivalent in the limit*: at the default
+  chain length only `gibbs` has actually converged, which is why it is the
+  default. Comparing the two is the way to check the model rather than the
+  sampler, but give `mh` a much longer chain before believing a disagreement.
 - **`results.json` is the machine interface, the text report is for humans.**
   `rejopt_eval.py` writes both; `summary_table.py` reads the JSON, so the text
   report's wording and column widths are free to change. What *is* load-bearing:
