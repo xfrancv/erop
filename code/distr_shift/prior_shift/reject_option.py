@@ -1,9 +1,9 @@
 """Reject-option (selective prediction) metrics for label-prior adaptation.
 
 The computation layer shared by the reject-option experiment: the predictor
-registry, the replicate-axis aggregation the tables and figures agree on, the
-uncertainty decomposition, and the selective risk/regret curves with their
-areas (AuRC, AuRC50, AuGRC).
+registry, the :class:`Aggregation` value that keeps the tables and figures
+agreeing on one central statistic, the uncertainty decomposition, and the
+selective risk/regret curves with their areas (AuRC, AuRC50, AuGRC).
 
 Pure numpy and strings -- no plotting. The figure builders that consume these
 arrays live in the top-level ``reject_figures`` module, the experiment driver
@@ -11,6 +11,8 @@ in ``rejopt_eval.py``.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -31,75 +33,90 @@ def accuracy(pred: np.ndarray, y_true: np.ndarray) -> float:
     return float(np.mean(pred == y_true))
 
 
-# Replicate-axis aggregation used by every figure builder: how the solid line
-# and the shaded band are computed from the replicate axis and how titles
-# describe them. The default reproduces the historical behaviour (mean line,
-# s.e.m. band over trials); the real-data dirichlet mode switches to std over
-# sampled priors via ``configure_aggregation`` (the ``{reps}`` placeholder
-# receives the replicate count the figure was given, ``noun`` the word for one
-# replicate). ``--percentile-band`` overrides the band type for either axis via
-# ``configure_percentile_band``: the line becomes the pointwise median and the
-# band the central X% percentile interval (see ``_series`` / ``_agg_desc``).
-_AGG_BAND = "sem"
-_AGG_DESC = "mean ± s.e.m., {reps} trials"
-_AGG_NOUN = "trials"
-_PCT_BAND: float | None = None
+# Replicate-axis aggregation, shared by the report tables and every figure
+# builder: how the solid line and the shaded band are computed from the
+# replicate axis, and how titles describe them.
+#
+# This is an explicit value, passed to whoever formats a table or builds a
+# figure -- not process-global state. The tables and the figures of one run must
+# report the *same* central statistic, and threading one object through is what
+# guarantees that; a module-level setting would make the result depend on the
+# order in which the driver happened to configure and render.
+@dataclass(frozen=True)
+class Aggregation:
+    """How to collapse the replicate axis into a line, a band and a title.
 
+    ``band`` is the spread of the default (mean-centred) mode: ``"sem"`` gives
+    ``std / sqrt(reps)``, ``"std"`` the plain std. ``desc`` is the title
+    fragment, with a ``{reps}`` placeholder receiving the replicate count the
+    figure was given, and ``noun`` the word for one replicate (used by the
+    percentile-band title).
 
-def configure_aggregation(band: str = "sem",
-                          desc: str = "mean ± s.e.m., {reps} trials",
-                          noun: str = "trials") -> None:
-    """Set the figures' replicate-axis band ('sem' or 'std'), the title text and
-    the replicate noun (used by the percentile-band title)."""
-    global _AGG_BAND, _AGG_DESC, _AGG_NOUN
-    if band not in ("sem", "std"):
-        raise ValueError(f"band must be 'sem' or 'std', got {band!r}")
-    _AGG_BAND, _AGG_DESC, _AGG_NOUN = band, desc, noun
+    ``pct`` switches to percentile mode (the ``--percentile-band`` flag): the
+    line becomes the pointwise median and the band the central ``pct``%
+    interval. It overrides ``band``/``desc``, but not the replicate axis.
 
+    The default reproduces the fixed-prior convention (mean line, s.e.m. band
+    over trials); the dirichlet mode builds one with ``band="std"`` over
+    sampled priors via :meth:`over_priors`.
+    """
 
-def configure_percentile_band(x: float | None) -> None:
-    """Enable percentile bands: the figures' solid line becomes the pointwise
-    median and the band the central ``x``% interval (``x`` in [0, 100]). ``None``
-    restores the default mean±spread band. Overrides the 'sem'/'std' band type,
-    but not the replicate axis or ``reps``."""
-    global _PCT_BAND
-    if x is not None and not 0 <= x <= 100:
-        raise ValueError(f"percentile band must be in [0, 100], got {x}")
-    _PCT_BAND = x
+    band: str = "sem"
+    desc: str = "mean ± s.e.m., {reps} trials"
+    noun: str = "trials"
+    pct: float | None = None
 
+    def __post_init__(self):
+        if self.band not in ("sem", "std"):
+            raise ValueError(f"band must be 'sem' or 'std', got {self.band!r}")
+        if self.pct is not None and not 0 <= self.pct <= 100:
+            raise ValueError(
+                f"percentile band must be in [0, 100], got {self.pct}")
 
-def _series(arr: np.ndarray, axis: int, reps: int):
-    """``(center, lower, upper)`` of the plotted curve along the replicate
-    ``axis``. Default: the mean and mean ± (std or std/sqrt(reps)) per the
-    'sem'/'std' setting. Percentile mode (``configure_percentile_band``): the
-    pointwise median and the central ``[lo, hi]`` percentile interval -- in
-    general asymmetric about the median, but always containing it."""
-    if _PCT_BAND is None:
-        center = arr.mean(axis=axis)
-        s = arr.std(axis=axis)
-        half = s / np.sqrt(reps) if _AGG_BAND == "sem" else s
-        return center, center - half, center + half
-    lo, hi = (100 - _PCT_BAND) / 2, (100 + _PCT_BAND) / 2
-    return (np.median(arr, axis=axis),
-            np.percentile(arr, lo, axis=axis),
-            np.percentile(arr, hi, axis=axis))
+    @classmethod
+    def over_priors(cls, n_priors: int, trials: int,
+                    pct: float | None = None) -> "Aggregation":
+        """The dirichlet-mode convention: the replicate axis is the sampled
+        priors (the arrays hold per-prior means), so the band is ±1 std over
+        those, and the title names both counts."""
+        return cls(band="std",
+                   desc=f"{n_priors}x{trials} runs, ±1 std over {{reps}} priors",
+                   noun="priors", pct=pct)
 
+    def with_percentile(self, pct: float | None) -> "Aggregation":
+        """A copy in percentile mode (or back out of it, with ``None``)."""
+        return replace(self, pct=pct)
 
-def _agg_desc(reps: int) -> str:
-    """Title fragment describing the aggregation, e.g. 'mean ± s.e.m., 10
-    trials' or, under ``--percentile-band``, 'median, central 80% band, 10
-    trials'."""
-    if _PCT_BAND is not None:
-        return f"median, central {_PCT_BAND:g}% band, {reps} {_AGG_NOUN}"
-    return _AGG_DESC.format(reps=reps)
+    def series(self, arr: np.ndarray, axis: int, reps: int):
+        """``(center, lower, upper)`` of the plotted curve along the replicate
+        ``axis``. Default: the mean and mean ± (std or std/sqrt(reps)) per
+        ``band``. Percentile mode: the pointwise median and the central
+        ``[lo, hi]`` percentile interval -- in general asymmetric about the
+        median, but always containing it."""
+        if self.pct is None:
+            center = arr.mean(axis=axis)
+            s = arr.std(axis=axis)
+            half = s / np.sqrt(reps) if self.band == "sem" else s
+            return center, center - half, center + half
+        lo, hi = (100 - self.pct) / 2, (100 + self.pct) / 2
+        return (np.median(arr, axis=axis),
+                np.percentile(arr, lo, axis=axis),
+                np.percentile(arr, hi, axis=axis))
 
+    def center(self, arr, axis=None):
+        """Center statistic for the report tables, matching the figures' solid
+        line: the mean over the replicate axis, or the pointwise median in
+        percentile mode. Keeps the tables and figures reporting the same
+        central value."""
+        return (np.median if self.pct is not None else np.mean)(arr, axis=axis)
 
-def _center(arr, axis=None):
-    """Center statistic for the report tables, matching the figures' solid
-    line: the mean over the replicate axis, or the pointwise median under
-    ``--percentile-band`` (``configure_percentile_band``). Keeps the tables and
-    figures reporting the same central value."""
-    return (np.median if _PCT_BAND is not None else np.mean)(arr, axis=axis)
+    def describe(self, reps: int) -> str:
+        """Title fragment describing the aggregation, e.g. 'mean ± s.e.m., 10
+        trials' or, in percentile mode, 'median, central 80% band, 10
+        trials'."""
+        if self.pct is not None:
+            return f"median, central {self.pct:g}% band, {reps} {self.noun}"
+        return self.desc.format(reps=reps)
 
 
 def bayesian_posterior_and_aleatoric(
@@ -267,28 +284,28 @@ def truncated_area(curve: np.ndarray,
 SWEEP_AVG_LABEL = "avg"
 
 
-def sweep_avg_row(data: dict, names, decimals: int, warn=None,
-                  scale: float = 1.0) -> str:
+def sweep_avg_row(data: dict, names, decimals: int, agg: Aggregation,
+                  warn=None, scale: float = 1.0) -> str:
     """Format the ``avg`` row for a per-predictor sweep table (AuRC, AuRC50,
-    AuGRC, coverage-at-target): the center (mean, or median under
-    ``--percentile-band``) over sizes and replicates of each predictor column,
-    in the table's own field width (24) and ``decimals``. ``warn`` (the AuRC
-    tables' per-size warn array) adds the matching mean-warn cell when given.
-    ``scale`` multiplies each centered value before formatting (the area tables
-    report on a ``x1000`` scale); it must match the per-size rows' scaling."""
+    AuGRC, coverage-at-target): ``agg``'s center statistic over sizes and
+    replicates of each predictor column, in the table's own field width (24)
+    and ``decimals``. ``warn`` (the AuRC tables' per-size warn array) adds the
+    matching mean-warn cell when given. ``scale`` multiplies each centered
+    value before formatting (the area tables report on a ``x1000`` scale); it
+    must match the per-size rows' scaling."""
     row = f"{SWEEP_AVG_LABEL:>8}"
     if warn is not None:
         row += f"{float(np.mean(warn)):>8.2f}"
-    row += "".join(f"{float(_center(data[name])) * scale:>24.{decimals}f}"
+    row += "".join(f"{float(agg.center(data[name])) * scale:>24.{decimals}f}"
                    for name in names)
     return row
 
 
-def sweep_epi_avg_row(epi_metrics: np.ndarray) -> str:
+def sweep_epi_avg_row(epi_metrics: np.ndarray, agg: Aggregation) -> str:
     """Format the ``avg`` row for the epistemic-uncertainty metrics table, whose
     columns are the three fixed metrics (not per predictor). ``epi_metrics`` is
-    (sizes, replicates, 3); each column is centered (mean, or median under
-    ``--percentile-band``) over sizes and replicates."""
-    return (f"{SWEEP_AVG_LABEL:>8}{_center(epi_metrics[:, :, 0]):>14.4f}"
-            f"{_center(epi_metrics[:, :, 1]):>14.4f}"
-            f"{_center(epi_metrics[:, :, 2]):>14.3f}")
+    (sizes, replicates, 3); each column is collapsed with ``agg``'s center
+    statistic over sizes and replicates."""
+    return (f"{SWEEP_AVG_LABEL:>8}{agg.center(epi_metrics[:, :, 0]):>14.4f}"
+            f"{agg.center(epi_metrics[:, :, 1]):>14.4f}"
+            f"{agg.center(epi_metrics[:, :, 2]):>14.3f}")

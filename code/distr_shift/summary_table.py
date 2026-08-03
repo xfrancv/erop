@@ -1,23 +1,25 @@
-"""Combine several sweep reports into one LaTeX-ish summary table.
+"""Combine several sweep results into one LaTeX-ish summary table.
 
-``rejopt_eval.py --sweep`` writes a
-``real_reject_option_sweep_report.txt`` per dataset, holding a stack of
-fixed-width metric tables indexed by the adaptation-set size ``n_test``. This
-script pulls the headline reject-option numbers out of a set of such reports
-and lays them side by side, one row per dataset and one 3-column block per
-requested ``n_test``:
+``rejopt_eval.py`` writes a ``results.json`` per run (alongside the human-facing
+``real_reject_option_sweep_report.txt``). This script pulls the headline
+reject-option numbers out of a set of those and lays them side by side, one row
+per dataset and one 3-column block per requested ``n_test``:
 
     python summary_table.py \
-        --reports runs/bloodmnist/*/real_reject_option_sweep_report.txt \
-                  runs/cifar10/*/real_reject_option_sweep_report.txt \
+        --reports runs/bloodmnist/*/results.json \
+                  runs/cifar10/*/results.json \
         --sizes 1 10 --output table.txt
 
-Per dataset and size it takes, from the ``AuRC (regret)`` table, the areas of
+Per dataset and size it takes, from the AuRC-of-the-regret numbers, the areas of
 the epistemic (``Epist``) and the total-uncertainty Bayesian (``Bayes``)
-reject-option predictors, and from the matching ``win% AuRC (regret)`` table
-the percentage of sampled priors where *total uncertainty* won -- reported
-here flipped (``100 - win%``), i.e. as the win rate of the epistemic
-predictor, which is the direction the paper argues.
+reject-option predictors, and from the matching win rates the percentage of
+sampled priors where *total uncertainty* won -- reported here flipped
+(``100 - win%``), i.e. as the win rate of the epistemic predictor, which is the
+direction the paper argues.
+
+``--reports`` also accepts the ``real_reject_option_sweep_report.txt`` paths (the
+``results.json`` beside a report is preferred automatically), so the wrapper
+scripts and older run directories keep working; see :func:`load_run`.
 
 See [tasks/summary_table.md](tasks/summary_table.md).
 """
@@ -25,21 +27,81 @@ See [tasks/summary_table.md](tasks/summary_table.md).
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
 
-# Column headers as spelled (truncated) in the report tables.
+# Column headers as spelled (truncated) in the legacy report tables.
 EPISTEMIC_COL = "Bayesian, epistemic un"
 TOTAL_COL = "Bayesian, total uncert"
 
 AURC_TITLE = "AuRC (regret)"
 WIN_TITLE = "win% AuRC (regret)"
 
+RESULTS_FILENAME = "results.json"
+REPORT_FILENAME = "real_reject_option_sweep_report.txt"
+
+# Row label of the across-sizes summary. The results file spells it 'avg' in the
+# area tables and 'all' in the win rates (as the text report does); both are
+# normalised to this on load.
+AVG_LABEL = "avg"
+
 
 class ReportError(Exception):
-    """A report file is missing a table, a column, or a requested size."""
+    """A run's results are missing a table, a column, or a requested size."""
 
+
+# ---------------------------------------------------------------------------
+# The normalised record every loader produces
+# ---------------------------------------------------------------------------
+# {"name": dataset key, "path": Path, "scaled": bool,
+#  "aurc": {row label: {"epistemic": float, "total": float}},   # x1000 scale
+#  "win_total": {row label: float}}   # win% OF THE TOTAL-UNCERTAINTY predictor
+# Areas are carried on the display (x1000) scale, which is what the table prints.
+
+
+def load_json_run(path: Path) -> dict:
+    """Normalised record from a ``results.json`` written by ``rejopt_eval.py``."""
+    try:
+        raw = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ReportError(f"{path}: not valid JSON ({exc})") from exc
+
+    if "win_rate" not in raw:
+        raise ReportError(
+            f"{path}: no win rates in this run (they exist only in dirichlet "
+            "mode, i.e. runs passing --dirichlet)")
+    try:
+        areas = raw["areas"]["aurc"]["regret"]
+        wins = raw["win_rate"]["areas"]["aurc"]["regret"]
+        scale = raw["area_scale"]
+    except KeyError as exc:
+        raise ReportError(f"{path}: results file is missing {exc} "
+                          f"(schema {raw.get('schema', 'unknown')})") from exc
+
+    aurc = {label: {"epistemic": cells["bayes_epistemic"] * scale,
+                    "total": cells["bayes_total"] * scale}
+            for label, cells in areas.items()}
+    win_total = {("all" if label == "all" else label): row["bayes_epistemic"]
+                 for label, row in wins.items()}
+    win_total[AVG_LABEL] = win_total.pop("all", win_total.get(AVG_LABEL))
+
+    return {
+        "name": raw.get("dataset") or path.parent.parent.name,
+        "path": path,
+        "scaled": scale != 1,
+        "aurc": aurc,
+        "win_total": win_total,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Legacy: parse the fixed-width text report
+# ---------------------------------------------------------------------------
+# Kept so run directories produced before results.json still summarise. New runs
+# always take the JSON path above; this can be deleted once every run of record
+# has been regenerated.
 
 def header_spans(header: str) -> dict[str, tuple[int, int]]:
     """Map each column name in a fixed-width table header to its character
@@ -100,63 +162,91 @@ def dataset_name(lines: list[str], path: Path) -> str:
     return path.parent.parent.name
 
 
-def parse_report(path: Path) -> dict:
-    """Extract the dataset name and the two regret tables from one report."""
+def load_text_run(path: Path) -> dict:
+    """Normalised record parsed out of a legacy fixed-width text report."""
     lines = path.read_text().splitlines()
-    aurc = read_table(lines, AURC_TITLE, path)
-    win = read_table(lines, WIN_TITLE, path)
-    for title in lines:
-        if title.startswith(AURC_TITLE):
-            scaled = "[x1000]" in title
-            break
+    aurc_tbl = read_table(lines, AURC_TITLE, path)
+    win_tbl = read_table(lines, WIN_TITLE, path)
+    scaled = any(line.startswith(AURC_TITLE) and "[x1000]" in line
+                 for line in lines)
+
+    def norm(label: str) -> str:
+        return AVG_LABEL if label in (AVG_LABEL, "all") else label
+
+    aurc: dict[str, dict[str, float]] = {}
+    for label, row in aurc_tbl.items():
+        for col in (EPISTEMIC_COL, TOTAL_COL):
+            if col not in row:
+                raise ReportError(
+                    f"{path}: {AURC_TITLE!r} table has no column {col!r}")
+        aurc[norm(label)] = {"epistemic": float(row[EPISTEMIC_COL]),
+                             "total": float(row[TOTAL_COL])}
+    win_total = {norm(label): float(row[EPISTEMIC_COL])
+                 for label, row in win_tbl.items()
+                 if row.get(EPISTEMIC_COL)}
+
     return {
         "name": dataset_name(lines, path),
-        "aurc": aurc,
-        "win": win,
-        "scaled": scaled,
         "path": path,
+        "scaled": scaled,
+        "aurc": aurc,
+        "win_total": win_total,
     }
 
 
-def row_of(table: dict[str, dict[str, str]], size: str, kind: str,
-           path: Path) -> dict[str, str]:
-    """Fetch a table row by its ``n_test`` label.  The summary line is spelled
-    'avg' in the AuRC tables but 'all' in the win% ones; either spelling picks
-    the right row in both."""
-    aliases = {"avg": "all", "all": "avg"}
-    for label in (size, aliases.get(size)):
-        if label in table:
-            return table[label]
-    raise ReportError(f"{path}: {kind!r} table has no row for n_test={size} "
-                      f"(available: {', '.join(table)})")
+def load_run(path: Path) -> dict:
+    """Load one run's numbers, preferring the machine-readable results file.
+
+    ``path`` may point at a ``results.json``, at a
+    ``real_reject_option_sweep_report.txt`` (the results file beside it is used
+    when present), or at a run directory.
+    """
+    if path.is_dir():
+        candidates = [path / RESULTS_FILENAME, path / REPORT_FILENAME]
+    elif path.name == RESULTS_FILENAME:
+        candidates = [path]
+    else:
+        # A text report: prefer its results.json sibling, fall back to parsing.
+        candidates = [path.parent / RESULTS_FILENAME, path]
+
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        if candidate.suffix == ".json":
+            return load_json_run(candidate)
+        return load_text_run(candidate)
+    raise ReportError(f"{path}: no {RESULTS_FILENAME} or {REPORT_FILENAME} found")
 
 
-def cells(report: dict, size: str, precision: int) -> list[str]:
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+def cells(run: dict, size: str, precision: int) -> list[str]:
     """The ('Epist', 'Bayes', 'Win') triple for one dataset at one size."""
-    path = report["path"]
-    aurc_row = row_of(report["aurc"], size, AURC_TITLE, path)
-    win_row = row_of(report["win"], size, WIN_TITLE, path)
-    for col in (EPISTEMIC_COL, TOTAL_COL):
-        if col not in aurc_row:
-            raise ReportError(f"{path}: {AURC_TITLE!r} table has no column {col!r}")
-    win_raw = win_row.get(EPISTEMIC_COL, "")
-    if not win_raw:
+    label = AVG_LABEL if size in (AVG_LABEL, "all") else size
+    if label not in run["aurc"]:
         raise ReportError(
-            f"{path}: {WIN_TITLE!r} table has no value for n_test={size} "
-            f"under {EPISTEMIC_COL!r}")
+            f"{run['path']}: no AuRC row for n_test={size} "
+            f"(available: {', '.join(run['aurc'])})")
+    if label not in run["win_total"]:
+        raise ReportError(
+            f"{run['path']}: no win rate for n_test={size} "
+            f"(available: {', '.join(run['win_total'])})")
 
-    epist = float(aurc_row[EPISTEMIC_COL])
-    bayes = float(aurc_row[TOTAL_COL])
-    # The report counts wins of the total-uncertainty predictor; the summary
+    areas = run["aurc"][label]
+    # The run counts wins of the total-uncertainty predictor; the summary
     # reports the complementary rate, i.e. wins of the epistemic one.
-    win = 100.0 - float(win_raw)
-    return [f"{epist:.{precision}f}", f"{bayes:.{precision}f}", f"{win:.1f}"]
+    win = 100.0 - run["win_total"][label]
+    return [f"{areas['epistemic']:.{precision}f}",
+            f"{areas['total']:.{precision}f}",
+            f"{win:.1f}"]
 
 
-def render(reports: list[dict], sizes: list[str], precision: int) -> str:
+def render(runs: list[dict], sizes: list[str], precision: int) -> str:
     """Lay the per-dataset triples out as an aligned LaTeX table body."""
     rows = [[r["name"]] + [c for s in sizes for c in cells(r, s, precision)]
-            for r in reports]
+            for r in runs]
     sub = ["dataset"] + ["Epist", "Bayes", r"Win [\%]"] * len(sizes)
 
     widths = [max(len(r[i]) for r in [sub] + rows) for i in range(len(sub))]
@@ -181,7 +271,8 @@ def main() -> None:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--reports", nargs="+", required=True,
-                        help="sweep report .txt files, one per dataset row")
+                        help=f"one run per dataset row: a {RESULTS_FILENAME}, a "
+                             f"{REPORT_FILENAME}, or a run directory")
     parser.add_argument("--sizes", nargs="+", required=True,
                         help="n_test values to keep, one 3-column block each")
     parser.add_argument("--output", required=True,
@@ -191,14 +282,14 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        reports = [parse_report(Path(p)) for p in args.reports]
-        table = render(reports, args.sizes, args.precision)
+        runs = [load_run(Path(p)) for p in args.reports]
+        table = render(runs, args.sizes, args.precision)
     except (ReportError, OSError) as exc:
         sys.exit(f"error: {exc}")
 
-    if len({r["scaled"] for r in reports}) > 1:
-        scaled = [r["path"].name for r in reports if r["scaled"]]
-        print("warning: mixing reports with and without the '[x1000]' AuRC "
+    if len({r["scaled"] for r in runs}) > 1:
+        scaled = [r["path"].name for r in runs if r["scaled"]]
+        print("warning: mixing runs with and without the 'x1000' AuRC "
               f"scaling; scaled: {', '.join(map(str, scaled))}", file=sys.stderr)
 
     out = Path(args.output)

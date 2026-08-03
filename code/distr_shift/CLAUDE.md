@@ -80,13 +80,22 @@ so past runs are self-documenting — read those to reproduce a figure.
 
 ## Architecture
 
-The reusable library is the `prior_shift/` package; the top-level
-`base_predictor_training.py` / `rejopt_eval.py` / `*_datasets.py` scripts are
-thin experiment drivers around it, the `run_*.sh` wrappers pin the paper
-configuration, and
-`reject_figures.py` / `figspec.py` / `render_figspecs.py` are the plotting layer
-(kept out of the package so the library never imports matplotlib). Data outputs
-(`data/`, `figures/`, `runs/`) are gitignored and reproducible.
+The reusable library is the `prior_shift/` package (method, sampling, and the
+sweep engine); the top-level `base_predictor_training.py` / `rejopt_eval.py` /
+`*_datasets.py` scripts are thin experiment drivers around it, the `run_*.sh`
+wrappers pin the paper configuration, `reporting.py` is the text/JSON output
+layer, and `reject_figures.py` / `figspec.py` / `render_figspecs.py` are the
+plotting layer (both kept out of the package so the library never imports
+matplotlib). Data outputs (`data/`, `figures/`, `runs/`) are gitignored and
+reproducible.
+
+`rejopt_eval.py` itself is now only the command line and the two mode drivers:
+`build_parser` / `validate_args` / `resolve_target_prior` /
+`resolve_model_prior` / `resolve_eval_size` turn flags into a configured run,
+then `run_sweep_report` or `run_dirichlet_sweep_report` calls
+`prior_shift.sweep.run_sweep` and hands the result to `reporting` and
+`reject_figures`. Keep new work on that split: computation in `prior_shift/`,
+presentation in `reporting.py` / `reject_figures.py`, flags in the driver.
 
 Core method pipeline: `base_predictor_training.py` trains and
 temperature/BCTS-calibrates a CNN for `p_tr(y|x)` and records the empirical
@@ -100,10 +109,18 @@ their areas.
 - **`prior_shift/reject_option.py`** — the reject-option computation layer
   (`REJECT_LABELS`, `selective_curves`, `coverage_at_target`,
   `bayesian_posterior_and_aleatoric`, `epistemic_metrics`, `truncated_area`,
-  `generalize_curve`) plus the replicate-axis aggregation (`configure_*`,
-  `_series`, `_center`) that keeps the report tables and the figures reporting
-  the same central value. Pure numpy; the matching figure builders live in
-  top-level `reject_figures.py`.
+  `generalize_curve`) plus the `Aggregation` value (`series`, `center`,
+  `describe`) that keeps the report tables and the figures reporting the same
+  central value. Pure numpy; the matching figure builders live in top-level
+  `reject_figures.py`.
+- **`prior_shift/sampling.py`** — drawing label-shifted samples from the labeled
+  pool: `target_prior_from_weights`, `target_counts`, `resample_to_prior`,
+  `split_adapt_eval`, `max_distinct_eval`, `sample_target_prior`. Raises rather
+  than exiting, so the driver owns every user-facing message.
+- **`prior_shift/sweep.py`** — the experiment's inner loop: one `run_sweep` call
+  covers every trial at every adaptation size for *one* target prior and returns
+  a `SweepResult` on the common `(len(sizes), replicates)` layout that the
+  reporting and figure layers consume.
 - **`prior_shift/mcmc.py`** — `sample_prior_posterior(..., sampler=...)` with **two
   interchangeable chains targeting the same posterior**: `"mh"` (default,
   random-walk Metropolis–Hastings in a softmax-reparameterised unconstrained space
@@ -162,10 +179,18 @@ stdout, and `--dirichlet` still makes the individual draws shifted.
 - The `mh` and `gibbs` samplers must stay statistically equivalent — they are two
   routes to the same posterior; a change to one usually needs the matching change
   (or a deliberate note) for the other.
-- **Do not rename what `summary_table.py` parses**: the report table titles
-  `AuRC (regret)` / `win% AuRC (regret)`, the truncated column headers
-  `Bayesian, epistemic un` / `Bayesian, total uncert`, and the report filename
-  `real_reject_option_sweep_report.txt` (also hard-wired in `summary_table*.sh`).
-  The `n_test` spelling in figure filenames is likewise load-bearing for
-  `figures.sh`.
+- **`results.json` is the machine interface, the text report is for humans.**
+  `rejopt_eval.py` writes both; `summary_table.py` reads the JSON, so the text
+  report's wording and column widths are free to change. What *is* load-bearing:
+  the JSON key names (bump `RESULTS_SCHEMA` when removing or renaming one), the
+  filename `real_reject_option_sweep_report.txt` (the `make_*.sh` scripts glob
+  for it as the marker of a completed run), and the `n_test` spelling in figure
+  filenames (`make_figures.sh`). `summary_table.py` still carries a legacy text
+  parser for run directories written before `results.json`; it can go once every
+  run of record has been regenerated.
+- **The replicate-axis aggregation is an explicit `Aggregation` value**
+  (`prior_shift/reject_option.py`), constructed once per run in the driver and
+  passed to both the report tables and every figure builder. Keep it that way:
+  one object for both is what guarantees a figure's solid line and its table
+  cell are the same statistic. Do not reintroduce module-level configuration.
 - `figures/`, `runs/`, and `data/` are gitignored; don't commit generated outputs.

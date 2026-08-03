@@ -347,9 +347,10 @@ python rejopt_eval.py runs/blood/model.pt runs/blood \
 # the same, as shipped: the paper configuration per dataset
 ./run_rejopt_eval.sh bloodmnist            # or: ./run_all_rejopt_eval.sh sbatch
 
-# collect several runs into one table (or let make_summary_table.sh /
+# collect several runs into one table (--reports takes each run's results.json,
+# its text report, or its directory; or let make_summary_table.sh /
 # make_ablation_table.sh find the latest run of each dataset for you)
-python summary_table.py --reports runs/*/*/real_reject_option_sweep_report.txt \
+python summary_table.py --reports runs/*/*/results.json \
     --sizes 1 10 avg --output summary_table.txt
 ```
 
@@ -534,8 +535,11 @@ require **torch/torchvision** (unlike the download/analysis tools above).
    epistemic-metrics figure (two panels: regret/epistemic-uncertainty overlaid,
    and the negligible portion), the coverage-at-target figure (one panel per
    `--regret-target`), the per-size coverage-curve figures in a
-   `coverage_curves/` subfolder, and the sweep report
-   `real_reject_option_sweep_report.txt`. It also writes
+   `coverage_curves/` subfolder, the sweep report
+   `real_reject_option_sweep_report.txt` and its machine-readable twin
+   `results.json` (the same numbers, keyed by name — this is what
+   `summary_table.py` reads, so the text report stays free to be reworded). It
+   also writes
    `base_accuracy_vs_n_test.png`: the test accuracy of the Bayesian
    learned-prior predictor as it adapts from the `n` examples, against the
    training-prior plugin (no adaptation) and the true-prior plugin as the oracle
@@ -617,13 +621,17 @@ prior_shift/
   predictors.py    Bayes decision rule and plugin label-shift correction
   reject_option.py selective risk/regret curves, their areas, coverage-at-target,
                    the uncertainty decomposition, and the replicate aggregation
+  sampling.py      target priors from weights; stratified adaptation/evaluation draws
+  sweep.py         the inner loop: every trial x size for one target prior
 data_tools/
   registry.py    per-dataset metadata: download URLs, class names, confusable pair
   download.py    stream files into data/<key>/ (skip-if-present, progress bars)
   loaders.py     load each source into a common uint8-image / int-label Dataset
   report.py      render the self-contained HTML analysis report
 base_predictor_training.py        train + calibrate a NN base predictor on a real dataset
-rejopt_eval.py                    adaptation + reject-option experiment (always a sweep)
+rejopt_eval.py                    adaptation + reject-option experiment (always a sweep):
+                                  the command line and the two mode drivers
+reporting.py                      the text report and the machine-readable results.json
 reject_figures.py                 figure builders for the experiment's outputs
 figspec.py / render_figspecs.py   declarative figure specs + offline re-rendering
 summary_table.py                  one LaTeX-ish table across datasets and sizes
