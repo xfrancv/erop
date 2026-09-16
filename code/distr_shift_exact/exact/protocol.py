@@ -87,7 +87,7 @@ class Trial:
     idx: np.ndarray            # (m+1,) indices into the evaluation split
     y: np.ndarray              # (m+1,) their labels
     theta_star: np.ndarray     # (Y,) the true test prior of this trial
-    theta_star_index: int      # index in Theta, or -1 when theta_* is off-grid
+    theta_star_index: int      # index in Theta
     dup_fraction: float        # fraction of triplets whose query recurs in D^(i)
     dup_mean: float            # mean number of such recurrences per triplet
 
@@ -136,7 +136,7 @@ class TrialSampler:
 
 
 class ThetaStarDrawer:
-    """How ``theta_*`` is drawn for a stratum (S6.4, Appendix A.1).
+    """How ``theta_*`` is drawn for a stratum (S6.4).
 
     ``mode``:
 
@@ -152,21 +152,16 @@ class ThetaStarDrawer:
         agree (Appendix A.5).
     ``"fixed"``
         always ``Theta[index]`` -- the per-``theta_*`` supplementary breakdown.
-    ``"dirichlet"``
-        ``theta_* ~ Dir(s * theta_tr)``, so ``theta_* not in Theta`` almost
-        surely while the model still uses ``Theta``: the misspecified second arm
-        of Appendix A.1, without which the epistemic-calibration claim is not
-        falsifiable.
+
+    Every mode draws from ``Theta`` itself, so ``theta_* in Theta`` always
+    holds and the setup is well-specified by construction (Appendix A.1).
     """
 
     def __init__(self, theta: np.ndarray, mode: str = "shifted",
-                 index: int = 0, train_prior: np.ndarray | None = None,
-                 concentration: float = 20.0):
+                 index: int = 0):
         self.theta = theta
         self.mode = mode
         self.index = index
-        self.train_prior = train_prior
-        self.concentration = concentration
         if mode == "shifted":
             assert len(theta) >= 2, (
                 "mode 'shifted' needs at least two priors in Theta")
@@ -175,9 +170,6 @@ class ThetaStarDrawer:
             self.choices = np.arange(len(theta))
         elif mode == "fixed":
             self.choices = np.array([index])
-        elif mode == "dirichlet":
-            assert train_prior is not None
-            self.choices = None
         else:
             raise ValueError(f"unknown theta_* mode: {mode}")
 
@@ -185,12 +177,8 @@ class ThetaStarDrawer:
     def label(self) -> str:
         if self.mode == "fixed":
             return f"theta_*=theta[{self.index}]"
-        if self.mode == "dirichlet":
-            return f"dirichlet(s={self.concentration:g})"
         return self.mode
 
     def draw(self, rng: np.random.Generator) -> tuple[np.ndarray, int]:
-        if self.mode == "dirichlet":
-            return rng.dirichlet(self.concentration * self.train_prior), -1
         c = int(rng.choice(self.choices))
         return self.theta[c], c

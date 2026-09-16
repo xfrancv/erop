@@ -1,6 +1,77 @@
 # Exact Bayesian label-prior adaptation with a finite prior set
 
 
+## Setup
+
+Python **3.10 or newer** (tested on 3.13). There is no packaging step — no
+`pyproject.toml`, no `setup.py`: `exact/` and `data_tools/` are imported as
+local packages, so every command below is run from the repository root.
+
+**1. Environment and dependencies.**
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install --upgrade pip
+
+# CPU-only torch (~200 MB rather than ~2.5 GB); this is what the runs of
+# record used
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+# on a CUDA machine, pick the wheel matching the driver instead, e.g.
+# pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126
+```
+
+`requirements.txt` is the complete list: NumPy, SciPy, scikit-learn,
+matplotlib, tqdm, torch, torchvision, and nothing else outside the standard
+library. In particular **neither Pillow nor the `medmnist` package is needed** —
+CIFAR PNGs are decoded with `matplotlib.image.imread` and the MedMNIST archives
+are read as raw `.npz`.
+
+Only `base_predictor_training.py` imports torch. `rejopt_eval.py` reads the
+`eval_log_post.npz` written by that run and is pure NumPy/SciPy — the inference
+is exact and closed-form — so a machine that only re-analyses existing runs can
+skip torch and torchvision entirely.
+
+**2. Data.** `data/`, `runs/` and `figures/` are gitignored, so a fresh clone
+has none of them.
+
+```bash
+python download_datasets.py --list          # the eight dataset keys of S7
+python download_datasets.py fashion_mnist   # one dataset, 30 MB
+python download_datasets.py                 # all eight, ~1.4 GB
+```
+
+Fashion-MNIST is 30 MB and the five MedMNIST sets 16–120 MB each, but
+**CIFAR-10 and CIFAR-100 are ~540 MB and ~576 MB** (fast.ai PNG-folder
+mirrors) — the bulk of the download, and by far the slowest to load.
+
+**3. Verify before spending compute.** `selftest.py` needs no data and no
+network; it brute-forces the S2 inference and the S6.4 budget bookkeeping.
+
+```bash
+python selftest.py                          # expect "all self-tests passed"
+```
+
+**4. Run.**
+
+```bash
+./run_base_pred_training.sh fashion_mnist   # train + calibrate -> runs/fashion_mnist/
+./run_rejopt_eval.sh fashion_mnist          # evaluate          -> runs/fashion_mnist/rejopt/
+```
+
+To exercise the whole pipeline quickly without producing a run of record,
+`--max-fit` caps the fit part and `report.txt` marks the run as capped:
+
+```bash
+python base_predictor_training.py fashion_mnist /tmp/smoke --epochs 2 --max-fit 4000 --device cpu
+```
+
+Order of magnitude on an 8-core CPU with no GPU: Fashion-MNIST 4.5 min to
+train plus 2.5 min to evaluate; DermaMNIST 73 min plus 1.5 min. CIFAR-10 and
+CIFAR-100 on ResNet-18 take many hours each without a GPU.
+
+---
+
 ## Notation
 
 Fixed once, used consistently throughout. **No symbol is reused.**

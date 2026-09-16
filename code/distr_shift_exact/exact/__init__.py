@@ -38,7 +38,6 @@ from .metrics import (
 from .priors import (
     PriorSet,
     build_prior_set,
-    dirichlet_prior_set,
     read_prior_set,
     total_variation,
     write_prior_set,
@@ -63,7 +62,7 @@ __all__ = [
     "N_MIN", "Pool", "PriorSet", "REJECTORS", "REJECTOR_KEYS", "Rejector",
     "SIZE_GRID", "Splits", "ThetaStarDrawer", "Trial", "TrialInference",
     "TrialSampler", "build_prior_set", "calibration_summary",
-    "dirichlet_prior_set", "ece_equal_mass", "evaluate_pool", "fit_bcts",
+    "ece_equal_mass", "evaluate_pool", "fit_bcts",
     "fit_temperature", "identifiability_table", "infer_trial", "log_softmax_np",
     "log_weights", "make_splits", "n_trials", "nll", "plugin_for_prior",
     "read_prior_set", "resolve_grid",

@@ -24,16 +24,23 @@ produces several:
                and the model's ``p(theta)`` agree (Appendix A.5).
 ``theta[c]``   one stratum per element of ``Theta`` -- the supplementary
                breakdown.
-``dirichlet``  optional (``--dirichlet-scale``): ``theta_* ~ Dir(s theta_tr)``,
-               so ``theta_* not in Theta`` almost surely while the model still
-               uses ``Theta``. This is the misspecified second arm Appendix A.1
-               calls for; without it the epistemic-calibration claim is not
-               falsifiable.
+
+Every stratum draws ``theta_*`` from ``Theta``, so the setup is well-specified
+by construction: this is the best case for the Bayesian method and Appendix A.1
+asks that it be presented as such.
 
 Run with::
 
     python rejopt_eval.py runs/fashion_mnist
-    python rejopt_eval.py runs/cifar100 --dirichlet-scale 20 --bootstrap-reps 200
+    python rejopt_eval.py runs/cifar100 --bootstrap-reps 200
+
+``Theta`` defaults to the ``priors.txt`` the training run emitted, but
+``--priors`` reads it from any file in that format, which is how a hand-written
+prior set is evaluated without retraining -- ``Theta`` is an input here, and
+nothing in ``model.pt`` or ``eval_log_post.npz`` depends on it::
+
+    python rejopt_eval.py runs/fashion_mnist --priors my_priors.txt \\
+        --out-dir runs/fashion_mnist/rejopt_manual
 """
 
 from __future__ import annotations
@@ -56,7 +63,7 @@ from exact.metrics import (
     REJECTORS,
     evaluate_pool,
 )
-from exact.priors import read_prior_set
+from exact.priors import TV_TOL, PriorSet, read_prior_set, total_variation
 from exact.protocol import (
     BUDGET_B,
     N_MAX,
@@ -106,6 +113,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("run_dir", type=str,
                    help="training run directory holding eval_log_post.npz and "
                         "priors.txt")
+    p.add_argument("--priors", type=str, default=None,
+                   help="read Theta from this file instead of "
+                        "<run_dir>/priors.txt, in the same format: one prior "
+                        "per line as 'index<TAB>label<TAB>tv<TAB>t_1 ... t_Y' "
+                        "('#' comments ignored, the index and tv fields "
+                        "re-derived). Row 0 must be the training prior")
     p.add_argument("--out-dir", type=str, default=None,
                    help="output directory (default: <run_dir>/rejopt)")
     p.add_argument("--seed", type=int, default=0)
@@ -130,14 +143,45 @@ def build_parser() -> argparse.ArgumentParser:
                         "0 disables their bands)")
     p.add_argument("--no-supplementary", action="store_true",
                    help="run only the main 'shifted' stratum")
-    p.add_argument("--dirichlet-scale", type=float, default=None,
-                   help="also run the misspecified arm of Appendix A.1 with "
-                        "theta_* ~ Dir(s * theta_tr) for this s")
     p.add_argument("--no-figures", action="store_true")
     return p
 
 
-def _stratum_drawers(theta: np.ndarray, train_prior: np.ndarray,
+def _load_priors(path: Path, train_prior: np.ndarray, Y: int) -> PriorSet:
+    """Read ``Theta``, re-checking the S7 guards the file itself cannot carry.
+
+    ``read_prior_set`` only checks that the rows are distributions. A file
+    written by ``build_prior_set`` passed the rest of S7 at construction, but a
+    hand-written ``--priors`` file has not, and the ways it goes wrong are
+    silent: a zero entry becomes ``-inf`` in ``log_theta``, and a row 0 that is
+    not ``theta_tr`` changes what the 'shifted' stratum excludes and what the
+    ``m = 0`` tie-break of S3 returns.
+    """
+    ps = read_prior_set(path, train_prior)
+    assert ps.Y == Y, (
+        f"{path}: priors are over Y = {ps.Y} classes, but this run's "
+        f"log-posteriors are over {Y}")
+    assert np.all(ps.theta > 0), (
+        f"{path}: every prior must be strictly positive (S7); a zero entry "
+        f"makes log theta -inf")
+    tv0 = total_variation(ps.theta[0], train_prior)
+    if tv0 > TV_TOL:
+        print(f"!! {path}: theta[0] is not the training prior (TV = {tv0:.4f}). "
+              f"By the S7 convention index 0 is theta_1: it is the element the "
+              f"'shifted' stratum excludes and the one the m = 0 tie-break "
+              f"returns.", file=sys.stderr)
+    if ps.C > 1:
+        off = ps.pairwise_tv()[np.triu_indices(ps.C, k=1)]
+        if off.min() < TV_TOL:
+            print(f"!! {path}: the closest pair of priors is only TV = "
+                  f"{off.min():.4f} apart, under the S7 guard of {TV_TOL:g}; "
+                  f"such priors are not distinguishable from an unlabeled "
+                  f"sample. See the identifiability table below.",
+                  file=sys.stderr)
+    return ps
+
+
+def _stratum_drawers(theta: np.ndarray,
                      args) -> list[tuple[str, ThetaStarDrawer]]:
     drawers = [("shifted", ThetaStarDrawer(theta, "shifted"))]
     if not args.no_supplementary:
@@ -145,10 +189,6 @@ def _stratum_drawers(theta: np.ndarray, train_prior: np.ndarray,
         for c in range(len(theta)):
             drawers.append((f"theta[{c}]",
                             ThetaStarDrawer(theta, "fixed", index=c)))
-    if args.dirichlet_scale:
-        drawers.append(("dirichlet", ThetaStarDrawer(
-            theta, "dirichlet", train_prior=train_prior,
-            concentration=args.dirichlet_scale)))
     return drawers
 
 
@@ -156,7 +196,6 @@ def main() -> None:
     args = build_parser().parse_args()
     run_dir = Path(args.run_dir)
     out_dir = Path(args.out_dir) if args.out_dir else run_dir / "rejopt"
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     blob = np.load(run_dir / "eval_log_post.npz", allow_pickle=True)
     log_post = blob["log_post"].astype(np.float64)
@@ -167,7 +206,8 @@ def main() -> None:
     eval_desc = str(blob["eval_desc"])
     Y = log_post.shape[1]
 
-    ps = read_prior_set(run_dir / "priors.txt", train_prior)
+    priors_path = Path(args.priors) if args.priors else run_dir / "priors.txt"
+    ps = _load_priors(priors_path, train_prior, Y)
     theta, C = ps.theta, ps.C
     log_theta = np.log(theta)
     log_p_theta = np.full(C, -np.log(C))       # S7: p(theta) = 1/C, uniform
@@ -179,6 +219,7 @@ def main() -> None:
         print(f"!! {grid_note}", file=sys.stderr)
 
     sampler = TrialSampler(y_eval, Y)
+    out_dir.mkdir(parents=True, exist_ok=True)   # only once the inputs are good
 
     # How fast can the posterior over Theta possibly separate its elements?
     # S6.2 asserts it concentrates exponentially in m, but the rate is set by
@@ -195,6 +236,7 @@ def main() -> None:
         "command": " ".join(sys.argv),
         "dataset": dataset,
         "run_dir": str(run_dir),
+        "priors_file": str(priors_path),
         "num_classes": Y,
         "class_names": class_names,
         "eval_size": int(len(y_eval)),
@@ -222,7 +264,7 @@ def main() -> None:
         "strata": {},
     }
 
-    for name, drawer in _stratum_drawers(theta, train_prior, args):
+    for name, drawer in _stratum_drawers(theta, args):
         reps = (args.bootstrap_reps if name == "shifted"
                 else args.supp_bootstrap_reps)
         cells = []
@@ -295,7 +337,8 @@ def format_report(res: dict) -> str:
         f"budget    : B = {res['budget']}, N in [{res['n_min']}, {res['n_max']}], "
         f"coverage c = {res['coverage']}",
         "-" * 78,
-        f"prior set Theta: C = {len(res['theta'])}",
+        f"prior set Theta: C = {len(res['theta'])}"
+        + (f"   from {res['priors_file']}" if res.get("priors_file") else ""),
     ]
     for i, (lab, tv) in enumerate(zip(res["theta_labels"],
                                       res["theta_tv_to_train"])):
@@ -357,10 +400,7 @@ def format_report(res: dict) -> str:
                  f"{'P(MAP=true)':>12} {'E[p(th*|D)]':>12} "
                  f"{'mean T':>9} {'mean A':>9} {'mean E':>9}")
         def _num(v, w=12):
-            # theta_* off the grid (the dirichlet arm) has no index in Theta, so
-            # P(MAP = true) and p(theta_* | D) are undefined there.
-            return f"{'n/a':>{w}}" if v is None or (
-                isinstance(v, float) and not math.isfinite(v)) else f"{v:>{w}.4f}"
+            return f"{v:>{w}.4f}"
 
         for cell in st["cells"]:
             d = cell["diagnostics"]

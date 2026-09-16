@@ -83,20 +83,18 @@ def run_cell(m: int, drawer: ThetaStarDrawer, sampler: TrialSampler,
         tot.append(inf.total.mean())
         ale.append(inf.aleatoric.mean())
         epi.append(inf.epistemic.mean())
-        if star_idx >= 0:
-            map_ok.append(float((inf.map_index == star_idx).mean()))
-            post_true.append(float(inf.pth_adapt[:, star_idx].mean()))
-            diag.theta_star_counts[star_idx] = \
-                diag.theta_star_counts.get(star_idx, 0) + 1
+        map_ok.append(float((inf.map_index == star_idx).mean()))
+        post_true.append(float(inf.pth_adapt[:, star_idx].mean()))
+        diag.theta_star_counts[star_idx] = \
+            diag.theta_star_counts.get(star_idx, 0) + 1
 
     diag.dup_fraction = float(np.mean(dup_f))
     diag.dup_mean = float(np.mean(dup_m))
     diag.mean_total = float(np.mean(tot))
     diag.mean_aleatoric = float(np.mean(ale))
     diag.mean_epistemic = float(np.mean(epi))
-    if map_ok:
-        diag.map_correct = float(np.mean(map_ok))
-        diag.post_true = float(np.mean(post_true))
+    diag.map_correct = float(np.mean(map_ok))
+    diag.post_true = float(np.mean(post_true))
 
     per_trial, remainder = subsample_layout(m, N, budget)
     pool = Pool(loss=loss, score=score, tiebreak=tiebreak,

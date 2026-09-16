@@ -139,18 +139,6 @@ def build_prior_set(train_prior: np.ndarray, val_error: np.ndarray,
     return _apply_guards(theta, labels, train_prior)
 
 
-def dirichlet_prior_set(train_prior: np.ndarray, n: int, concentration: float,
-                        rng: np.random.Generator) -> PriorSet:
-    """``Theta`` of ``n`` draws from ``Dir(concentration * theta_tr)``.
-
-    Not part of the default protocol; a way to build a larger, less structured
-    prior set for the sensitivity study of Appendix A.
-    """
-    theta = rng.dirichlet(concentration * np.asarray(train_prior, float), size=n)
-    labels = [f"dirichlet draw {i}" for i in range(n)]
-    return _apply_guards(theta, labels, np.asarray(train_prior, float))
-
-
 def _apply_guards(theta: np.ndarray, labels: list[str],
                   train_prior: np.ndarray) -> PriorSet:
     """Assert the S7 guards, drop near-duplicates, and re-index."""
@@ -174,7 +162,7 @@ def _apply_guards(theta: np.ndarray, labels: list[str],
     ps = PriorSet(theta[keep], [labels[i] for i in keep], train_prior, dropped)
     assert ps.C >= 2, (
         "Theta collapsed to fewer than 2 distinct priors -- the experiment is "
-        "vacuous. Raise tau or use --prior-set dirichlet.")
+        "vacuous. Raise tau.")
     return ps
 
 

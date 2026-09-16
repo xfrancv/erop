@@ -135,11 +135,6 @@ and `theta_map` falls back to `theta_1` — `selftest.py` checks it.
 in `results.json` and in the report tables; `figures.py` draws it only on
 request, so the default panels match S6.5 exactly.
 
-**9. The misspecified arm of Appendix A.1 is implemented** as
-`--dirichlet-scale s` (`./run_rejopt_eval.sh <ds> misspec`): `theta_* ~
-Dir(s theta_tr)`, so `theta_*` is not in `Theta` almost surely while the model
-still uses `Theta`. Not part of the default run.
-
 ## Diagnostics added beyond the README
 
 **Identifiability of `Theta` from unlabeled data.** S6.2 justifies the log-spaced

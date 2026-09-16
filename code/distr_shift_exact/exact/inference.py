@@ -159,9 +159,9 @@ def plugin_for_prior(log_post: np.ndarray, log_train_prior: np.ndarray,
                      theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """``(h(x, theta), 1 - max_y p_te(y | x, theta))`` for a single prior.
 
-    Used for the two rejectors whose prior does not come from ``Theta``: the
-    train-prior plugin (row 4) and the true-prior oracle (row 5, whose
-    ``theta_*`` is a continuous draw in the misspecified arm).
+    Used for the two rejectors that are handed one prior directly rather than
+    the posterior over ``Theta``: the train-prior plugin (row 4) and the
+    true-prior oracle (row 5).
     """
     log_theta = np.log(np.asarray(theta, float))[None, :]
     r = log_weights(log_post, log_train_prior, log_theta)
