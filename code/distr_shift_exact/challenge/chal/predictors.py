@@ -1,0 +1,172 @@
+"""The reject-option predictors of S3, built from the released files.
+
+Everything here works from what a competitor actually has --
+``predictions.csv``, ``test_batches.csv``, ``test_priors.csv``,
+``train_prior.csv`` -- so running a predictor is also an end-to-end check that
+the released files are sufficient to solve the task. The one exception is
+``true_plugin``, which needs ``theta_*`` and reads the local-only
+``batch_meta.csv``; it is the metric's own reference, not a competitor.
+
+A reject-option predictor is a pair (base predictor, uncertainty score). The
+submission format carries a **confidence**, so every score ``u`` is emitted as
+``-u`` or as a rank; only the induced ranking is ever read (C6.2).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from .inference import batch_starts_from_ids, infer, plugin_for_prior
+
+# Name -> one-line description, in the order C7 lists them.
+PREDICTORS = {
+    "base": "non-adapted base predictor == train-prior plugin (S3 row 4)",
+    "map_plugin": "MAP plugin h(x, theta_map) (S3 row 3)",
+    "bayes_total": "Bayesian base predictor, total uncertainty T (S3 row 1)",
+    "bayes_epistemic": "Bayesian base predictor, epistemic uncertainty E (S3 row 2)",
+    "true_plugin": "true-prior plugin (S3 row 5) -- oracle, zero regret",
+    "bayes_aleatoric": "Bayesian base predictor, aleatoric uncertainty A (S3 row 6)",
+}
+OPTIMAL = "bayes_epistemic"
+NEEDS_INFERENCE = ("map_plugin", "bayes_total", "bayes_epistemic",
+                   "bayes_aleatoric")
+NEEDS_THETA_STAR = ("true_plugin",)
+
+
+def rank_confidence(*keys: np.ndarray) -> np.ndarray:
+    """A confidence column reproducing a lexicographic **ascending** ordering.
+
+    The metric reads only the ranking induced by ``confidence``, so a rejector
+    whose score is a tuple -- epistemic uncertainty with ties broken by total
+    uncertainty -- is expressed exactly by ranking the tuple and negating.
+    Encoding the tie-break as ``-(E + eps * T)`` instead would need an ``eps``
+    small enough not to reorder distinct ``E`` and large enough to survive
+    float; a rank needs no such constant.
+
+    Exact ties are the common case here, not a corner case: ``E(x, D)`` is
+    exactly zero whenever every prior in ``Theta`` votes for the same label, so
+    the tie-break governs a large part of the ranking (S3).
+
+    ``np.lexsort`` takes its *last* key as primary, so the keys are reversed.
+    """
+    order = np.lexsort(tuple(reversed(keys)))
+    rank = np.empty(len(order), dtype=np.int64)
+    rank[order] = np.arange(len(order))
+    return -rank.astype(np.float64)
+
+
+class Problem:
+    """The released files, loaded and arranged for inference."""
+
+    def __init__(self, kaggle_dir: Path, batches_file: str = "test_batches.csv",
+                 predictions_file: str | None = None):
+        kaggle_dir = Path(kaggle_dir)
+        self.dir = kaggle_dir
+        batches = pd.read_csv(kaggle_dir / batches_file)
+        if predictions_file is None:
+            predictions_file = ("dev_predictions.csv"
+                                if batches_file.startswith("dev_")
+                                else "predictions.csv")
+        preds = pd.read_csv(kaggle_dir / predictions_file)
+        train_prior = pd.read_csv(kaggle_dir / "train_prior.csv").to_numpy()[0]
+        priors = pd.read_csv(kaggle_dir / "test_priors.csv")
+
+        Y = len(train_prior)
+        post = preds[[f"p{y}" for y in range(Y)]].to_numpy(dtype=np.float64)
+        # The released posteriors are rounded for file size; renormalise before
+        # taking logs so every row is exactly a distribution.
+        post = np.clip(post, 1e-300, None)
+        # Renormalise so each row is exactly a distribution. This is a per-row
+        # positive rescaling, which cancels everywhere downstream: it shifts
+        # log_post by a row constant, hence r by a theta-independent constant,
+        # which drops out of the softmax over theta and out of every plugin
+        # posterior.
+        post /= post.sum(axis=1, keepdims=True)
+        log_post_all = np.log(post)
+
+        # Inference needs rows grouped by batch, each batch contiguous.
+        batches = batches.sort_values(["id_test", "slot"], kind="stable"
+                                      ).reset_index(drop=True)
+        # Positional lookup rather than a per-row dict: there are half a million
+        # rows and only ~90 000 distinct images.
+        pos = pd.Index(preds["row_id"]).get_indexer(batches["row_id"])
+        missing = int((pos < 0).sum())
+        assert missing == 0, (
+            f"{missing} rows have no entry in {predictions_file}, e.g. "
+            f"{batches['row_id'].to_numpy()[pos < 0][:3].tolist()}")
+
+        self.batches = batches
+        self.row_id = batches["row_id"].to_numpy()
+        self.id_test = batches["id_test"].to_numpy()
+        self.log_post = log_post_all[pos]
+        self.train_prior = np.asarray(train_prior, float)
+        self.log_train_prior = np.log(self.train_prior)
+        self.theta = priors[[f"p{y}" for y in range(Y)]].to_numpy()
+        self.log_theta = np.log(self.theta)
+        # p(theta) = 1/C uniform, for the model and for drawing theta_* (C3.3).
+        self.log_p_theta = np.full(len(self.theta), -np.log(len(self.theta)))
+        self.starts = batch_starts_from_ids(self.id_test)
+        self._inf = None
+
+    @property
+    def n(self) -> int:
+        return len(self.row_id)
+
+    @property
+    def C(self) -> int:
+        return len(self.theta)
+
+    @property
+    def inference(self):
+        """The exact S2 inference, computed once and cached."""
+        if self._inf is None:
+            self._inf = infer(self.log_post, self.starts, self.log_train_prior,
+                              self.log_theta, self.log_p_theta)
+        return self._inf
+
+    def theta_star_per_row(self, meta_file: str = "batch_meta.csv") -> np.ndarray:
+        """``theta_*`` of each row's batch -- local only, oracle use."""
+        meta = pd.read_csv(self.dir / meta_file)
+        lookup = dict(zip(meta["id_test"], meta["theta_star_index"]))
+        return self.theta[np.array([lookup[i] for i in self.id_test])]
+
+
+def predict(problem: Problem, name: str) -> tuple[np.ndarray, np.ndarray]:
+    """``(pred, confidence)`` for one named predictor."""
+    if name == "base":
+        # h(x, theta_tr) == argmax_y p_tr(y | x): the re-weighting factor
+        # theta_tr,y / p_tr(y) is constant across y, so it cancels. Since
+        # theta_tr is not in Theta (C3.3), this is not even an admissible
+        # hypothesis -- which is what makes it beatable on every batch.
+        pred = problem.log_post.argmax(axis=1)
+        return pred, np.exp(problem.log_post[np.arange(problem.n), pred])
+
+    if name == "true_plugin":
+        pred, unc = plugin_for_prior(problem.log_post, problem.log_train_prior,
+                                     problem.theta_star_per_row())
+        return pred, 1.0 - unc
+
+    inf = problem.inference
+    if name == "map_plugin":
+        return inf.map_pred, 1.0 - inf.map_unc
+    if name == "bayes_total":
+        return inf.bayes_pred, -inf.total
+    if name == "bayes_epistemic":
+        # S3 row 2: score by E, ties broken by T.
+        return inf.bayes_pred, rank_confidence(inf.epistemic, inf.total)
+    if name == "bayes_aleatoric":
+        return inf.bayes_pred, rank_confidence(inf.aleatoric, inf.total)
+    raise ValueError(f"unknown predictor {name!r}; known: {list(PREDICTORS)}")
+
+
+def write_submission(path: Path, row_id: np.ndarray, pred: np.ndarray,
+                     conf: np.ndarray) -> None:
+    """Write a submission, sorted by ``row_id`` as Kaggle expects."""
+    df = pd.DataFrame({"row_id": row_id, "pred": np.asarray(pred, dtype=np.int64),
+                       "confidence": np.asarray(conf, dtype=np.float64)})
+    assert np.isfinite(df["confidence"]).all(), "non-finite confidence"
+    df.sort_values("row_id", kind="stable").to_csv(
+        path, index=False, float_format="%.10g")
