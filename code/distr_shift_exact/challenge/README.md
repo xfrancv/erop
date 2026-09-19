@@ -42,6 +42,8 @@ python selftest.py                      # no data, no network, ~15 s
 
 Only `train_base_model.py` needs torch; everything downstream reads the
 calibrated log-posterior it writes and is pure NumPy/SciPy/pandas.
+This installs the CPU build of torch; for a GPU machine, possibly with an older
+CUDA driver, see **Training on a GPU machine** below.
 
 ## Pipeline
 
@@ -75,11 +77,64 @@ python hard_package.py out/smoke/data out/smoke/kaggle
 
 ### Training on a GPU machine
 
-Training is the only step that wants a GPU. Run `make_split.py` and
-`train_base_model.py` there (both are deterministic from their seeds), bring
-back `out/v3/split/` and `out/v3/model/`, and run the rest anywhere.
-`hard_make_data.py` refuses a model whose `split_id` does not match the split
-it is given, so a model and a split from different runs cannot be combined.
+Training the label model is the only step that wants a GPU; everything else is
+NumPy and takes minutes. So split and train remotely, bring back the two
+directories, and generate the competition data wherever you like.
+
+**1. Get the code** on the GPU machine:
+
+```bash
+git fetch origin && git checkout challenge-v3      # in an existing clone
+```
+
+**2. Install with a CUDA wheel** matching the driver. `nvidia-smi` prints the
+highest CUDA version the driver supports; the wheel's CUDA must not exceed it.
+The plain PyPI torch wheel is built for the newest CUDA (13.x at the time of
+writing), so a driver ≤ 12.9 fails with *"The NVIDIA driver on your system is
+too old"*. Install torch **first** from a matching index with `--index-url`
+(not `--extra-index-url`, which lets pip pick the PyPI wheel anyway), and only
+then the rest: `requirements.txt` is then satisfied by the torch already
+installed and leaves it alone. `cu126` works with any driver ≥ 12.6 and still
+supports Volta (V100); see <https://pytorch.org/get-started/locally/> for the
+current indexes (`cu118`, `cu121`, `cu124`, `cu126`, ...):
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+pip install -r requirements.txt
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+python selftest.py                    # 15 s, needs no data; catches a broken install
+```
+
+If `torch.cuda.is_available()` prints `False`, the wheel's CUDA is newer than
+the driver: `pip uninstall -y torch torchvision` and repeat the first `pip
+install` with an older index.
+
+**3. Fetch the data, split and train** (125 MB from Zenodo, so no need to copy
+it):
+
+```bash
+python download_data.py
+python make_split.py out/v3/split
+python train_base_model.py out/v3/model --split out/v3/split --device cuda
+```
+
+**4. Bring back both directories** — the split (~185 MB, the rotated images)
+and the model (~50 MB):
+
+```bash
+scp -r gpubox:~/erop/code/distr_shift_exact/challenge/out/v3/split out/v3/
+scp -r gpubox:~/erop/code/distr_shift_exact/challenge/out/v3/model out/v3/
+```
+
+Then continue locally with `hard_make_data.py`. Copy the split rather than
+re-running `make_split.py` locally: the stratified split is drawn by sklearn,
+whose shuffling may differ between versions. `hard_make_data.py` refuses a
+model whose `split_id` does not match the split it is given, so a model and a
+split from different runs cannot be combined by accident.
+
+Raising `--batch-size` (256 or 512) is the usual GPU speed-up and changes the
+optimisation, not the protocol; scale `--lr` with it if you do.
 
 ## How the data are generated
 
