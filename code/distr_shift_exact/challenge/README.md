@@ -207,8 +207,10 @@ image. `hard_make_data.py --temperature T` tempers it (`q^(1/T)`); the result
   over the pool. With the sampler above this is the Bayes rule given the
   location, exactly — `selftest.py` checks the sampler against it.
 
-**The location prior** `w` defaults to `chal/locprior.py:W_DEFAULT` — TV 0.28
+**The location prior** `w` defaults to `chal/locprior.py:W_DEFAULT` — TV 0.42
 from uniform, every weight `>= 0.03`, far from the training location shares.
+A milder `w` (TV 0.28) was tried first: with the real label model, estimating
+it by EM paid on the public split but not detectably on the private one.
 `hard_make_data.py` refuses a `w` that violates those guards and reports how
 well EM on the development labels recovers it. The development set has 1 500
 batches (`--dev-n-min 150`) rather than v2's 1 080, to make that estimate

@@ -20,7 +20,7 @@ describes it, with exactly `n` data rows:
 **The link is the position.** The *k*-th data row of the CSV (counting from 0,
 not counting the header line) describes image `images[k]` of its `.npy` file.
 For example, the first data row of `test_batches.csv` describes
-`test_images[0]`, and the last one describes `test_images[129923]`. Do not
+`test_images[0]`, and the last one describes `test_images[125999]`. Do not
 re-sort a CSV before pairing it with its images, or the pairing is lost.
 
 **`row_id` is not an image index.** It is an arbitrary identifier, for example

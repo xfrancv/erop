@@ -26,8 +26,10 @@ from scipy.special import logsumexp
 
 # Neither uniform nor proportional to the training location sizes (location 8
 # holds most of the training data), since both are the first guesses
-# competitors will try. TV 0.28 from uniform, every entry >= 0.03.
-W_DEFAULT = (0.20, 0.03, 0.15, 0.05, 0.08, 0.25, 0.04, 0.12, 0.08)
+# competitors will try. TV 0.42 from uniform, every entry >= 0.03. A milder
+# w (TV 0.28) made the gain from estimating it by EM too small to separate from
+# noise on the private split; this one separates on both (run_baselines.sh).
+W_DEFAULT = (0.30, 0.03, 0.20, 0.03, 0.05, 0.25, 0.03, 0.08, 0.03)
 W_MIN = 0.03
 
 

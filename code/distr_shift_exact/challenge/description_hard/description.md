@@ -40,7 +40,7 @@ leaderboard keeps the 80 % of your predictions you were most confident about,
 within each batch size, and compares them with the reference predictor. See
 **Evaluation**.
 
-## Why the batch matters
+## Why the batch matter
 
 You may use all images of a batch to predict any image in it — including the
 image you are currently classifying. Nothing in the format prevents it and
