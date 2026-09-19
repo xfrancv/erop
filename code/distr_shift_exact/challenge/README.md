@@ -42,8 +42,8 @@ python selftest.py                      # no data, no network, ~15 s
 
 Only `train_base_model.py` needs torch; everything downstream reads the
 calibrated log-posterior it writes and is pure NumPy/SciPy/pandas.
-This installs the CPU build of torch; for a GPU machine, possibly with an older
-CUDA driver, see **Training on a GPU machine** below.
+This installs the CPU build of torch; for a GPU machine, where the CUDA build
+must match both the driver and the GPU, see **Training on a GPU machine** below.
 
 ## Pipeline
 
@@ -87,28 +87,52 @@ directories, and generate the competition data wherever you like.
 git fetch origin && git checkout challenge-v3      # in an existing clone
 ```
 
-**2. Install with a CUDA wheel** matching the driver. `nvidia-smi` prints the
-highest CUDA version the driver supports; the wheel's CUDA must not exceed it.
-The plain PyPI torch wheel is built for the newest CUDA (13.x at the time of
-writing), so a driver ≤ 12.9 fails with *"The NVIDIA driver on your system is
-too old"*. Install torch **first** from a matching index with `--index-url`
-(not `--extra-index-url`, which lets pip pick the PyPI wheel anyway), and only
-then the rest: `requirements.txt` is then satisfied by the torch already
-installed and leaves it alone. `cu126` works with any driver ≥ 12.6 and still
-supports Volta (V100); see <https://pytorch.org/get-started/locally/> for the
-current indexes (`cu118`, `cu121`, `cu124`, `cu126`, ...):
+**2. Install with a CUDA wheel** that fits both the driver and the GPU. Two
+constraints, and `torch.cuda.is_available()` checks only the first:
+
+* **Driver.** `nvidia-smi` prints the highest CUDA version the driver supports
+  (top right); the wheel's CUDA must not exceed it, or torch reports *"The
+  NVIDIA driver on your system is too old"* and `is_available()` is `False`.
+* **GPU architecture.** The wheel must contain kernels for the GPU's compute
+  capability (`nvidia-smi --query-gpu=name,compute_cap --format=csv`). If it
+  does not, `is_available()` still prints `True` but the first convolution
+  fails with *"no kernel image is available for execution on the device"*
+  (plus a warning that `sm_XX` is not compatible). This is what breaks the
+  `cu126` wheel on Blackwell GPUs (RTX 50xx, RTX PRO Blackwell, B200:
+  compute capability 10.0 / 12.0), e.g. on `gauss`.
+
+| GPU (compute capability) | index | needs driver CUDA |
+| :-- | :-- | :-- |
+| Blackwell (10.0, 12.0) | `cu130` (or `cu128`) | ≥ 13.0 (≥ 12.8) |
+| Turing – Hopper (7.5 – 9.0) | `cu130`, `cu128` or `cu126` | ≥ 13.0, 12.8, 12.6 |
+| Volta, V100 (7.0) | `cu126` (dropped from `cu128`+) | ≥ 12.6 |
+
+The plain PyPI torch wheel is the newest CUDA build and works only when the
+driver is new enough, so always install torch **first**, from an explicit index
+with `--index-url` (not `--extra-index-url`, which lets pip pick the PyPI wheel
+anyway), and only then the rest: `requirements.txt` is then satisfied by the
+torch already installed and leaves it alone. See
+<https://pytorch.org/get-started/locally/> for the current indexes. On `gauss`
+(RTX PRO 4000 Blackwell, driver CUDA 13.2):
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements.txt
-python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_arch_list())"
+python -c "import torch; c = torch.nn.Conv2d(3, 8, 3).cuda(); print(c(torch.randn(2, 3, 28, 28, device='cuda')).shape)"
 python selftest.py                    # 15 s, needs no data; catches a broken install
 ```
 
-If `torch.cuda.is_available()` prints `False`, the wheel's CUDA is newer than
-the driver: `pip uninstall -y torch torchvision` and repeat the first `pip
-install` with an older index.
+The second line must list the GPU's `sm_XY` (compute capability X.Y), and the
+convolution must print `torch.Size([2, 8, 26, 26])`. If either fails, replace
+the wheel with one from the right index; pip will not do it by itself, since
+the installed version already satisfies the requirement:
+
+```bash
+pip uninstall -y torch torchvision
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+```
 
 **3. Fetch the data, split and train** (125 MB from Zenodo, so no need to copy
 it):
@@ -123,8 +147,8 @@ python train_base_model.py out/v3/model --split out/v3/split --device cuda
 and the model (~50 MB):
 
 ```bash
-scp -r gpubox:~/erop/code/distr_shift_exact/challenge/out/v3/split out/v3/
-scp -r gpubox:~/erop/code/distr_shift_exact/challenge/out/v3/model out/v3/
+scp -r gauss:~/Work/erop/code/distr_shift_exact/challenge/out/v3/split out/v3/
+scp -r gauss:~/Work/erop/code/distr_shift_exact/challenge/out/v3/model out/v3/
 ```
 
 Then continue locally with `hard_make_data.py`. Copy the split rather than
