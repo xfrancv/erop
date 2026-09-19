@@ -21,8 +21,15 @@ uncertainty, and discovering that is the point of the competition. So
 ``baseline_solutions.py`` and ``batch_meta.csv`` stay out, and the builder
 asserts that nothing it copies mentions them.
 
+**The hard variant** (``--variant hard``, ``tasks/hard_variant.md``) is built
+from ``student_hard/`` and ``chal/metric_hard.py``. Competitors there are not
+told that the problem is label shift, so the audit is stricter: the bundle may
+not name priors, shift, the plug-in rule or calibration either, and it checks
+the README as well as the code.
+
     python make_student_bundle.py out/kaggle_code
     python make_student_bundle.py out/kaggle_code --zip
+    python make_student_bundle.py out/hard/kaggle_code --variant hard --zip
 """
 
 from __future__ import annotations
@@ -40,6 +47,16 @@ FORBIDDEN = (
     "epistemic", "aleatoric", "bayes_total", "bayes_epistemic", "optimal",
     "theta_star", "batch_meta", "true_plugin", "map_plugin", "pth",
 )
+# The hard variant also hides the structure the easy variant states outright.
+FORBIDDEN_HARD = FORBIDDEN + (
+    "prior", "priors", "shift", "label shift", "theta", "plugin", "plug-in",
+    "bayes", "reweight", "re-weight", "calibrated", "calibration", "posterior",
+)
+VARIANTS = {
+    # name: (student sources, metric module, forbidden words, audited suffixes)
+    "easy": ("student", "metric.py", FORBIDDEN, (".py",)),
+    "hard": ("student_hard", "metric_hard.py", FORBIDDEN_HARD, (".py", ".md")),
+}
 # Shipping any of these would undo the decision of C9.5 to withhold the pixels
 # and the network.
 FORBIDDEN_FILES = ("model.pt", "images.npz", "base_model.py", "make_predictions.py")
@@ -56,7 +73,8 @@ examples you can check by hand.
 '''
 
 
-def build(out_dir: Path) -> list[Path]:
+def build(out_dir: Path, variant: str = "easy") -> list[Path]:
+    src_dir, metric_file, forbidden, suffixes = VARIANTS[variant]
     # Rebuild from empty. Copying into an existing bundle leaves behind files
     # that have since been removed from student/ -- which is exactly how a
     # withdrawn artifact (the network, a pixel dump) would quietly ship again.
@@ -66,28 +84,28 @@ def build(out_dir: Path) -> list[Path]:
     written = []
 
     # 1. the student-facing sources, verbatim
-    for src in sorted((HERE / "student").glob("*")):
+    for src in sorted((HERE / src_dir).glob("*")):
         if src.name.startswith((".", "__")):
             continue
         shutil.copy2(src, out_dir / src.name)
         written.append(out_dir / src.name)
 
     # 2. the metric, with its organiser-facing module docstring replaced
-    metric_src = (HERE / "chal" / "metric.py").read_text()
+    metric_src = (HERE / "chal" / metric_file).read_text()
     body = metric_src.split('"""', 2)[2].lstrip("\n")
     (out_dir / "metric.py").write_text(METRIC_HEADER + "\n" + body)
     written.append(out_dir / "metric.py")
 
-    _audit(out_dir)
+    _audit(out_dir, forbidden, suffixes)
     return written
 
 
-def _audit(out_dir: Path) -> None:
+def _audit(out_dir: Path, forbidden=FORBIDDEN, suffixes=(".py",)) -> None:
     """Refuse to ship a bundle that leaks the intended solution."""
     hits = []
-    for f in sorted(out_dir.glob("*.py")):
+    for f in sorted(p for p in out_dir.iterdir() if p.suffix in suffixes):
         text = f.read_text().lower()
-        for word in FORBIDDEN:
+        for word in forbidden:
             if re.search(rf"\b{re.escape(word)}\b", text):
                 hits.append(f"{f.name}: {word!r}")
     assert not hits, (
@@ -116,9 +134,11 @@ def main() -> None:
     p.add_argument("out_dir", type=Path, help="bundle directory to write")
     p.add_argument("--zip", action="store_true",
                    help="also write <out_dir>.zip, ready to upload")
+    p.add_argument("--variant", choices=tuple(VARIANTS), default="easy",
+                   help="which competition the bundle is for (default easy)")
     args = p.parse_args()
 
-    written = build(args.out_dir)
+    written = build(args.out_dir, args.variant)
     total = sum(f.stat().st_size for f in written)
     print(f"{args.out_dir}: {len(written)} files, {total / 1e6:.1f} MB")
     for f in written:

@@ -119,14 +119,19 @@ def _guards(ps: PriorSet, tau: float) -> None:
 _HEADER = "# index  label  TV(theta, theta_tr)  theta_1 ... theta_Y"
 
 
-def write_prior_set(ps: PriorSet, path: Path) -> None:
+def write_prior_set(ps: PriorSet, path: Path,
+                    header: list[str] | None = None) -> None:
+    """Write ``Theta``; ``header`` replaces the easy variant's description."""
     tv = ps.tv_to_train
     off = ps.pairwise_tv()[np.triu_indices(ps.C, k=1)]
-    lines = [
-        "# Theta: the admissible test priors of the challenge (C3.3)",
-        f"# C = {ps.C} priors over Y = {ps.Y} classes",
-        "# p(theta) = 1/C uniform, for the model and for drawing theta_*",
-        "# the TRAINING PRIOR IS NOT A MEMBER: every test batch is shifted",
+    if header is None:
+        header = [
+            "Theta: the admissible test priors of the challenge (C3.3)",
+            f"C = {ps.C} priors over Y = {ps.Y} classes",
+            "p(theta) = 1/C uniform, for the model and for drawing theta_*",
+            "the TRAINING PRIOR IS NOT A MEMBER: every test batch is shifted",
+        ]
+    lines = [f"# {h}" for h in header] + [
         f"# min pairwise TV = {off.min():.4f} (guard: >= {TV_TOL:g})",
         f"# TV to theta_tr in [{tv.min():.4f}, {tv.max():.4f}]",
         _HEADER,

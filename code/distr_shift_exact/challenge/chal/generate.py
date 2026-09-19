@@ -44,7 +44,7 @@ class DrawnRows:
 
 def draw_rows(y_pool: np.ndarray, theta: np.ndarray, rng: np.random.Generator,
               num_classes: int, grid=SIZE_GRID, n_min: int = N_MIN,
-              scale: int = BATCH_SCALE) -> DrawnRows:
+              scale: int = BATCH_SCALE, balanced: bool = False) -> DrawnRows:
     """Draw every batch of one pool and flatten them into rows (C4).
 
     Slots are ``0..m-1`` in draw order, which is uniformly random because the
@@ -55,7 +55,7 @@ def draw_rows(y_pool: np.ndarray, theta: np.ndarray, rng: np.random.Generator,
     check_grid(len(y_pool), grid)
     sampler = BatchSampler(y_pool, num_classes)
     batches = generate_batches(sampler, theta, rng, grid=grid, n_min=n_min,
-                               scale=scale)
+                               scale=scale, balanced=balanced)
 
     gen_batch = np.concatenate(
         [np.full(b.m, i, dtype=np.int64) for i, b in enumerate(batches)])

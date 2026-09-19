@@ -101,17 +101,29 @@ class BatchSampler:
 
 def generate_batches(sampler: BatchSampler, theta: np.ndarray,
                      rng: np.random.Generator, grid=SIZE_GRID,
-                     n_min: int = N_MIN, scale: int = BATCH_SCALE
-                     ) -> list[Batch]:
+                     n_min: int = N_MIN, scale: int = BATCH_SCALE,
+                     balanced: bool = False) -> list[Batch]:
     """Every batch of one usage, in grid order.
 
     ``theta_*`` is drawn uniformly over ``Theta`` -- the same ``p(theta)`` the
     model is given, so the setting is well-specified by construction.
+
+    ``balanced`` instead rounds ``N(m)`` up to a multiple of ``C`` and gives
+    every prior exactly ``N(m) / C`` batches of each size, in random order. Each
+    batch is still uniform over ``Theta`` on its own. The hard variant uses it
+    because it tells competitors that every location contributed the same
+    number of batches, which an i.i.d. draw would make only roughly true.
     """
     C = len(theta)
     out = []
     for m in grid:
-        for _ in range(n_batches(m, n_min, scale)):
-            c = int(rng.integers(C))
+        N = n_batches(m, n_min, scale)
+        if balanced:
+            N = -(-N // C) * C
+            which = rng.permutation(np.repeat(np.arange(C), N // C))
+        else:
+            which = None
+        for i in range(N):
+            c = int(which[i]) if balanced else int(rng.integers(C))
             out.append(sampler.sample(m, theta[c], c, rng))
     return out

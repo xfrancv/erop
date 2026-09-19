@@ -25,9 +25,20 @@ Outputs in ``out_dir``:
 ``report.txt``    splits, calibration numbers, per-class error
 ``learning_curves.png``
 
+**Hard variant** (``--hard-data``, ``tasks/hard_variant.md``). The model is
+the reference predictor's network. It is trained on the *released* training
+images of ``hard_make_data.py`` -- rotated and noised, with the location labels
+ignored -- split by class into a weight-fitting part and a validation part
+(``--cal-fraction`` of the training data) that selects the epoch and fits BCTS.
+Both parts have the pooled class frequency, so the calibrated posterior is the
+posterior under it. ``log_post.npz`` then holds the calibrated posterior of
+every released development and test *row*, since each row is its own
+transformed array; no ``images.npz`` is written.
+
 Run with::
 
     python train_base_model.py out/model
+    python train_base_model.py out/hard/model --hard-data out/hard/data
     python train_base_model.py out/model --epochs 30 --device cuda
     python train_base_model.py out/smoke --epochs 2 --max-fit 4000   # smoke only
 """
@@ -43,6 +54,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.model_selection import train_test_split
 
 from chal import data as chdata
 from chal.calibration import (
@@ -86,6 +98,18 @@ def collect_logits(model: nn.Module, X: torch.Tensor, device: torch.device,
     return torch.cat(out).numpy().astype(np.float64)
 
 
+def collect_logits_np(model: nn.Module, X: np.ndarray, mean: float, std: float,
+                      device: torch.device, chunk: int = 16384) -> np.ndarray:
+    """``collect_logits`` on uint8 images, normalised a chunk at a time.
+
+    The hard variant scores ~136 000 released rows; as one float32 tensor they
+    would take half a gigabyte for nothing.
+    """
+    return np.concatenate([
+        collect_logits(model, to_tensor(X[i:i + chunk], mean, std), device)
+        for i in range(0, len(X), chunk)])
+
+
 def per_class_error(y: np.ndarray, pred: np.ndarray, Y: int) -> np.ndarray:
     err = np.full(Y, np.nan)
     for c in range(Y):
@@ -127,9 +151,14 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("out_dir", type=Path, help="directory receiving all outputs")
     p.add_argument("--data-root", type=Path, default=chdata.DATA_ROOT)
+    p.add_argument("--hard-data", type=Path, default=None,
+                   help="output directory of hard_make_data.py: train the hard "
+                        "variant's reference network on its released training "
+                        "images and score its development and test rows")
     p.add_argument("--cal-fraction", type=float, default=0.10,
                    help="portion of development used for model selection and "
-                        "BCTS (default 0.10, C3.1)")
+                        "BCTS (default 0.10, C3.1); with --hard-data, the "
+                        "portion of the training data")
     p.add_argument("--dev-fraction", type=float, default=0.10,
                    help="portion of development released to students as "
                         "dev.csv (default 0.10, C3.1)")
@@ -173,12 +202,23 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --- data and splits (C3.1) -------------------------------------------
-    ds = chdata.load(args.data_root)
     Y = chdata.NUM_CLASSES
-    sp = make_splits(ds, cal_fraction=args.cal_fraction,
-                     dev_fraction=args.dev_fraction, seed=args.seed)
-
-    X_fit, y_fit = sp.X_fit, sp.y_fit
+    hard = None
+    if args.hard_data is not None:
+        hard = np.load(Path(args.hard_data) / "hard_data.npz")
+        X_fit, X_cal, y_fit, y_cal = train_test_split(
+            hard["train_images"], hard["train_label"],
+            test_size=args.cal_fraction, stratify=hard["train_label"],
+            random_state=args.seed)
+        # name -> (images, labels) of everything scored after training
+        targets = {"dev_rows": (hard["dev_images"], hard["dev_label"]),
+                   "test_rows": (hard["test_images"], hard["test_label"])}
+    else:
+        ds = chdata.load(args.data_root)
+        sp = make_splits(ds, cal_fraction=args.cal_fraction,
+                         dev_fraction=args.dev_fraction, seed=args.seed)
+        X_fit, y_fit, X_cal, y_cal = sp.X_fit, sp.y_fit, sp.X_cal, sp.y_cal
+        targets = {"dev": (sp.X_dev, sp.y_dev), "eval": (sp.X_eval, sp.y_eval)}
     capped = bool(args.max_fit and args.max_fit < len(y_fit))
     if capped:
         # Stratified cap, so theta_tr is unchanged by the subsampling.
@@ -195,11 +235,9 @@ def main() -> None:
     del xf
 
     Xt_fit = to_tensor(X_fit, norm_mean, norm_std)
-    Xt_cal = to_tensor(sp.X_cal, norm_mean, norm_std)
-    Xt_dev = to_tensor(sp.X_dev, norm_mean, norm_std)
-    Xt_eval = to_tensor(sp.X_eval, norm_mean, norm_std)
+    Xt_cal = to_tensor(X_cal, norm_mean, norm_std)
     yt_fit = torch.from_numpy(y_fit)
-    yt_cal = torch.from_numpy(sp.y_cal)
+    yt_cal = torch.from_numpy(y_cal)
 
     train_prior = np.bincount(y_fit, minlength=Y).astype(float)
     train_prior /= train_prior.sum()
@@ -285,36 +323,50 @@ def main() -> None:
     def calibrate(logits: np.ndarray) -> np.ndarray:
         return log_softmax_np(logits * scale + bias)
 
-    calib = calibration_summary(cal_logits, sp.y_cal, scale, bias)
+    calib = calibration_summary(cal_logits, y_cal, scale, bias)
 
     # --- calibrated posteriors for every split a later script needs --------
     lp_cal = calibrate(cal_logits)
-    lp_dev = calibrate(collect_logits(model, Xt_dev, device))
-    lp_eval = calibrate(collect_logits(model, Xt_eval, device))
-    for name, lp in (("cal", lp_cal), ("dev", lp_dev), ("eval", lp_eval)):
+    lps = {name: calibrate(collect_logits_np(model, X, norm_mean, norm_std,
+                                             device))
+           for name, (X, _y) in targets.items()}
+    for name, lp in (("cal", lp_cal), *lps.items()):
         assert np.all(np.isfinite(lp)), f"non-finite log-posterior on {name}"
 
-    np.savez_compressed(
-        out_dir / "log_post.npz",
-        log_post_cal=lp_cal.astype(np.float32), y_cal=sp.y_cal,
-        log_post_dev=lp_dev.astype(np.float32), y_dev=sp.y_dev,
-        log_post_eval=lp_eval.astype(np.float32), y_eval=sp.y_eval,
-        pool_of_eval=sp.pool_of_eval,
+    common = dict(
+        log_post_cal=lp_cal.astype(np.float32), y_cal=y_cal,
         train_prior=train_prior,
-        usages=np.array(USAGES, dtype=object),
         class_names=np.array(chdata.CLASS_NAMES, dtype=object),
         seed=args.seed, capped=capped,
     )
-    # The raw images too: prepare_kaggle_data.py needs the pixels, and reading
-    # them back from here keeps it from having to re-derive the splits.
-    np.savez_compressed(out_dir / "images.npz",
-                        X_dev=sp.X_dev, X_eval=sp.X_eval)
+    if hard is None:
+        np.savez_compressed(
+            out_dir / "log_post.npz", **common,
+            log_post_dev=lps["dev"].astype(np.float32), y_dev=sp.y_dev,
+            log_post_eval=lps["eval"].astype(np.float32), y_eval=sp.y_eval,
+            pool_of_eval=sp.pool_of_eval,
+            usages=np.array(USAGES, dtype=object),
+        )
+        # The raw images too: prepare_kaggle_data.py needs the pixels, and
+        # reading them back from here keeps it from having to re-derive the
+        # splits.
+        np.savez_compressed(out_dir / "images.npz",
+                            X_dev=sp.X_dev, X_eval=sp.X_eval)
+    else:
+        np.savez_compressed(
+            out_dir / "log_post.npz", **common,
+            **{f"log_post_{name}": lp.astype(np.float32)
+               for name, lp in lps.items()},
+            # hard_package.py refuses posteriors from a different dataset.
+            hard_data_id=str(hard["run_id"]),
+        )
 
     torch.save({
         "model_state": best_state, "num_classes": Y,
         "calibration": args.calibration, "temperature": temperature,
         "calib_scale": scale, "calib_bias": bias,
         "calibration_metrics": calib, "train_prior": train_prior,
+        "hard_data": str(args.hard_data) if hard is not None else None,
         "norm_mean": norm_mean, "norm_std": norm_std,
         "best_epoch": best_epoch, "seed": args.seed,
         "cal_fraction": args.cal_fraction, "dev_fraction": args.dev_fraction,
@@ -322,13 +374,34 @@ def main() -> None:
     }, out_dir / "model.pt")
 
     cal_pred = lp_cal.argmax(axis=1)
-    dev_pred = lp_dev.argmax(axis=1)
-    eval_pred = lp_eval.argmax(axis=1)
-    cls_err = per_class_error(sp.y_cal, cal_pred, Y)
-    pool_counts = np.bincount(sp.pool_of_eval, minlength=len(USAGES))
+    cls_err = per_class_error(y_cal, cal_pred, Y)
+    if hard is None:
+        pool_counts = np.bincount(sp.pool_of_eval, minlength=len(USAGES))
+        split_lines = [
+            f"  development -> calibration : {len(y_cal):,}",
+            f"  development -> student dev : {len(sp.y_dev):,}",
+            f"  evaluation                 : {len(sp.y_eval):,}  "
+            f"(official val + test)",
+        ] + [f"    pool {u:<8}           : {int(c):,}"
+             for u, c in zip(USAGES, pool_counts)]
+        err_names = {"dev": "student dev split", "eval": "evaluation split "}
+    else:
+        split_lines = [
+            f"  {'training -> validation':<26} : {len(y_cal):,}   (epoch "
+            f"selection and BCTS)",
+            f"  {'scored: development rows':<26} : "
+            f"{len(targets['dev_rows'][1]):,}",
+            f"  {'scored: test rows':<26} : {len(targets['test_rows'][1]):,}",
+            f"  (hard variant, data run {hard['run_id']}; images rotated and "
+            f"noised as released)",
+        ]
+        err_names = {"dev_rows": "development rows ",
+                     "test_rows": "test rows        "}
 
     lines = [
-        "Base predictor: training and calibration (challenge_polish.md C3.1)",
+        "Base predictor: training and calibration (challenge_polish.md C3.1)"
+        + ("\nHARD VARIANT: the reference predictor's network "
+           "(tasks/hard_variant.md)" if hard is not None else ""),
         "=" * 78,
         f"timestamp   : {datetime.now().isoformat(timespec='seconds')}",
         f"command     : {' '.join(sys.argv)}",
@@ -337,15 +410,10 @@ def main() -> None:
         f"curve sample: {curve_n:,} fit examples scored per epoch (diagnostic)",
         "-" * 78,
         "splits (C3.1)",
-        f"  development -> fit         : {len(y_fit):,}"
+        f"  {'training -> fit' if hard is not None else 'development -> fit':<26}"
+        f" : {len(y_fit):,}"
         + ("   (CAPPED by --max-fit; NOT for the competition)" if capped else ""),
-        f"  development -> calibration : {len(sp.y_cal):,}",
-        f"  development -> student dev : {len(sp.y_dev):,}",
-        f"  evaluation                 : {len(sp.y_eval):,}  (official val + test)",
-    ] + [
-        f"    pool {u:<8}           : {int(c):,}"
-        for u, c in zip(USAGES, pool_counts)
-    ] + [
+    ] + split_lines + [
         f"best epoch  : {best_epoch}  (calibration-split error {best_err:.4f})",
         "-" * 78,
         f"calibration : {args.calibration}"
@@ -362,11 +430,12 @@ def main() -> None:
         "  " + "  ".join(f"{v:.4f}" for v in train_prior),
         "",
         f"classification error, calibration split : "
-        f"{float((cal_pred != sp.y_cal).mean()):.4f}",
-        f"classification error, student dev split : "
-        f"{float((dev_pred != sp.y_dev).mean()):.4f}",
-        f"classification error, evaluation split  : "
-        f"{float((eval_pred != sp.y_eval).mean()):.4f}",
+        f"{float((cal_pred != y_cal).mean()):.4f}",
+    ] + [
+        f"classification error, {err_names[name]} : "
+        f"{float((lps[name].argmax(axis=1) != y).mean()):.4f}"
+        for name, (_X, y) in targets.items()
+    ] + [
         "",
         "per-class error, calibration split:",
     ] + [
@@ -378,8 +447,9 @@ def main() -> None:
     (out_dir / "report.txt").write_text(report)
     print(report)
     make_curves_figure(history, best_epoch, out_dir)
-    print(f"outputs in {out_dir}/: model.pt, log_post.npz, images.npz, "
-          f"report.txt, learning_curves.png")
+    print(f"outputs in {out_dir}/: model.pt, log_post.npz, "
+          + ("images.npz, " if hard is None else "")
+          + "report.txt, learning_curves.png")
 
 
 if __name__ == "__main__":

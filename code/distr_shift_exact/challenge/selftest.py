@@ -11,6 +11,10 @@ Three things are worth brute-forcing rather than trusting:
    guarantee that slots run ``0..m-1``.
 3. **The metric.** ``score()`` against a direct implementation, including the
    tie-break, the coverage rounding, and the sign of the ranking.
+4. **The hard variant.** The location linear program, the image
+   transformation, the balanced batch dealing, and that ``chal/metric_hard.py``
+   is still exactly what ``make_metric_notebook.py`` generates from
+   ``chal/metric.py``.
 
     python selftest.py
 """
@@ -246,11 +250,97 @@ def test_metric() -> None:
           np.array_equal(np.argsort(-conf, kind="stable"), want_order))
 
 
+# --- 4. the hard variant ----------------------------------------------------
+
+def test_hard() -> None:
+    print("\nhard variant (tasks/hard_variant.md)")
+    from pathlib import Path
+
+    from chal.generate import draw_rows
+    from chal.locations import assign_locations, plan_locations
+    from chal.transform import transform
+    from make_metric_notebook import hard_source
+
+    # The location LP, on class counts shaped like TissueMNIST's but smaller.
+    D = np.array([4800, 700, 530, 1390, 1060, 690, 3530, 2210])
+    ps = pair_prior_set(np.full(8, 1 / 8), 0.35)
+    plan = plan_locations(D, ps.theta, eps=0.01, n_min=500)
+    check("every training image lands in exactly one location",
+          np.array_equal(plan.counts.sum(axis=0), D))
+    check("locations 0..7 honour n_min", plan.sizes[:-1].min() >= 500,
+          f"sizes {plan.sizes.tolist()}")
+    check("every prior clears the floor (up to rounding)",
+          plan.priors.min() >= 0.01 - 2.0 / plan.sizes.min(),
+          f"min entry {plan.priors.min():.4f}")
+    check("the priors moved by at most delta (up to rounding)",
+          plan.tv_change.max() <= plan.delta + 8.0 / plan.sizes[:-1].min(),
+          f"max TV moved {plan.tv_change.max():.4f}, delta {plan.delta:.4f}")
+    tighter = plan_locations(D, ps.theta, eps=0.01, n_min=300)
+    check("a smaller n_min needs no larger a change",
+          tighter.delta <= plan.delta + 1e-3,
+          f"{tighter.delta:.4f} <= {plan.delta:.4f}")
+    y = np.repeat(np.arange(8), D)
+    loc = assign_locations(y, plan, np.random.default_rng(0))
+    freq = np.stack([np.bincount(y[loc == l], minlength=8)
+                     for l in range(plan.L)])
+    check("class frequency per location is exactly the location's prior",
+          np.allclose(freq / freq.sum(1, keepdims=True), plan.priors))
+
+    # The transformation.
+    rng = np.random.default_rng(1)
+    X = rng.integers(0, 256, size=(300, 28, 28), dtype=np.uint8)
+    Xt, k = transform(X, np.random.default_rng(2), noise_std=0.0)
+    check("rotations are 90, 180 or 270 degrees, never 0",
+          set(np.unique(k).tolist()) <= {1, 2, 3} and len(np.unique(k)) == 3)
+    check("without noise, undoing the rotation restores the image",
+          all(np.array_equal(np.rot90(Xt[i], -k[i]), X[i]) for i in range(300)))
+    Xn, kn = transform(X, np.random.default_rng(2), noise_std=2.0)
+    diff = np.stack([np.rot90(Xn[i], -kn[i]) for i in range(300)]).astype(int) - X
+    check("noise is small, zero-mean and uint8",
+          Xn.dtype == np.uint8 and abs(diff.mean()) < 0.05
+          and 1.5 < diff.std() < 2.5,
+          f"mean {diff.mean():+.3f}, std {diff.std():.3f}")
+    Xa, _ = transform(X, np.random.default_rng(5), 2.0)
+    Xb, _ = transform(X, np.random.default_rng(5), 2.0)
+    check("the transformation is reproducible from its seed",
+          np.array_equal(Xa, Xb))
+
+    # Balanced dealing: every prior the same number of batches at every size.
+    y_pool = np.repeat(np.arange(8), 200)
+    drawn = draw_rows(y_pool, plan.priors, np.random.default_rng(3), 8,
+                      grid=(1, 5, 10), n_min=20, scale=40, balanced=True)
+    ok = all(len(set(np.bincount(drawn.batch_theta[drawn.batch_m == m],
+                                 minlength=plan.L).tolist())) == 1
+             for m in (1, 5, 10))
+    check("balanced: each location the same number of batches per size", ok,
+          f"{np.bincount(drawn.batch_theta, minlength=plan.L).tolist()}")
+
+    # The hard metric is generated, never edited.
+    here = Path(__file__).resolve().parent
+    check("chal/metric_hard.py is exactly generated from chal/metric.py",
+          (here / "chal" / "metric_hard.py").read_text()
+          == hard_source((here / "chal" / "metric.py").read_text()),
+          "regenerate: python make_metric_notebook.py --hard-module "
+          "chal/metric_hard.py")
+    from chal.metric_hard import score as score_hard
+    rng = np.random.default_rng(4)
+    sol = pd.DataFrame({"row_id": np.arange(90), "id_test": np.arange(90) // 3,
+                        "m": np.repeat([1, 2, 5], 30),
+                        "label": rng.integers(0, 8, 90),
+                        "pred_ref": rng.integers(0, 8, 90)})
+    sub = pd.DataFrame({"row_id": np.arange(90), "pred": rng.integers(0, 8, 90),
+                        "confidence": rng.random(90)})
+    check("the hard metric scores exactly as the easy one",
+          score_hard(sol.copy(), sub.copy(), "row_id", expected_sizes=(1, 2, 5))
+          == score(sol.copy(), sub.copy(), "row_id", expected_sizes=(1, 2, 5)))
+
+
 def main() -> None:
     print("challenge self-test -- no data, no network\n")
     test_inference()
     test_protocol()
     test_metric()
+    test_hard()
     print()
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

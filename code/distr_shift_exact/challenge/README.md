@@ -227,3 +227,81 @@ their ranking, so most of their variance is common and cancels in the
 difference. Use `compare_baselines.py`, which bootstraps them on the same
 resampled batches and reports the paired difference; `evaluate.py`'s per-method
 bands are marginal and will overlap even when one method wins every replicate.
+
+## The hard variant
+
+`tasks/hard_variant.md` specifies a second competition on the same data in
+which competitors must discover most of the steps themselves. They get
+**images**, not posteriors, and no network; the shift is described only as
+"9 locations with different class frequencies"; the reference predictor is
+described in words; and the uniform choice of location is stated only as "every
+location contributed the same number of test batches". Everything organiser-side
+is shared with the easy variant — the sampler, the metric, the inference, the
+baselines — so the two cannot drift apart.
+
+```bash
+python hard_make_data.py out/hard/data --priors-out priors_tissuemnist_hard.txt
+python train_base_model.py out/hard/model --hard-data out/hard/data --device cuda
+python hard_package.py out/hard/data out/hard/model out/hard/kaggle
+python make_metric_notebook.py metric-template-hard.ipynb --source chal/metric_hard.py
+python make_student_bundle.py out/hard/kaggle_code --variant hard --zip
+
+./run_baselines.sh out/hard/kaggle/organiser/test out/hard/submissions
+python hard_audit_matching.py out/hard/data --sweep 0 2 8 32
+```
+
+**Locations.** The easy variant's 8 priors cannot be used as they are: each
+class has total probability 1.0 across them, so every location would be capped
+at the size of the rarest class. `chal/locations.py` solves the linear program
+of the task — the smallest TV move of the 8 priors that places every training
+image, with a floor `eps` on every prior and at least `n_min` images per
+location — and location 8 takes the remainder. With the defaults
+(`eps = 0.01`, `n_min = 5000`) the priors move by at most 0.021 in TV, locations
+0–7 hold 5,006 images each and location 8 holds 73 % of the training data; the
+closest two locations are 0.30 apart. The result is committed as
+`priors_tissuemnist_hard.txt`. A location's class frequency in `train.csv` *is*
+its prior, exactly — `hard_package.py` asserts it.
+
+**Batches.** Same sampler and grid as the easy variant, under the 9 location
+priors, but `balanced=True`: `N(m)` is rounded up to a multiple of 9 and every
+location gets exactly `N(m)/9` batches of every size in every usage, which is
+what the description promises. That makes 12,744 test batches (129,924 rows)
+and 1,080 development batches.
+
+**Images.** Every released image is rotated by 90/180/270° and given Gaussian
+noise of std 2 grey levels (`chal/transform.py`), **per row**: an image drawn
+into two batches is released as two different arrays, so identical pixels
+cannot link rows. This defeats hashing only. `hard_audit_matching.py` recovers
+the label of 100 % of sampled test rows by nearest-neighbour search against the
+public TissueMNIST in about 30 s, and still 84 % at noise std 32. The rules (no
+label recovery, code re-run on a differently drawn test set) are what protect
+the labels.
+
+**Reference predictor.** One ResNet-18, trained by `train_base_model.py
+--hard-data` on the released training images with locations ignored, BCTS on a
+stratified validation part, then the plug-in rule under the location's prior.
+Since every released row is its own array, the network scores all ~141 000
+development and test rows; the packaging is torch-free.
+
+| Uploaded to Kaggle | Given to Kaggle, hidden from students | Never uploaded |
+| :-- | :-- | :-- |
+| `train.csv`, `train_images.npy`, `test.csv`, `test_batches.csv`, `test_images.npy`, `sample_submission.csv`, `dev_test.csv`, `dev_test_batches.csv`, `dev_images.npy`, `dev_solution.csv`, `dev_sample_submission.csv` | `solution.csv` | `organiser/`, `manifest.json`, `out/hard/data/`, `out/hard/model/` |
+
+`organiser/test/` and `organiser/dev/` are laid out like an easy-variant upload
+(`predictions.csv` from the reference network, `test_priors.csv` with the 9
+location priors, `batch_meta.csv` with the location per batch), which is what
+lets `baseline_solutions.py`, `evaluate.py`, `compare_baselines.py` and
+`run_baselines.sh` run on the hard variant unchanged. `true_plugin` must again
+score exactly 0.000000. The sample submission predicts the majority class with a
+constant confidence: a baseline built on the organisers' network would hand
+competitors its output on every test image.
+
+| Script / module | Does |
+| :-- | :-- |
+| `hard_make_data.py` | split, locations, priors file, batches, transformed images |
+| `hard_package.py` | the reference predictor; the upload, `solution.csv` and `organiser/` |
+| `hard_audit_matching.py` | how well released images match back to TissueMNIST |
+| `chal/locations.py` | the location linear program and the assignment |
+| `chal/transform.py` | rotation and noise |
+| `chal/metric_hard.py` | **generated** by `make_metric_notebook.py --hard-module`: the metric with neutral docstrings |
+| `student_hard/`, `description_hard/` | the starter kit and the Kaggle pages |
