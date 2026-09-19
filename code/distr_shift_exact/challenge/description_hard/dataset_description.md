@@ -2,25 +2,89 @@ The images are 28×28 greyscale pictures of human kidney cortex cells in 8
 tissue classes, derived from TissueMNIST (MedMNIST v2). They were collected at
 9 locations; see **Description**.
 
-Every image file is a NumPy array `(n, 28, 28)` of `uint8`, and **row *k* of the
-matching CSV describes image *k***. For every row of `test_batches.csv` you
-predict a class `0`–`7` and a confidence; see **Evaluation** for the submission
-format.
+For every row of `test_batches.csv` you predict a class `0`–`7` and a
+confidence; see **Evaluation** for the submission format.
+
+## How the images and the CSV files fit together
+
+The images are stored in three NumPy files. Each is an array of shape
+`(n, 28, 28)` and dtype `uint8`, and each has exactly one CSV file that
+describes it, with exactly `n` data rows:
+
+| Images | Described by | Rows |
+| :-- | :-- | --: |
+| `train_images.npy` | `train.csv` | 148,919 |
+| `dev_images.npy` | `dev_test_batches.csv` | 11,268 |
+| `test_images.npy` | `test_batches.csv` | 129,924 |
+
+**The link is the position.** The *k*-th data row of the CSV (counting from 0,
+not counting the header line) describes image `images[k]` of its `.npy` file.
+For example, the first data row of `test_batches.csv` describes
+`test_images[0]`, and the last one describes `test_images[129923]`. Do not
+re-sort a CSV before pairing it with its images, or the pairing is lost.
+
+**`row_id` is not an image index.** It is an arbitrary identifier, for example
+`1000769`, and does not say where the image is stored. Use it only to join
+the per-image tables with each other: your submission, `dev_solution.csv` and
+the batch listings are all keyed by `row_id`.
+
+```python
+import numpy as np
+import pandas as pd
+
+train = pd.read_csv("train.csv")               # row k: label, location
+X_train = np.load("train_images.npy")          # X_train[k]: that row's image
+
+test = pd.read_csv("test_batches.csv")         # row k: row_id, id_test, slot, m
+X_test = np.load("test_images.npy")            # X_test[k]: that row's image
+test["image_index"] = np.arange(len(test))     # keep the position before any
+                                               # sorting or merging
+
+dev = pd.read_csv("dev_test_batches.csv")
+X_dev = np.load("dev_images.npy")
+dev["image_index"] = np.arange(len(dev))
+# labels and reference predictions: join on row_id, never by position
+dev = dev.merge(pd.read_csv("dev_solution.csv")[["row_id", "label", "pred_ref"]],
+                on="row_id")
+
+# all images of one test batch
+rows = test[test["id_test"] == test["id_test"].iloc[0]]
+batch_images = X_test[rows["image_index"].to_numpy()]
+```
+
+The same chain, written out:
+
+*   a **training image** `X_train[k]` has the class `train.csv` row *k*
+    `label` and the location `train.csv` row *k* `location`;
+*   a **test image** `X_test[k]` has the identifier `row_id`, belongs to the
+    batch `id_test`, and that batch has `m` images — all three given in row
+    *k* of `test_batches.csv`;
+*   a **development image** `X_dev[k]` is described the same way by row *k* of
+    `dev_test_batches.csv`; its true class and the reference prediction are in
+    `dev_solution.csv`, joined on `row_id`;
+*   a **submission** has one row per `row_id` of `test_batches.csv`, in any
+    order.
+
+`competition_data.py` in the starter kit does all of this for you:
+`load_training()` returns the training images with their labels and locations,
+and `load_batches()` returns the images of `"dev"` or `"test"` with a table
+aligned to them row for row, sorted by batch.
 
 ## Files
 
 ### Training data
 
-*   **`train_images.npy`** — 148,919 labeled images.
+*   **`train_images.npy`** — 148,919 images, array `(148919, 28, 28)`.
 *   **`train.csv`** — one row per training image: its `label` and `location`.
+    Row *k* belongs to `train_images[k]`.
 
 ### Test set
 
-*   **`test.csv`** — one row per test batch; 12,744 batches.
-*   **`test_batches.csv`** — one row per test image; 129,924 rows. Says which
-    batch each image belongs to.
-*   **`test_images.npy`** — the test images, in the row order of
-    `test_batches.csv`.
+*   **`test_batches.csv`** — one row per test image; 129,924 rows in 12,744
+    batches. Says which batch each image belongs to and how large that batch
+    is. Row *k* belongs to `test_images[k]`.
+*   **`test_images.npy`** — the test images, array `(129924, 28, 28)`, in the
+    row order of `test_batches.csv`.
 *   **`sample_submission.csv`** — a valid submission that predicts the most
     frequent class for everything. It shows the format; it is not a serious
     baseline.
@@ -35,13 +99,14 @@ format.
 Built by the identical procedure, from images that appear neither in the
 training data nor in any test batch.
 
-*   **`dev_test.csv`** — one row per development batch; 1,080 batches, same
-    size grid as the test set.
-*   **`dev_test_batches.csv`** — one row per development image; 11,268 rows.
-*   **`dev_images.npy`** — the development images, in the row order of
-    `dev_test_batches.csv`.
+*   **`dev_test_batches.csv`** — one row per development image; 11,268 rows in
+    1,080 batches, with the same batch sizes as the test set. Row *k* belongs
+    to `dev_images[k]`.
+*   **`dev_images.npy`** — the development images, array `(11268, 28, 28)`, in
+    the row order of `dev_test_batches.csv`.
 *   **`dev_solution.csv`** — the answers for those rows: the true class and the
-    reference predictor's prediction.
+    reference predictor's prediction. Join it to `dev_test_batches.csv` on
+    `row_id`.
 *   **`dev_sample_submission.csv`** — the sample submission, on the development
     batches.
 
@@ -55,16 +120,15 @@ training data nor in any test batch.
 ### `test_batches.csv`, `dev_test_batches.csv`
 
 *   `row_id` — identifies one image; globally unique. **This is the key your
-    submission must use.**
+    submission must use.** It is not a position in the `.npy` file: the image
+    of a row is found by the row's position, as described above.
 *   `id_test` — which batch the image belongs to. All images sharing an
     `id_test` come from the same location.
 *   `slot` — position within the batch, `0` to `m-1`. The order is arbitrary and
     carries no information.
-
-### `test.csv`, `dev_test.csv`
-
-*   `id_test` — the batch.
-*   `m` — how many images it contains.
+*   `m` — how many images the batch contains, repeated on every row of the
+    batch. A batch's rows are the rows sharing its `id_test`; there are
+    exactly `m` of them.
 
 ### `sample_submission.csv`, `dev_sample_submission.csv`
 
@@ -74,8 +138,7 @@ training data nor in any test batch.
 
 ### `dev_solution.csv`
 
-*   `row_id`, `id_test`, `slot` — as in `dev_test_batches.csv`.
-*   `m` — the batch size, repeated on every row for convenience.
+*   `row_id`, `id_test`, `slot`, `m` — as in `dev_test_batches.csv`.
 *   `label` — the true class.
 *   `pred_ref` — the class predicted by the **reference predictor** for the
     batch's location. The metric measures how much more often your `pred` is

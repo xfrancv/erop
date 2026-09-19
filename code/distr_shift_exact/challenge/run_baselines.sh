@@ -18,12 +18,21 @@ PY=${PYTHON:-python}
 
 $PY baseline_solutions.py "$KAGGLE" "$SUBS"
 
+# The submissions are the .csv files in $SUBS, minus the per-size tables that
+# evaluate.py writes next to a submission when run without --out-dir: those
+# have no row_id column, and passing one on makes compare_baselines.py fail.
+shopt -s nullglob
+SUBMISSIONS=()
+for f in "$SUBS"/*.csv; do
+  [[ $f == *_per_size.csv ]] || SUBMISSIONS+=("$f")
+done
+
 for usage in Public Private; do
   echo
   echo "################################################################"
   echo "# $usage -- paired comparison (this is the C8 criterion)"
   echo "################################################################"
-  $PY compare_baselines.py "$KAGGLE/solution.csv" "$SUBS"/*.csv \
+  $PY compare_baselines.py "$KAGGLE/solution.csv" "${SUBMISSIONS[@]}" \
       --usage "$usage" --vs bayes_total
 done
 
@@ -31,7 +40,7 @@ echo
 echo "################################################################"
 echo "# per-submission detail and figures (Private)"
 echo "################################################################"
-for f in "$SUBS"/*.csv; do
+for f in "${SUBMISSIONS[@]}"; do
   $PY evaluate.py "$f" "$KAGGLE/solution.csv" --usage Private \
       --out-dir "$SUBS/Private"
 done

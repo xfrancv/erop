@@ -46,8 +46,6 @@ def load_batches(data_dir: Path, split: str) -> tuple[np.ndarray, pd.DataFrame]:
     X = np.load(data_dir / f"{split}_images.npy")
     rows = pd.read_csv(data_dir / f"{prefix}test_batches.csv")
     assert len(X) == len(rows), f"{prefix}test_batches.csv and its images disagree"
-    sizes = pd.read_csv(data_dir / f"{prefix}test.csv")
-    rows = rows.merge(sizes, on="id_test", how="left", validate="many_to_one")
     if split == "dev":
         sol = pd.read_csv(data_dir / "dev_solution.csv")[
             ["row_id", "label", "pred_ref"]]

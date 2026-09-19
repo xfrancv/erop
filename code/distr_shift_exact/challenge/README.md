@@ -285,7 +285,11 @@ development and test rows; the packaging is torch-free.
 
 | Uploaded to Kaggle | Given to Kaggle, hidden from students | Never uploaded |
 | :-- | :-- | :-- |
-| `train.csv`, `train_images.npy`, `test.csv`, `test_batches.csv`, `test_images.npy`, `sample_submission.csv`, `dev_test.csv`, `dev_test_batches.csv`, `dev_images.npy`, `dev_solution.csv`, `dev_sample_submission.csv` | `solution.csv` | `organiser/`, `manifest.json`, `out/hard/data/`, `out/hard/model/` |
+| `train.csv`, `train_images.npy`, `test_batches.csv`, `test_images.npy`, `sample_submission.csv`, `dev_test_batches.csv`, `dev_images.npy`, `dev_solution.csv`, `dev_sample_submission.csv` | `solution.csv` | `organiser/`, `manifest.json`, `out/hard/data/`, `out/hard/model/` |
+
+There is no `test.csv` / `dev_test.csv`: the batch size `m` is a column of
+`test_batches.csv` and `dev_test_batches.csv`, repeated on every row, so
+competitors need no join to learn a row's batch size.
 
 `organiser/test/` and `organiser/dev/` are laid out like an easy-variant upload
 (`predictions.csv` from the reference network, `test_priors.csv` with the 9

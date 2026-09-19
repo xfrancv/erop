@@ -10,13 +10,16 @@ predictor, and writes three groups of files.
 
 ``train.csv``, ``train_images.npy``          labeled training images and their
                                              location
-``dev_test.csv``                             one row per development batch
-``dev_test_batches.csv``, ``dev_images.npy`` one row per development image
+``dev_test_batches.csv``, ``dev_images.npy`` one row per development image:
+                                             its batch and the batch size
 ``dev_solution.csv``                         labels and the reference predictor
 ``dev_sample_submission.csv``
-``test.csv``                                 one row per test batch
-``test_batches.csv``, ``test_images.npy``    one row per test image
+``test_batches.csv``, ``test_images.npy``    one row per test image: its batch
+                                             and the batch size
 ``sample_submission.csv``
+
+There is no per-batch table: the batch size ``m`` is a column of the batch
+listings, repeated on every row of a batch, so no join is needed.
 
 The sample submissions predict the most frequent training class with a
 constant confidence. They show the format and nothing else: a baseline built
@@ -132,6 +135,13 @@ def main() -> None:
     # --- published ------------------------------------------------------------
     pub = out_dir
     pub.mkdir(parents=True, exist_ok=True)
+    # Earlier versions wrote a per-batch table; left in place, it would be
+    # uploaded along with the rest.
+    for name in ("test.csv", "dev_test.csv"):
+        if (pub / name).exists():
+            (pub / name).unlink()
+            print(f"removed obsolete {pub / name} (m is now a column of the "
+                  f"batch listings)")
     np.save(pub / "train_images.npy", hd["train_images"][perm])
     pd.DataFrame({"label": train_label, "location": train_location}).to_csv(
         pub / "train.csv", index=False)
@@ -141,12 +151,10 @@ def main() -> None:
     def batch_files(prefix: str, split: str):
         rows = pd.DataFrame({"row_id": hd[f"{split}_row_id"],
                              "id_test": hd[f"{split}_id_test"],
-                             "slot": hd[f"{split}_slot"]})
-        batches = pd.DataFrame({"id_test": hd[f"{split}_batch_id"],
-                                "m": hd[f"{split}_batch_m"]})
+                             "slot": hd[f"{split}_slot"],
+                             "m": hd[f"{split}_m"]})
         sample = pd.DataFrame({"row_id": rows["row_id"],
                                "pred": majority, "confidence": 0.0})
-        batches.to_csv(pub / f"{prefix}test.csv", index=False)
         rows.to_csv(pub / f"{prefix}test_batches.csv", index=False)
         np.save(pub / f"{split}_images.npy", hd[f"{split}_images"])
         sample.sort_values("row_id").to_csv(
@@ -156,13 +164,12 @@ def main() -> None:
     dev_rows = batch_files("dev_", "dev")
     test_rows = batch_files("", "test")
 
-    dev_solution = dev_rows.assign(m=hd["dev_m"], label=hd["dev_label"],
-                                   pred_ref=dev_ref)
+    dev_solution = dev_rows.assign(label=hd["dev_label"], pred_ref=dev_ref)
     dev_solution.to_csv(pub / "dev_solution.csv", index=False)
 
     # --- hidden: Kaggle's solution file --------------------------------------
-    solution = test_rows.assign(m=hd["test_m"], label=hd["test_label"],
-                                pred_ref=test_ref, Usage=test_usage)
+    solution = test_rows.assign(label=hd["test_label"], pred_ref=test_ref,
+                                Usage=test_usage)
     solution.to_csv(pub / "solution.csv", index=False)
 
     # --- organiser only -------------------------------------------------------
@@ -241,11 +248,10 @@ def main() -> None:
     print(f"non-adapted network accuracy     : dev "
           f"{manifest['non_adapted_accuracy']['dev']:.4f}   test "
           f"{manifest['non_adapted_accuracy']['test']:.4f}")
-    print("\nupload to Kaggle : train.csv train_images.npy test.csv "
-          "test_batches.csv test_images.npy\n                   "
-          "sample_submission.csv dev_test.csv dev_test_batches.csv "
-          "dev_images.npy\n                   dev_solution.csv "
-          "dev_sample_submission.csv")
+    print("\nupload to Kaggle : train.csv train_images.npy test_batches.csv "
+          "test_images.npy\n                   sample_submission.csv "
+          "dev_test_batches.csv dev_images.npy\n                   "
+          "dev_solution.csv dev_sample_submission.csv")
     print("give Kaggle only : solution.csv")
     print("keep local       : organiser/ manifest.json")
     print(f"\nbaselines        : python baseline_solutions.py {org}/test "
