@@ -107,31 +107,45 @@ constraints, and `torch.cuda.is_available()` checks only the first:
 | Turing – Hopper (7.5 – 9.0) | `cu130`, `cu128` or `cu126` | ≥ 13.0, 12.8, 12.6 |
 | Volta, V100 (7.0) | `cu126` (dropped from `cu128`+) | ≥ 12.6 |
 
+Pick the index from **both** columns: the row of your GPU, and among its
+indexes one whose CUDA does not exceed the driver's. Copying the `cu130`
+command blindly fails on the older machines: a V100 node with driver CUDA 12.9
+(e.g. `n26`) gets *"driver too old"* from `cu130` and no `sm_70` kernels from
+`cu128`; only `cu126` works there.
+
+| Machine | GPU | driver CUDA | `CU=` |
+| :-- | :-- | :-- | :-- |
+| `gauss` | RTX PRO 4000 Blackwell (12.0) | 13.2 | `cu130` |
+| `n26` (cluster) | Tesla V100-SXM2 (7.0) | 12.9 | `cu126` |
+
 The plain PyPI torch wheel is the newest CUDA build and works only when the
 driver is new enough, so always install torch **first**, from an explicit index
 with `--index-url` (not `--extra-index-url`, which lets pip pick the PyPI wheel
 anyway), and only then the rest: `requirements.txt` is then satisfied by the
 torch already installed and leaves it alone. See
-<https://pytorch.org/get-started/locally/> for the current indexes. On `gauss`
-(RTX PRO 4000 Blackwell, driver CUDA 13.2):
+<https://pytorch.org/get-started/locally/> for the current indexes.
 
 ```bash
+nvidia-smi --query-gpu=name,compute_cap --format=csv   # the GPU row of the table
+nvidia-smi | grep "CUDA Version"                        # the driver limit
+CU=cu126                                                # from the table above
 python3 -m venv .venv && source .venv/bin/activate
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+pip install torch torchvision --index-url https://download.pytorch.org/whl/$CU
 pip install -r requirements.txt
-python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_arch_list())"
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_arch_list())"
 python -c "import torch; c = torch.nn.Conv2d(3, 8, 3).cuda(); print(c(torch.randn(2, 3, 28, 28, device='cuda')).shape)"
 python selftest.py                    # 15 s, needs no data; catches a broken install
 ```
 
-The second line must list the GPU's `sm_XY` (compute capability X.Y), and the
-convolution must print `torch.Size([2, 8, 26, 26])`. If either fails, replace
-the wheel with one from the right index; pip will not do it by itself, since
-the installed version already satisfies the requirement:
+The first check must print `True` and list the GPU's `sm_XY` (compute
+capability X.Y); the convolution must print `torch.Size([2, 8, 26, 26])`. On
+`n26` the first line reads `2.14.0+cu126 12.6 True [..., 'sm_70', ...]`. If
+either fails, replace the wheel with one from the right index; pip will not do
+it by itself, since the installed version already satisfies the requirement:
 
 ```bash
 pip uninstall -y torch torchvision
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+pip install torch torchvision --index-url https://download.pytorch.org/whl/$CU
 ```
 
 **3. Fetch the data, split and train** (125 MB from Zenodo, so no need to copy
