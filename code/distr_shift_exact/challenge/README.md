@@ -118,12 +118,19 @@ tar --exclude=out --exclude=__pycache__ -czf challenge.tgz challenge/
 scp challenge.tgz gpubox:~/           # or git push / rsync
 ```
 
-**2. Install with a CUDA wheel** matching the driver — check
-<https://pytorch.org/get-started/locally/> for the current index URL:
+**2. Install with a CUDA wheel** matching the driver. `nvidia-smi` prints the
+highest CUDA version the driver supports; the wheel's CUDA must not exceed it.
+The plain PyPI torch wheel is built for the newest CUDA (13.x at the time of
+writing), so a driver ≤ 12.9 fails with *"The NVIDIA driver on your system is
+too old"*. Install torch **first** from a matching index with `--index-url` (not
+`--extra-index-url`, which lets pip pick the PyPI wheel anyway), then the rest.
+`cu126` works with any driver ≥ 12.6 and still supports Volta (V100); see
+<https://pytorch.org/get-started/locally/> for the current indexes:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu124
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+pip install -r requirements.txt
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 python selftest.py                    # 10 s, needs no data; catches a broken install
 ```
