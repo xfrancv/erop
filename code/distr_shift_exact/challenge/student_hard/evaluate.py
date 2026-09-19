@@ -12,8 +12,9 @@ the leaderboard, for the same rows.
     python evaluate.py dev_sample_submission.csv ../competition-data/dev_solution.csv
     python evaluate.py my_submission.csv ../competition-data/dev_solution.csv --plot
 
-**Lower is better**, and **negative is possible**: the reference predictor is
-not perfect either, so beating it on the kept rows is allowed.
+**Lower is better.** The reference predictor makes the best possible prediction
+knowing each batch's location, so the expected score is never below zero; a
+slightly negative number is chance, not a win.
 
 You can only score yourself on the *development* batches
 (``dev_test_batches.csv`` / ``dev_solution.csv``), because those use images
@@ -85,7 +86,7 @@ def main() -> None:
           f"context only;\nthe score uses only the most confident "
           f"{args.coverage:.0%} of each batch size.")
     if total > 0:
-        print("A positive score means the reference predictor -- fine-tuned for "
+        print("A positive score means the reference predictor -- which knows "
               "each batch's\nlocation -- beat you on the rows you were most "
               "confident about.")
 

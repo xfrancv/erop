@@ -1,11 +1,17 @@
-"""The reject-option predictors of S3, built from the released files.
+"""The reject-option predictors of S3, built from an organiser directory.
 
-Everything here works from what a competitor actually has --
-``predictions.csv``, ``test_batches.csv``, ``test_priors.csv``,
-``train_prior.csv`` -- so running a predictor is also an end-to-end check that
-the released files are sufficient to solve the task. The one exception is
-``true_plugin``, which needs ``theta_*`` and reads the local-only
-``batch_meta.csv``; it is the metric's own reference, not a competitor.
+``hard_package.py`` writes ``organiser/test/`` and ``organiser/dev/``:
+``predictions.csv`` (the TRUE label model, one row per batch row),
+``test_batches.csv``, ``test_priors.csv`` (the 9 location priors, exactly what
+a competitor reads off ``train.csv``) and ``train_prior.csv`` (the base prior
+the posterior is under). The predictors here are therefore what a competitor
+with a perfect model of ``q(y | x)`` would achieve. ``true_plugin`` needs the
+location of every batch and reads ``batch_meta.csv``; it is the metric's own
+reference, not a competitor.
+
+**The location prior** ``p(theta)`` is uniform unless the caller passes one: the
+secret ``w`` (``location_prior.csv``), or an estimate of it, such as the EM
+estimate of ``estimate_location_prior.py``.
 
 A reject-option predictor is a pair (base predictor, uncertainty score). The
 submission format carries a **confidence**, so every score ``u`` is emitted as
@@ -62,7 +68,8 @@ class Problem:
     """The released files, loaded and arranged for inference."""
 
     def __init__(self, kaggle_dir: Path, batches_file: str = "test_batches.csv",
-                 predictions_file: str | None = None):
+                 predictions_file: str | None = None,
+                 location_prior: np.ndarray | None = None):
         kaggle_dir = Path(kaggle_dir)
         self.dir = kaggle_dir
         batches = pd.read_csv(kaggle_dir / batches_file)
@@ -106,8 +113,13 @@ class Problem:
         self.log_train_prior = np.log(self.train_prior)
         self.theta = priors[[f"p{y}" for y in range(Y)]].to_numpy()
         self.log_theta = np.log(self.theta)
-        # p(theta) = 1/C uniform, for the model and for drawing theta_* (C3.3).
-        self.log_p_theta = np.full(len(self.theta), -np.log(len(self.theta)))
+        C = len(self.theta)
+        if location_prior is None:
+            self.log_p_theta = np.full(C, -np.log(C))
+        else:
+            location_prior = np.asarray(location_prior, dtype=np.float64)
+            assert location_prior.shape == (C,) and np.all(location_prior > 0)
+            self.log_p_theta = np.log(location_prior / location_prior.sum())
         self.starts = batch_starts_from_ids(self.id_test)
         self._inf = None
 
@@ -137,10 +149,7 @@ class Problem:
 def predict(problem: Problem, name: str) -> tuple[np.ndarray, np.ndarray]:
     """``(pred, confidence)`` for one named predictor."""
     if name == "base":
-        # h(x, theta_tr) == argmax_y p_tr(y | x): the re-weighting factor
-        # theta_tr,y / p_tr(y) is constant across y, so it cancels. Since
-        # theta_tr is not in Theta (C3.3), this is not even an admissible
-        # hypothesis -- which is what makes it beatable on every batch.
+        # argmax of the posterior under the base prior: no adaptation at all.
         pred = problem.log_post.argmax(axis=1)
         return pred, np.exp(problem.log_post[np.arange(problem.n), pred])
 

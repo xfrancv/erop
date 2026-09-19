@@ -9,7 +9,7 @@ from one location to another.
 
 ### Training data
 
-`train.csv` and `train_images.npy` hold 148,919 labeled images. Each carries its
+`train.csv` and `train_images.npy` hold 104,243 labeled images. Each carries its
 class and the **location** it was collected at, `0`–`8`. The locations
 contributed very different numbers of images.
 
@@ -17,19 +17,21 @@ contributed very different numbers of images.
 
 The test images arrive in **batches** of $m \in \{1, 2, 5, 10, 20, 50, 100\}$
 images. All images of one batch come from **the same location**, which you are
-not told. Every one of the 9 locations contributed the same number of test
-batches, of every size.
+not told. The location of each batch was drawn at random, independently of all
+other batches, from a fixed distribution over the 9 locations. That
+distribution is not disclosed.
 
 Different batches are independent: knowing where one batch came from tells you
 nothing about the next.
 
 ### Development data
 
-`dev_test_batches.csv` holds 1,080 further batches, built by exactly the same
-procedure from images that are in neither the training data nor the test
-batches. For these you get every image's true class **and** the reference
-predictor's prediction (see **Evaluation**), so you can score yourself offline
-exactly as the leaderboard will.
+`dev_test_batches.csv` holds 1,500 further batches, built by exactly the same
+procedure — including the same distribution over locations — from images that
+are in neither the training data nor the test batches. For these you get every
+image's true class **and** the reference predictor's prediction (see
+**Evaluation**), so you can score yourself offline exactly as the leaderboard
+will.
 
 ## What you submit
 

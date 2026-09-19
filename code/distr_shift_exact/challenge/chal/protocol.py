@@ -1,33 +1,27 @@
-"""Generating the test batches: the grid, the batch counts, the sampler (C4).
+"""The batch protocol: the grid, the batch counts, the sampler (C4).
 
-One *batch* is ``m`` unlabeled images drawn i.i.d. from ``p_te(. | theta_*)``
-for a single ``theta_*`` drawn uniformly from ``Theta``. Every image of every
-batch is a submission row and every one is scored -- the parent README's
-constant curve budget is **not** applied (C9.2), so the pooled ranking at size
-``m`` has ``B_m = N(m) * m`` rows.
+One *batch* is ``m`` rows from one location ``l``, drawn i.i.d. from the secret
+location prior ``w``. Every row of every batch is drawn independently of all
+others (tasks/even_harder_variant.md, *Labels*):
 
-``m_max`` is 100, not the 500 of the parent S6.2 grid. On the trained base
-model the two best rejectors are already separated by *exactly* zero at
-``m >= 100`` -- the posterior over ``Theta`` has concentrated on ``theta_*`` and
-both answer identically -- so ``m = 200`` and ``m = 500`` cost 77 % of all rows
-and return no ranking information about the top of the leaderboard. ``m = 100``
-is kept rather than cutting at 50 because weaker entries than the reference
-rejectors are still separable there: a non-adapting predictor scores ~0.099 at
-``m = 100`` against ~0.000 for anything that adapts.
+1. ``y ~ pi_l``, the location's label prior;
+2. an image ``x`` from the pool ``P`` with probability ``q(y | x) / sum_P q(y | .)``,
+   i.e. ``x ~ p_P(x | y)``.
 
-``N_MIN`` is the load-bearing constant, not ``2000``. Rows inside one batch
-share ``theta_*`` and the same adaptation evidence, so they are strongly
-correlated: with intra-batch correlation ``rho`` the effective sample size is
-``N(m) m / (1 + (m - 1) rho)``, capped at ``N(m) / rho`` however large ``m``
-gets. Precision therefore tracks the number of *batches*. Dropping ``N_MIN``
-to the unclipped ``ceil(2000 / 500) = 4`` at ``m = 500`` would make one ninth
-of the final score almost pure noise.
+No image carries a fixed label: the label of a row is the class drawn in step 1.
+The same image may occur in several batches, or twice in one batch, each time
+with its own independently drawn label, so linking copies of an image across
+batches reveals nothing about their labels. With this procedure the posterior
+of a row from location ``l`` is exactly
 
-Sampling **with replacement** is what makes a batch exactly i.i.d. from
-``p_te(. | theta_*)`` and what stops a prior spiked on a rare class from
-exhausting the pool. A query image may therefore recur inside its own batch;
-that is not a leak here, because the challenge conditions on the whole batch
-including the query anyway (C3.2).
+    p_l(y | x) ~ q(y | x) pi_l(y) / pibar_P(y),    pibar_P = mean_{x in P} q(. | x),
+
+which is what the reference predictor maximises.
+
+Every row is a submission row and every one is scored, so the pooled ranking at
+size ``m`` has ``B_m = N(m) * m`` rows. ``N_MIN`` is the load-bearing constant:
+rows inside one batch share the location and the same adaptation evidence, so
+precision tracks the number of *batches*, not rows (C9.2).
 """
 
 from __future__ import annotations
@@ -40,7 +34,7 @@ SIZE_GRID = (1, 2, 5, 10, 20, 50, 100)
 N_MIN = 200
 BATCH_SCALE = 2000          # N(m) = max(N_MIN, ceil(BATCH_SCALE / m))
 # C4 / S6.2: m_max must not exceed a tenth of the pool it is drawn from, or
-# duplicate contamination inside a batch stops being negligible.
+# repeated images inside a batch stop being rare.
 POOL_SIZE_RATIO = 10
 
 
@@ -57,73 +51,98 @@ def check_grid(pool_size: int, grid=SIZE_GRID) -> None:
         f"{pool_size // POOL_SIZE_RATIO}; shrink the grid or enlarge the pool")
 
 
-@dataclass
-class Batch:
-    """One test batch: which pool rows it drew, under which prior."""
+class PoolSampler:
+    """Draws images of a given class from one pool: ``x ~ p_P(x | y)``.
 
-    idx: np.ndarray            # (m,) indices into the *pool*
-    theta_star_index: int
-    m: int
+    ``p_P(x | y) = q(y | x) / (|P| pibar_P(y))`` over the images of the pool,
+    sampled by inverse CDF, one column per class.
+    """
+
+    def __init__(self, q_pool: np.ndarray):
+        q = np.asarray(q_pool, dtype=np.float64)
+        assert q.ndim == 2 and np.all(q >= 0)
+        assert np.allclose(q.sum(axis=1), 1.0), "q(. | x) rows must sum to 1"
+        self.n, self.Y = q.shape
+        self.pi_bar = q.mean(axis=0)
+        assert np.all(self.pi_bar > 0), "a class has zero mass in the pool"
+        cdf = np.cumsum(q, axis=0) / q.sum(axis=0)
+        cdf[-1] = 1.0
+        self.cdf = cdf
+
+    def images(self, cls: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+        """``(k,)`` pool indices, one ``x ~ p_P(x | cls[i])`` per entry."""
+        cls = np.asarray(cls)
+        u = rng.random(len(cls))
+        idx = np.empty(len(cls), dtype=np.int64)
+        for c in range(self.Y):
+            sel = cls == c
+            if sel.any():
+                # side="right": index i is drawn when cdf[i-1] <= u < cdf[i],
+                # i.e. with probability q(c | x_i) / sum_P q(c | .).
+                idx[sel] = np.searchsorted(self.cdf[:, c], u[sel], side="right")
+        return np.minimum(idx, self.n - 1)
+
+
+@dataclass
+class DrawnRows:
+    """Row-level and batch-level arrays for one pool's worth of batches."""
+
+    gen_batch: np.ndarray      # (n_rows,) generation index of the row's batch
+    slot: np.ndarray           # (n_rows,) 0..m-1
+    pool_row: np.ndarray       # (n_rows,) index into the pool
+    label: np.ndarray          # (n_rows,) the class drawn for the row
+    batch_m: np.ndarray        # (n_batches,)
+    batch_location: np.ndarray  # (n_batches,)
 
     @property
-    def dup_fraction(self) -> float:
-        """Fraction of slots whose image occurs more than once in the batch."""
-        _, counts = np.unique(self.idx, return_counts=True)
-        return float((counts > 1).sum() / len(self.idx)) if len(self.idx) else 0.0
+    def n_rows(self) -> int:
+        return len(self.slot)
+
+    @property
+    def n_batches(self) -> int:
+        return len(self.batch_m)
+
+    @property
+    def m_of_row(self) -> np.ndarray:
+        return self.batch_m[self.gen_batch]
+
+    @property
+    def location_of_row(self) -> np.ndarray:
+        return self.batch_location[self.gen_batch]
 
 
-class BatchSampler:
-    """Draws batches from one evaluation pool (C4, step 2).
+def draw_rows(sampler: PoolSampler, theta: np.ndarray, w: np.ndarray,
+              rng: np.random.Generator, grid=SIZE_GRID, n_min: int = N_MIN,
+              scale: int = BATCH_SCALE) -> DrawnRows:
+    """Every batch of one pool, flattened into rows, in grid order.
 
-    A class is drawn i.i.d. from ``theta_*`` and then an example of that class
-    uniformly with replacement, which makes the batch exactly an i.i.d. sample
-    from ``p_te(. | theta_*)`` under the pool's empirical class conditionals.
+    ``theta`` is ``(L, Y)``, the label prior of every location; ``w`` is
+    ``(L,)``, the location prior. Slots are ``0..m-1`` in draw order, which is
+    uniformly random because the rows are i.i.d.
     """
+    theta = np.asarray(theta, dtype=np.float64)
+    w = np.asarray(w, dtype=np.float64)
+    L, Y = theta.shape
+    assert Y == sampler.Y and w.shape == (L,)
+    assert np.all(w >= 0) and abs(w.sum() - 1.0) < 1e-9
+    check_grid(sampler.n, grid)
 
-    def __init__(self, y_pool: np.ndarray, num_classes: int):
-        self.y_pool = np.asarray(y_pool)
-        self.Y = num_classes
-        order = np.argsort(self.y_pool, kind="stable")
-        self.by_class = order
-        self.counts = np.bincount(self.y_pool, minlength=num_classes)
-        self.offsets = np.concatenate([[0], np.cumsum(self.counts)])
-
-    def sample(self, m: int, theta_star: np.ndarray, theta_star_index: int,
-               rng: np.random.Generator) -> Batch:
-        support = theta_star > 0
-        assert np.all(self.counts[support] > 0), (
-            "theta_* puts mass on a class with no examples in this pool")
-        cls = rng.choice(self.Y, size=m, p=theta_star)
-        pos = (rng.random(m) * self.counts[cls]).astype(np.int64)
-        idx = self.by_class[self.offsets[cls] + pos]
-        return Batch(idx=idx, theta_star_index=theta_star_index, m=m)
-
-
-def generate_batches(sampler: BatchSampler, theta: np.ndarray,
-                     rng: np.random.Generator, grid=SIZE_GRID,
-                     n_min: int = N_MIN, scale: int = BATCH_SCALE,
-                     balanced: bool = False) -> list[Batch]:
-    """Every batch of one usage, in grid order.
-
-    ``theta_*`` is drawn uniformly over ``Theta`` -- the same ``p(theta)`` the
-    model is given, so the setting is well-specified by construction.
-
-    ``balanced`` instead rounds ``N(m)`` up to a multiple of ``C`` and gives
-    every prior exactly ``N(m) / C`` batches of each size, in random order. Each
-    batch is still uniform over ``Theta`` on its own. The hard variant uses it
-    because it tells competitors that every location contributed the same
-    number of batches, which an i.i.d. draw would make only roughly true.
-    """
-    C = len(theta)
-    out = []
+    batch_m, batch_loc = [], []
     for m in grid:
         N = n_batches(m, n_min, scale)
-        if balanced:
-            N = -(-N // C) * C
-            which = rng.permutation(np.repeat(np.arange(C), N // C))
-        else:
-            which = None
-        for i in range(N):
-            c = int(which[i]) if balanced else int(rng.integers(C))
-            out.append(sampler.sample(m, theta[c], c, rng))
-    return out
+        batch_m.append(np.full(N, m, dtype=np.int64))
+        batch_loc.append(rng.choice(L, size=N, p=w))
+    batch_m = np.concatenate(batch_m)
+    batch_loc = np.concatenate(batch_loc)
+
+    gen_batch = np.repeat(np.arange(len(batch_m)), batch_m)
+    slot = np.concatenate([np.arange(m) for m in batch_m])
+    loc_row = batch_loc[gen_batch]
+    # y ~ pi_l by inverse CDF, row by row.
+    cum = np.cumsum(theta, axis=1)
+    u = rng.random(len(gen_batch))
+    label = np.minimum((u[:, None] >= cum[loc_row]).sum(axis=1), Y - 1)
+    pool_row = sampler.images(label, rng)
+    return DrawnRows(gen_batch=gen_batch, slot=slot, pool_row=pool_row,
+                     label=label.astype(np.int64), batch_m=batch_m,
+                     batch_location=batch_loc)

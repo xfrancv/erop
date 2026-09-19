@@ -7,29 +7,17 @@ an organiser artifact and must never diverge from it:
 ``metric.py``   copied from ``chal/metric.py`` -- the same function Kaggle runs,
                 so a student's offline number is the leaderboard's number
 
-Everything else comes from ``student/``, which holds the student-facing sources.
+Everything else comes from ``student_hard/``, which holds the student-facing
+sources.
 
-**The trained model is not shipped** (C9.5). Competitors receive the base
-predictor's calibrated posteriors, not the network and not the pixels, which is
-what stops the released images from being matched against the public TissueMNIST
-archive to read off the labels.
+**What must never enter the bundle.** Competitors are not told that the problem
+is label shift, nor that the batches' locations follow a prior they should
+estimate, nor that the reject option should rank by epistemic uncertainty;
+discovering that is the point of the competition. So the builder audits every
+``.py`` and ``.md`` file it writes for words that would give it away, and
+refuses model weights and organiser code.
 
-**What must never enter the bundle.** The intended solution is that the Bayesian
-learned-prior rule should be ranked by *epistemic* uncertainty rather than total
-uncertainty, and discovering that is the point of the competition. So
-``chal/inference.py``, ``chal/predictors.py``, ``optimal_solution.py``,
-``baseline_solutions.py`` and ``batch_meta.csv`` stay out, and the builder
-asserts that nothing it copies mentions them.
-
-**The hard variant** (``--variant hard``, ``tasks/hard_variant.md``) is built
-from ``student_hard/`` and ``chal/metric_hard.py``. Competitors there are not
-told that the problem is label shift, so the audit is stricter: the bundle may
-not name priors, shift, the plug-in rule or calibration either, and it checks
-the README as well as the code.
-
-    python make_student_bundle.py out/kaggle_code
-    python make_student_bundle.py out/kaggle_code --zip
-    python make_student_bundle.py out/hard/kaggle_code --variant hard --zip
+    python make_student_bundle.py out/v3/kaggle_code --zip
 """
 
 from __future__ import annotations
@@ -46,20 +34,15 @@ HERE = Path(__file__).resolve().parent
 FORBIDDEN = (
     "epistemic", "aleatoric", "bayes_total", "bayes_epistemic", "optimal",
     "theta_star", "batch_meta", "true_plugin", "map_plugin", "pth",
-)
-# The hard variant also hides the structure the easy variant states outright.
-FORBIDDEN_HARD = FORBIDDEN + (
     "prior", "priors", "shift", "label shift", "theta", "plugin", "plug-in",
     "bayes", "reweight", "re-weight", "calibrated", "calibration", "posterior",
+    "em algorithm", "expectation-maximization", "mixture",
 )
-VARIANTS = {
-    # name: (student sources, metric module, forbidden words, audited suffixes)
-    "easy": ("student", "metric.py", FORBIDDEN, (".py",)),
-    "hard": ("student_hard", "metric_hard.py", FORBIDDEN_HARD, (".py", ".md")),
-}
-# Shipping any of these would undo the decision of C9.5 to withhold the pixels
-# and the network.
-FORBIDDEN_FILES = ("model.pt", "images.npz", "base_model.py", "make_predictions.py")
+SOURCES = "student_hard"
+AUDITED_SUFFIXES = (".py", ".md")
+# Organiser artifacts that must never ship: the label model, organiser code.
+FORBIDDEN_FILES = ("model.pt", "log_post.npz", "data.npz", "split.npz",
+                   "inference.py", "predictors.py", "locprior.py")
 
 METRIC_HEADER = '''"""The competition metric: AvgRegAtCoverage.
 
@@ -73,8 +56,7 @@ examples you can check by hand.
 '''
 
 
-def build(out_dir: Path, variant: str = "easy") -> list[Path]:
-    src_dir, metric_file, forbidden, suffixes = VARIANTS[variant]
+def build(out_dir: Path) -> list[Path]:
     # Rebuild from empty. Copying into an existing bundle leaves behind files
     # that have since been removed from student/ -- which is exactly how a
     # withdrawn artifact (the network, a pixel dump) would quietly ship again.
@@ -84,28 +66,28 @@ def build(out_dir: Path, variant: str = "easy") -> list[Path]:
     written = []
 
     # 1. the student-facing sources, verbatim
-    for src in sorted((HERE / src_dir).glob("*")):
+    for src in sorted((HERE / SOURCES).glob("*")):
         if src.name.startswith((".", "__")):
             continue
         shutil.copy2(src, out_dir / src.name)
         written.append(out_dir / src.name)
 
     # 2. the metric, with its organiser-facing module docstring replaced
-    metric_src = (HERE / "chal" / metric_file).read_text()
+    metric_src = (HERE / "chal" / "metric.py").read_text()
     body = metric_src.split('"""', 2)[2].lstrip("\n")
     (out_dir / "metric.py").write_text(METRIC_HEADER + "\n" + body)
     written.append(out_dir / "metric.py")
 
-    _audit(out_dir, forbidden, suffixes)
+    _audit(out_dir)
     return written
 
 
-def _audit(out_dir: Path, forbidden=FORBIDDEN, suffixes=(".py",)) -> None:
+def _audit(out_dir: Path) -> None:
     """Refuse to ship a bundle that leaks the intended solution."""
     hits = []
-    for f in sorted(p for p in out_dir.iterdir() if p.suffix in suffixes):
+    for f in sorted(p for p in out_dir.iterdir() if p.suffix in AUDITED_SUFFIXES):
         text = f.read_text().lower()
-        for word in forbidden:
+        for word in FORBIDDEN:
             if re.search(rf"\b{re.escape(word)}\b", text):
                 hits.append(f"{f.name}: {word!r}")
     assert not hits, (
@@ -119,10 +101,7 @@ def _audit(out_dir: Path, forbidden=FORBIDDEN, suffixes=(".py",)) -> None:
     assert not bad, f"these still import the organiser package: {bad}"
 
     leaked = [f.name for f in out_dir.iterdir() if f.name in FORBIDDEN_FILES]
-    assert not leaked, (
-        f"the bundle contains {leaked}, which C9.5 withholds: publishing the "
-        f"network or the pixels makes the released images matchable against the "
-        f"public TissueMNIST archive")
+    assert not leaked, f"the bundle contains organiser files: {leaked}"
     assert not any(f.suffix in (".png", ".pt", ".npz") for f in out_dir.iterdir()), \
         "the bundle must contain no model weights and no image data"
 
@@ -134,11 +113,9 @@ def main() -> None:
     p.add_argument("out_dir", type=Path, help="bundle directory to write")
     p.add_argument("--zip", action="store_true",
                    help="also write <out_dir>.zip, ready to upload")
-    p.add_argument("--variant", choices=tuple(VARIANTS), default="easy",
-                   help="which competition the bundle is for (default easy)")
     args = p.parse_args()
 
-    written = build(args.out_dir, args.variant)
+    written = build(args.out_dir)
     total = sum(f.stat().st_size for f in written)
     print(f"{args.out_dir}: {len(written)} files, {total / 1e6:.1f} MB")
     for f in written:

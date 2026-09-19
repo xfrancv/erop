@@ -7,14 +7,15 @@ Three things are worth brute-forcing rather than trusting:
    ``E`` with chunked logsumexps over an ``(n, C, Y)`` array. Here the same
    quantities are recomputed from the definitions in S2 with explicit Python
    loops over ``theta`` and ``y``, on small random problems.
-2. **The protocol bookkeeping.** ``N(m)``, the row counts of C4, and the
-   guarantee that slots run ``0..m-1``.
+2. **The protocol.** ``N(m)``, the row counts of C4, slots ``0..m-1``, and --
+   the load-bearing one -- that the sampler realises the posterior the
+   reference predictor maximises: rows drawn at location ``l`` have
+   ``p(y | x, l) ~ q(y | x) pi_l(y) / pibar_P(y)``.
 3. **The metric.** ``score()`` against a direct implementation, including the
    tie-break, the coverage rounding, and the sign of the ranking.
-4. **The hard variant.** The location linear program, the image
-   transformation, the balanced batch dealing, and that ``chal/metric_hard.py``
-   is still exactly what ``make_metric_notebook.py`` generates from
-   ``chal/metric.py``.
+4. **Generation.** The location linear program, the rotation, the location
+   prior and its EM estimate, and that the organiser files reproduce the
+   reference predictor exactly.
 
     python selftest.py
 """
@@ -153,28 +154,63 @@ def test_protocol() -> None:
           sum(counts.values()) == 4200 and sum(rows.values()) == 42000,
           f"{sum(counts.values())} batches, {sum(rows.values())} rows")
 
-    from chal.generate import draw_rows
-    ps = pair_prior_set(np.full(8, 1 / 8), 0.35)
+    from chal.protocol import PoolSampler, draw_rows
     rng = np.random.default_rng(0)
-    y_pool = np.repeat(np.arange(8), 200)
-    drawn = draw_rows(y_pool, ps.theta, rng, 8, grid=(1, 2, 5, 10),
-                      n_min=4, scale=8)
+    q_pool = rng.dirichlet(np.ones(8) * 0.5, size=1600)
+    ps = pair_prior_set(np.full(8, 1 / 8), 0.35)
+    w = rng.dirichlet(np.ones(ps.C) * 3.0)
+    drawn = draw_rows(PoolSampler(q_pool), ps.theta, w, rng,
+                      grid=(1, 2, 5, 10), n_min=4, scale=8)
     ok = True
     for b in range(drawn.n_batches):
         s = drawn.slot[drawn.gen_batch == b]
         ok &= np.array_equal(s, np.arange(drawn.batch_m[b]))
     check("slots run 0..m-1 in every batch", bool(ok))
-    check("max(slot) + 1 == m in every batch",
-          all(drawn.slot[drawn.gen_batch == b].max() + 1 == drawn.batch_m[b]
-              for b in range(drawn.n_batches)))
     starts = batch_starts_from_ids(drawn.gen_batch)
     check("batches are contiguous and sorted", len(starts) == drawn.n_batches)
 
-    # theta_* is drawn uniformly over Theta: every element should appear.
-    drawn2 = draw_rows(y_pool, ps.theta, np.random.default_rng(1), 8,
-                       grid=(5,), n_min=400, scale=400)
-    seen = np.bincount(drawn2.batch_theta, minlength=ps.C)
-    check("theta_* covers all of Theta", seen.min() > 0, f"counts {seen.tolist()}")
+    # Locations i.i.d. from w; labels i.i.d. from the location's prior.
+    many = draw_rows(PoolSampler(q_pool), ps.theta, w,
+                     np.random.default_rng(1), grid=(10,), n_min=20000,
+                     scale=10)
+    freq = np.bincount(many.batch_location, minlength=ps.C) / many.n_batches
+    check("batch locations follow w", np.abs(freq - w).max() < 0.012,
+          f"max |freq - w| {np.abs(freq - w).max():.4f}")
+    loc = many.location_of_row
+    lab = np.stack([np.bincount(many.label[loc == l], minlength=8)
+                    / (loc == l).sum() for l in range(ps.C)])
+    check("row labels follow the location's prior",
+          np.abs(lab - ps.theta).max() < 0.02,
+          f"max |freq - pi_l| {np.abs(lab - ps.theta).max():.4f}")
+
+    # The load-bearing one: given the image and the location, the drawn label
+    # has exactly the posterior the reference predictor maximises. Checked on
+    # a pool of 10 images, where every image is drawn often.
+    from chal.generate import reference
+    q10 = rng.dirichlet(np.ones(4) * 0.8, size=10)
+    theta4 = np.array([[0.55, 0.25, 0.15, 0.05], [0.1, 0.2, 0.3, 0.4]])
+    sampler = PoolSampler(q10)
+    drawn = draw_rows(sampler, theta4, np.array([0.3, 0.7]),
+                      np.random.default_rng(2), grid=(1,), n_min=400_000,
+                      scale=1)
+    # Judged by z-score, since the rarer (image, location) cells get only a
+    # few thousand draws: max |z| over the 80 cells stays below 5 unless the
+    # sampler is biased.
+    worst = 0.0
+    for l in range(2):
+        want = q10 * theta4[l] / sampler.pi_bar
+        want /= want.sum(axis=1, keepdims=True)
+        for i in range(10):
+            sel = (drawn.location_of_row == l) & (drawn.pool_row == i)
+            n = int(sel.sum())
+            got = np.bincount(drawn.label[sel], minlength=4) / n
+            se = np.sqrt(want[i] * (1 - want[i]) / n)
+            worst = max(worst, float((np.abs(got - want[i]) / se).max()))
+    check("p(y | x, l) of the drawn rows is q pi_l / pibar, normalised",
+          worst < 5.0, f"max |z| {worst:.2f} over 80 cells (Monte Carlo)")
+    pred = reference(q10, sampler.pi_bar, np.repeat(theta4[1:], 10, axis=0))
+    want = (q10 * theta4[1] / sampler.pi_bar).argmax(axis=1)
+    check("reference() is that posterior's argmax", np.array_equal(pred, want))
 
 
 # --- 3. the metric ---------------------------------------------------------
@@ -250,16 +286,17 @@ def test_metric() -> None:
           np.array_equal(np.argsort(-conf, kind="stable"), want_order))
 
 
-# --- 4. the hard variant ----------------------------------------------------
+# --- 4. generation ----------------------------------------------------------
 
-def test_hard() -> None:
-    print("\nhard variant (tasks/hard_variant.md)")
-    from pathlib import Path
-
-    from chal.generate import draw_rows
+def test_generation() -> None:
+    print("\ngeneration (tasks/even_harder_variant.md)")
+    from chal.generate import debiased_posterior, draw_labels, reference, \
+        tempered
     from chal.locations import assign_locations, plan_locations
-    from chal.transform import transform
-    from make_metric_notebook import hard_source
+    from chal.locprior import W_DEFAULT, check_location_prior, \
+        em_location_prior, label_loglik
+    from chal.protocol import PoolSampler, draw_rows
+    from chal.transform import rotate
 
     # The location LP, on class counts shaped like TissueMNIST's but smaller.
     D = np.array([4800, 700, 530, 1390, 1060, 690, 3530, 2210])
@@ -275,10 +312,6 @@ def test_hard() -> None:
     check("the priors moved by at most delta (up to rounding)",
           plan.tv_change.max() <= plan.delta + 8.0 / plan.sizes[:-1].min(),
           f"max TV moved {plan.tv_change.max():.4f}, delta {plan.delta:.4f}")
-    tighter = plan_locations(D, ps.theta, eps=0.01, n_min=300)
-    check("a smaller n_min needs no larger a change",
-          tighter.delta <= plan.delta + 1e-3,
-          f"{tighter.delta:.4f} <= {plan.delta:.4f}")
     y = np.repeat(np.arange(8), D)
     loc = assign_locations(y, plan, np.random.default_rng(0))
     freq = np.stack([np.bincount(y[loc == l], minlength=8)
@@ -286,53 +319,58 @@ def test_hard() -> None:
     check("class frequency per location is exactly the location's prior",
           np.allclose(freq / freq.sum(1, keepdims=True), plan.priors))
 
-    # The transformation.
+    # The rotation.
     rng = np.random.default_rng(1)
     X = rng.integers(0, 256, size=(300, 28, 28), dtype=np.uint8)
-    Xt, k = transform(X, np.random.default_rng(2), noise_std=0.0)
+    Xt, k = rotate(X, np.random.default_rng(2))
     check("rotations are 90, 180 or 270 degrees, never 0",
-          set(np.unique(k).tolist()) <= {1, 2, 3} and len(np.unique(k)) == 3)
-    check("without noise, undoing the rotation restores the image",
+          set(np.unique(k).tolist()) == {1, 2, 3})
+    check("undoing the rotation restores the image exactly",
           all(np.array_equal(np.rot90(Xt[i], -k[i]), X[i]) for i in range(300)))
-    Xn, kn = transform(X, np.random.default_rng(2), noise_std=2.0)
-    diff = np.stack([np.rot90(Xn[i], -kn[i]) for i in range(300)]).astype(int) - X
-    check("noise is small, zero-mean and uint8",
-          Xn.dtype == np.uint8 and abs(diff.mean()) < 0.05
-          and 1.5 < diff.std() < 2.5,
-          f"mean {diff.mean():+.3f}, std {diff.std():.3f}")
-    Xa, _ = transform(X, np.random.default_rng(5), 2.0)
-    Xb, _ = transform(X, np.random.default_rng(5), 2.0)
-    check("the transformation is reproducible from its seed",
-          np.array_equal(Xa, Xb))
 
-    # Balanced dealing: every prior the same number of batches at every size.
-    y_pool = np.repeat(np.arange(8), 200)
-    drawn = draw_rows(y_pool, plan.priors, np.random.default_rng(3), 8,
-                      grid=(1, 5, 10), n_min=20, scale=40, balanced=True)
-    ok = all(len(set(np.bincount(drawn.batch_theta[drawn.batch_m == m],
-                                 minlength=plan.L).tolist())) == 1
-             for m in (1, 5, 10))
-    check("balanced: each location the same number of batches per size", ok,
-          f"{np.bincount(drawn.batch_theta, minlength=plan.L).tolist()}")
+    # The label model: tempering and label draws.
+    lq = np.log(rng.dirichlet(np.ones(8) * 0.6, size=4000))
+    q = tempered(lq, 1.0)
+    check("temperature 1 leaves q unchanged", np.allclose(q, np.exp(lq)))
+    hot = tempered(lq, 2.0)
+    check("temperature > 1 flattens q",
+          hot.max(axis=1).mean() < q.max(axis=1).mean())
+    y_draw = draw_labels(np.repeat(q[:1], 200_000, axis=0),
+                         np.random.default_rng(3))
+    check("draw_labels samples from q", np.abs(
+        np.bincount(y_draw, minlength=8) / 200_000 - q[0]).max() < 0.005)
 
-    # The hard metric is generated, never edited.
-    here = Path(__file__).resolve().parent
-    check("chal/metric_hard.py is exactly generated from chal/metric.py",
-          (here / "chal" / "metric_hard.py").read_text()
-          == hard_source((here / "chal" / "metric.py").read_text()),
-          "regenerate: python make_metric_notebook.py --hard-module "
-          "chal/metric_hard.py")
-    from chal.metric_hard import score as score_hard
+    # The location prior and its EM estimate.
+    sizes = np.array([5000] * 8 + [60000])
+    check("the default w passes its guards",
+          bool(check_location_prior(np.array(W_DEFAULT), sizes)))
     rng = np.random.default_rng(4)
-    sol = pd.DataFrame({"row_id": np.arange(90), "id_test": np.arange(90) // 3,
-                        "m": np.repeat([1, 2, 5], 30),
-                        "label": rng.integers(0, 8, 90),
-                        "pred_ref": rng.integers(0, 8, 90)})
-    sub = pd.DataFrame({"row_id": np.arange(90), "pred": rng.integers(0, 8, 90),
-                        "confidence": rng.random(90)})
-    check("the hard metric scores exactly as the easy one",
-          score_hard(sol.copy(), sub.copy(), "row_id", expected_sizes=(1, 2, 5))
-          == score(sol.copy(), sub.copy(), "row_id", expected_sizes=(1, 2, 5)))
+    theta = plan.priors
+    w = np.array(W_DEFAULT)
+    drawn = draw_rows(PoolSampler(q), theta, w, rng, grid=(20,), n_min=4000,
+                      scale=20)
+    starts = batch_starts_from_ids(drawn.gen_batch)
+    w_hat, _ = em_location_prior(label_loglik(drawn.label, starts,
+                                              np.log(theta)))
+    check("EM on the labels recovers w", np.abs(w_hat - w).max() < 0.02,
+          f"max |w_hat - w| {np.abs(w_hat - w).max():.4f}")
+
+    # The organiser files reproduce the reference exactly: per-pool debiasing
+    # onto the split's base prior, then the plug-in rule under that prior.
+    pools = [q[:1500], q[1500:2700], q[2700:]]
+    split_bar = q.mean(axis=0)
+    bad = 0
+    for qp in pools:
+        s = PoolSampler(qp)
+        d = draw_rows(s, theta, w, rng, grid=(5,), n_min=400, scale=5)
+        rows = qp[d.pool_row]
+        ref = reference(rows, s.pi_bar, theta[d.location_of_row])
+        post = debiased_posterior(rows, s.pi_bar, split_bar)
+        pred, _ = plugin_for_prior(np.log(post), np.log(split_bar),
+                                   theta[d.location_of_row])
+        bad += int((pred != ref).sum())
+    check("true_plugin on the organiser files reproduces pred_ref", bad == 0,
+          f"{bad} mismatches")
 
 
 def main() -> None:
@@ -340,7 +378,7 @@ def main() -> None:
     test_inference()
     test_protocol()
     test_metric()
-    test_hard()
+    test_generation()
     print()
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

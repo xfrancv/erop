@@ -1,87 +1,88 @@
-"""The one batch-generation path, shared by the Kaggle data and the dev benchmark.
+"""The label model's side of generation: labels, the reference, the checks.
 
-``prepare_kaggle_data.py`` and ``make_dev_benchmark.py`` both call
-:func:`draw_rows` and :func:`reference_and_base`. A divergence between the two
-is the single most likely source of a silent scoring mismatch -- a student's
-offline number not matching the leaderboard -- so they share the code rather
-than agreeing by inspection.
+``hard_make_data.py`` is the only caller. The functions live here so that
+``selftest.py`` can check them on small synthetic problems.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
+from scipy.special import logsumexp
 
 from .inference import plugin_for_prior
-from .protocol import BATCH_SCALE, N_MIN, SIZE_GRID, BatchSampler, check_grid, \
-    generate_batches
+from .splits import USAGES
+
+# Development ids start here, so they cannot be confused with test ids.
+DEV_ID_OFFSET = 1_000_000
 
 
-@dataclass
-class DrawnRows:
-    """Row-level and batch-level arrays for one pool's worth of batches."""
+def tempered(log_q: np.ndarray, temperature: float = 1.0) -> np.ndarray:
+    """``q(y | x)^(1 / T)``, renormalised, as float64 probabilities.
 
-    gen_batch: np.ndarray      # (n_rows,) generation index of the row's batch
-    slot: np.ndarray           # (n_rows,) 0..m-1
-    pool_row: np.ndarray       # (n_rows,) index into the pool that was passed in
-    batch_m: np.ndarray        # (n_batches,)
-    batch_theta: np.ndarray    # (n_batches,) index into Theta
-    batch_dup: np.ndarray      # (n_batches,) fraction of repeated images
-
-    @property
-    def n_rows(self) -> int:
-        return len(self.slot)
-
-    @property
-    def n_batches(self) -> int:
-        return len(self.batch_m)
-
-    @property
-    def m_of_row(self) -> np.ndarray:
-        return self.batch_m[self.gen_batch]
-
-
-def draw_rows(y_pool: np.ndarray, theta: np.ndarray, rng: np.random.Generator,
-              num_classes: int, grid=SIZE_GRID, n_min: int = N_MIN,
-              scale: int = BATCH_SCALE, balanced: bool = False) -> DrawnRows:
-    """Draw every batch of one pool and flatten them into rows (C4).
-
-    Slots are ``0..m-1`` in draw order, which is uniformly random because the
-    ``m`` examples were drawn i.i.d. -- so any prefix of slots is a uniform
-    subsample of the batch, which is what the optional constant-budget pooling
-    of ``evaluate.py --budget`` relies on.
+    ``T = 1`` is the calibrated label model itself. The result *is* the label
+    model from then on -- labels are drawn from it and the reference predictor
+    uses it -- so ``T`` only sets how noisy the labels are (the Bayes error).
     """
-    check_grid(len(y_pool), grid)
-    sampler = BatchSampler(y_pool, num_classes)
-    batches = generate_batches(sampler, theta, rng, grid=grid, n_min=n_min,
-                               scale=scale, balanced=balanced)
-
-    gen_batch = np.concatenate(
-        [np.full(b.m, i, dtype=np.int64) for i, b in enumerate(batches)])
-    slot = np.concatenate([np.arange(b.m, dtype=np.int64) for b in batches])
-    pool_row = np.concatenate([b.idx for b in batches])
-    return DrawnRows(
-        gen_batch=gen_batch, slot=slot, pool_row=pool_row,
-        batch_m=np.array([b.m for b in batches]),
-        batch_theta=np.array([b.theta_star_index for b in batches]),
-        batch_dup=np.array([b.dup_fraction for b in batches]))
+    assert temperature > 0
+    z = np.asarray(log_q, dtype=np.float64) / temperature
+    return np.exp(z - logsumexp(z, axis=1, keepdims=True))
 
 
-def reference_and_base(log_post_rows: np.ndarray, log_train_prior: np.ndarray,
-                       theta_of_row: np.ndarray):
-    """The reference predictor and the non-adapted baseline, per row (C5).
+def draw_labels(q: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """One label per row, ``y ~ q(y | x)``."""
+    cum = np.cumsum(q, axis=1)
+    u = rng.random(len(q))
+    return np.minimum((u[:, None] >= cum).sum(axis=1), q.shape[1] - 1)
 
-    ``pred_ref = h(x, theta_*)`` is the plugin Bayes rule given the batch's
-    **true** prior, evaluated on the same calibrated posterior students get.
-    Shipping its output rather than ``theta_*`` keeps ``theta_*`` out of
-    ``solution.csv`` entirely.
 
-    The baseline is ``argmax_y p_tr(y | x)``, which is also the train-prior
-    plugin: the factor ``theta_tr,y / p_tr(y)`` is constant in ``y``.
+def reference(q_rows: np.ndarray, pi_bar: np.ndarray,
+              theta_rows: np.ndarray) -> np.ndarray:
+    """``argmax_y q(y | x) pi_l(y) / pibar_P(y)``: the Bayes prediction given
+    the location, for rows of one pool ``P``."""
+    pred, _unc = plugin_for_prior(np.log(q_rows), np.log(pi_bar), theta_rows)
+    return pred
+
+
+def debiased_posterior(q_rows: np.ndarray, pi_bar_pool: np.ndarray,
+                       pi_bar_split: np.ndarray) -> np.ndarray:
+    """``q(y | x) pibar_S(y) / pibar_P(y)``, renormalised -- for the organiser files.
+
+    The organiser's tools (``chal/predictors.py``) take one posterior per row
+    and one base prior per split. The test split has three pools, each with its
+    own ``pibar_P``; rescaling every row to the split's common ``pibar_S`` makes
+    the plug-in rule under ``pibar_S`` reproduce :func:`reference` exactly:
+
+        q pibar_S / pibar_P * pi_l / pibar_S  =  q pi_l / pibar_P.
     """
-    pred_ref, unc_ref = plugin_for_prior(log_post_rows, log_train_prior,
-                                         theta_of_row)
-    base_pred = log_post_rows.argmax(axis=1)
-    base_conf = np.exp(log_post_rows[np.arange(len(base_pred)), base_pred])
-    return pred_ref, unc_ref, base_pred, base_conf
+    lp = np.log(q_rows) + np.log(pi_bar_split) - np.log(pi_bar_pool)
+    return np.exp(lp - logsumexp(lp, axis=1, keepdims=True))
+
+
+def row_checks(id_test, slot, m_of_row, row_id, usage_of_row, pool_image,
+               grid) -> dict:
+    """The C8 pre-launch assertions on the test rows, run at generation time."""
+    order = np.lexsort((slot, id_test))
+    s, b, m = slot[order], id_test[order], m_of_row[order]
+    starts = np.concatenate([[0], np.flatnonzero(np.diff(b)) + 1])
+    ends = np.concatenate([starts[1:], [len(b)]])
+    assert np.all(s[ends - 1] + 1 == m[starts]), "max(slot) + 1 != m somewhere"
+    assert np.all(ends - starts == m[starts]), "a batch is missing rows"
+    assert np.array_equal(s, np.concatenate(
+        [np.arange(k) for k in m[starts]])), "slots are not 0..m-1"
+    assert len(np.unique(row_id)) == len(row_id), "row_id is not unique"
+
+    # The usage pools are disjoint at the image level.
+    pools = [set(np.unique(pool_image[usage_of_row == i]).tolist())
+             for i in range(len(USAGES))]
+    for i in range(len(USAGES)):
+        for j in range(i + 1, len(USAGES)):
+            assert not (pools[i] & pools[j]), (
+                f"pools {USAGES[i]} and {USAGES[j]} share images")
+    usages_seen = sorted(np.array(USAGES, dtype=object)[
+        np.unique(usage_of_row)].tolist())
+    assert usages_seen == sorted(USAGES), f"usages present: {usages_seen}"
+    assert "Ignored" in USAGES, "Kaggle's literal is 'Ignored', not 'Ignore'"
+    sizes = sorted(set(int(v) for v in np.unique(m_of_row)))
+    assert sizes == sorted(grid), f"sizes present {sizes} != grid {sorted(grid)}"
+    return {"slots_are_0_to_m_minus_1": True, "row_id_unique": True,
+            "usage_pools_disjoint": True, "all_grid_sizes_present": True}

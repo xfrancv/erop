@@ -16,7 +16,8 @@ course credit. Entering constitutes acceptance of these rules. Dates are on the
    class of any test image by any means other than predicting it from the
    competition data — in particular, not by matching test images against
    TissueMNIST, MedMNIST or any other source, whether exactly, by nearest
-   neighbours, or after undoing rotations or noise.
+   neighbours, or after undoing rotations. (It would not help: the labels of
+   this competition are not TissueMNIST's.)
 
 3. **Each test batch is for predicting its own rows.** A test batch is the set
    of rows sharing an `id_test`, together with their images. You may use the

@@ -16,7 +16,8 @@ submission on that same resample, then reports
 * for each submission, the **paired** difference against the chosen reference:
   its interval, and the fraction of replicates on which it wins.
 
-    python compare_baselines.py out/kaggle/solution.csv out/submissions/*.csv \\
+    python compare_baselines.py out/v3/kaggle/organiser/test/solution.csv \\
+        out/v3/submissions/*.csv \\
         --usage Private --vs bayes_total
 """
 

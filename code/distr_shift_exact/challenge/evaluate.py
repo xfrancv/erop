@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Score a submission and plot how it behaves across batch sizes (C7).
 
-    python evaluate.py out/submissions/bayes_epistemic.csv out/kaggle/solution.csv
+    python evaluate.py out/v3/submissions/bayes_epistemic_em.csv \\
+        out/v3/kaggle/organiser/test/solution.csv
     python evaluate.py sub.csv sol.csv --usage Private --out-dir figures/
     python evaluate.py sub.csv sol.csv --budget 2000     # paper-style pooling
 
@@ -164,7 +165,7 @@ def _figure(table: pd.DataFrame, merged: pd.DataFrame, name: str,
 
     ax = axes[0]
     ax.axhline(0.0, color="0.5", lw=1, ls="--",
-               label="true-prior plugin (reference)")
+               label="reference (Bayes given the location)")
     if np.isfinite(table["lo"]).all():
         ax.fill_between(table["m"], table["lo"], table["hi"], alpha=0.2, color="C0")
     ax.plot(table["m"], table["reg_at_c"], "o-", color="C0", lw=1.8, ms=4,

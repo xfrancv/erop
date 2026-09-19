@@ -11,6 +11,7 @@ specification this code implements.
 """
 
 __all__ = [
-    "calibration", "data", "ids", "inference", "metric", "priors",
-    "protocol", "splits",
+    "bootstrap", "calibration", "data", "generate", "inference", "locations",
+    "locprior", "metric", "predictors", "priors", "protocol", "splits",
+    "transform",
 ]

@@ -9,13 +9,13 @@ on the development batches before you spend a submission.
 Images of kidney tissue cells were collected at 9 locations, all with the same
 device. You get labeled training images, each tagged with its location, and
 test images arriving in **batches**: every batch comes from one of the 9
-locations, and each location contributed the same number of test batches, but
+locations, drawn at random from a fixed distribution that is not disclosed, and
 you are not told which location a batch came from. For each test image you
 submit a label and a confidence. The organiser pools all images of the same
 batch size, sorts by descending confidence, keeps the most confident 80 %, and
-measures how much more often your kept labels are wrong than those of a
-reference predictor fine-tuned for the batch's location. Lower is better.
-Negative is possible.
+measures how much more often your kept labels are wrong than those of the best
+possible predictor that knows the batch's location. Lower is better; nobody
+reaches zero.
 
 ## Files
 
@@ -86,15 +86,17 @@ for id_test, sl in batch_slices(test_rows):      # one batch at a time
 ```
 
 Row *k* of every CSV describes image *k* of the matching `.npy`. Every image
-was randomly rotated by a multiple of 90° and carries light pixel noise; this
-holds for training, development and test images alike.
+was randomly rotated by a multiple of 90°; this holds for training,
+development and test images alike. The labels are synthetic: they are not
+TissueMNIST's.
 
 ## Scoring yourself: what you can and cannot do
 
 * `test_batches.csv` — the real test set. You submit predictions for these; the
   labels are not in the data.
-* `dev_test_batches.csv` — batches built by the identical procedure from other
-  images, whose labels and reference predictions are in `dev_solution.csv`.
+* `dev_test_batches.csv` — batches built by the identical procedure, with the
+  same distribution over locations, from other images; their labels and
+  reference predictions are in `dev_solution.csv`.
   `evaluate.py` scores them exactly as the leaderboard would.
 
 The development set is smaller than the test set, so its numbers are noisier —

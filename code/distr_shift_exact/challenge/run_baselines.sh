@@ -2,38 +2,50 @@
 # Compute every C7 baseline and score it -- the pre-launch check that decides
 # whether the competition has discoverable structure at all.
 #
-# The number that matters is bayes_total vs bayes_epistemic: the same base
-# predictor, a different ranking. compare_baselines.py is what answers it,
-# because it bootstraps both on the *same* resampled batches; two independently
-# bootstrapped marginal intervals are the wrong test and a conservative one.
+# Two comparisons matter, both on shared bootstrap resamples
+# (compare_baselines.py), because two independently bootstrapped marginal
+# intervals are the wrong test:
+#   * bayes_total vs bayes_epistemic -- same predictor, different ranking;
+#   * bayes_epistemic under a uniform location prior vs under the EM estimate
+#     of w from the development batches -- the spec's "does EM pay?" check.
+# The runs under the true w show how much of the gap EM closes.
 #
-#   ./run_baselines.sh                        # out/kaggle
-#   ./run_baselines.sh out/smoke_kaggle
+#   ./run_baselines.sh                                   # out/v3/kaggle/organiser
+#   ./run_baselines.sh out/smoke/kaggle/organiser out/smoke/submissions
 set -euo pipefail
 cd "$(dirname "$0")"
 
-KAGGLE=${1:-out/kaggle}
-SUBS=${2:-out/submissions}
+ORG=${1:-out/v3/kaggle/organiser}
+SUBS=${2:-out/v3/submissions}
 PY=${PYTHON:-python}
+BAYES=(map_plugin bayes_total bayes_epistemic bayes_aleatoric)
 
-$PY baseline_solutions.py "$KAGGLE" "$SUBS"
+mkdir -p "$SUBS"
+$PY estimate_location_prior.py "$ORG/dev" "$SUBS/em_location_prior.csv"
+
+$PY baseline_solutions.py "$ORG/test" "$SUBS" --only base true_plugin
+$PY baseline_solutions.py "$ORG/test" "$SUBS" --only "${BAYES[@]}" \
+    --location-prior uniform --suffix _uniform
+$PY baseline_solutions.py "$ORG/test" "$SUBS" --only "${BAYES[@]}" \
+    --location-prior "$SUBS/em_location_prior.csv" --suffix _em
+$PY baseline_solutions.py "$ORG/test" "$SUBS" --only "${BAYES[@]}" \
+    --location-prior true --suffix _true
 
 # The submissions are the .csv files in $SUBS, minus the per-size tables that
-# evaluate.py writes next to a submission when run without --out-dir: those
-# have no row_id column, and passing one on makes compare_baselines.py fail.
+# evaluate.py writes and the location-prior estimate: those have no row_id.
 shopt -s nullglob
 SUBMISSIONS=()
 for f in "$SUBS"/*.csv; do
-  [[ $f == *_per_size.csv ]] || SUBMISSIONS+=("$f")
+  [[ $f == *_per_size.csv || $f == */em_location_prior.csv ]] || SUBMISSIONS+=("$f")
 done
 
 for usage in Public Private; do
   echo
   echo "################################################################"
-  echo "# $usage -- paired comparison (this is the C8 criterion)"
+  echo "# $usage -- paired comparison against bayes_epistemic_uniform"
   echo "################################################################"
-  $PY compare_baselines.py "$KAGGLE/solution.csv" "${SUBMISSIONS[@]}" \
-      --usage "$usage" --vs bayes_total
+  $PY compare_baselines.py "$ORG/test/solution.csv" "${SUBMISSIONS[@]}" \
+      --usage "$usage" --vs bayes_epistemic_uniform
 done
 
 echo
@@ -41,7 +53,7 @@ echo "################################################################"
 echo "# per-submission detail and figures (Private)"
 echo "################################################################"
 for f in "${SUBMISSIONS[@]}"; do
-  $PY evaluate.py "$f" "$KAGGLE/solution.csv" --usage Private \
+  $PY evaluate.py "$f" "$ORG/test/solution.csv" --usage Private \
       --out-dir "$SUBS/Private"
 done
 
@@ -50,10 +62,10 @@ cat <<'NOTE'
 Read the output in this order:
   1. true_plugin must be exactly +0.000000. Anything else means generation and
      scoring have diverged; stop and fix that before reading anything else.
-  2. The paired "diff vs ref" interval for bayes_epistemic must exclude 0.
-     That is the C8 separation criterion.
-  3. The last row of the per-size table is the gap between the top two
-     contenders at each batch size. Sizes whose gap is ~0 are dead weight in
-     the average -- that is the evidence for the open questions C9.8 (is m = 1
-     worth its ninth?) and C9.9 (should the nine sizes be weighted equally?).
+  2. Every other score must be >= 0 up to noise: the reference is the Bayes
+     predictor given the location. A clearly negative score is a bug.
+  3. bayes_epistemic_em vs bayes_epistemic_uniform: the paired interval must
+     exclude 0, or the secret location prior is not worth discovering and w
+     should be moved further from uniform.
+  4. bayes_epistemic vs bayes_total (same prior): the C8 separation criterion.
 NOTE

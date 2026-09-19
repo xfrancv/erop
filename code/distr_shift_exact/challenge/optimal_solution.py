@@ -17,7 +17,12 @@ This script exists so the organisers can verify the intended optimum really is
 the optimum before launch. **It is not shipped to students**, and neither the
 competition rules nor the starter notebook may name the argument above.
 
-    python optimal_solution.py out/kaggle out/submissions/optimal.csv
+The organiser directory's ``predictions.csv`` is the true label model and
+``--location-prior`` picks ``p(theta)``: by default the secret ``w``; pass the EM
+estimate of ``estimate_location_prior.py`` for what a competitor can reach.
+
+    python optimal_solution.py out/v3/kaggle/organiser/test \
+        out/v3/submissions/optimal.csv --location-prior em_location_prior.csv
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from chal.locprior import read_location_prior
 from chal.predictors import OPTIMAL, PREDICTORS, Problem, predict, write_submission
 
 
@@ -32,12 +38,22 @@ def main() -> None:
     p = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("kaggle_dir", type=Path, help="output of prepare_kaggle_data.py")
+    p.add_argument("kaggle_dir", type=Path,
+                   help="organiser/test or organiser/dev of hard_package.py")
     p.add_argument("out", type=Path, help="submission file to write")
     p.add_argument("--batches-file", default="test_batches.csv")
+    p.add_argument("--location-prior", default="true",
+                   help="'uniform', 'true' (kaggle_dir/location_prior.csv) or "
+                        "a location-prior CSV file (default true)")
     args = p.parse_args()
 
-    prob = Problem(args.kaggle_dir, args.batches_file)
+    if args.location_prior == "uniform":
+        w = None
+    elif args.location_prior == "true":
+        w = read_location_prior(Path(args.kaggle_dir) / "location_prior.csv")
+    else:
+        w = read_location_prior(Path(args.location_prior))
+    prob = Problem(args.kaggle_dir, args.batches_file, location_prior=w)
     pred, conf = predict(prob, OPTIMAL)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     write_submission(args.out, prob.row_id, pred, conf)

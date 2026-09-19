@@ -1,4 +1,4 @@
-"""The competition metric: AvgRegAtCoverage (C6).
+"""The competition metric: AvgRegAtCoverage (C6, tasks/even_harder_variant.md).
 
 This module is **standalone on purpose** -- it imports only pandas and numpy and
 nothing from ``chal``. ``metric-template.ipynb`` is generated from this file by
@@ -12,10 +12,15 @@ score of that group is the mean of
     1{pred != label} - 1{pred_ref != label}
 
 over the accepted rows -- the selective regret against the reference predictor,
-which is the plugin Bayes rule given the batch's *true* prior. The final score
-is the unweighted mean over the seven group scores. Lower is better, and it can
-be negative: both predictors are built on the same imperfect calibrated
-posterior, so an adapted predictor sometimes beats the true-prior plugin.
+which is the Bayes prediction of the secret label model given the batch's
+location. The final score is the unweighted mean over the seven group scores.
+Lower is better. Its expectation is non-negative for every submission, since
+the reference knows the location and the competitor does not; a realised score
+can dip below zero only through sampling noise.
+
+The docstring of ``score()`` is rendered to competitors by Kaggle and copied
+into their starter kit, so it must not name priors, posteriors, Bayes or the
+intended solution (``make_student_bundle.py`` audits it).
 """
 
 from __future__ import annotations
@@ -38,7 +43,7 @@ def score(solution: pd.DataFrame, submission: pd.DataFrame,
           num_classes: int = NUM_CLASSES) -> float:
     """Average selective regret at 80 % coverage, lower is better.
 
-    Each test batch is a set of images drawn under one unknown label prior. For
+    Each test batch is a set of images from one location. For
     every image the competitor submits a predicted label ``pred`` and a real
     number ``confidence``; higher confidence means the prediction is more
     likely to be kept. Within each batch size ``m`` all rows are pooled and
@@ -47,13 +52,14 @@ def score(solution: pd.DataFrame, submission: pd.DataFrame,
 
         1{pred != label} - 1{pred_ref != label}
 
-    over the kept rows, where ``pred_ref`` is a reference predictor that was
-    given the true prior of that batch. The reported score averages these seven
-    per-``m`` numbers with equal weight.
+    over the kept rows, where ``pred_ref`` is the prediction of the best
+    possible predictor that knows which location the batch came from. The
+    reported score averages these seven per-``m`` numbers with equal weight.
 
-    Scores below zero are possible and are not an error: the competitor and the
-    reference predictor share the same imperfect calibrated posterior, so the
-    competitor can occasionally beat it. Ties in ``confidence`` are broken by
+    No submission can beat the reference on average, so the expected score is
+    at least zero; a slightly negative score can only come from chance. Even
+    the best submission scores above zero at small ``m``, because a small
+    batch says little about its location. Ties in ``confidence`` are broken by
     ascending ``row_id``, so a constant-confidence submission is still scored
     deterministically.
 

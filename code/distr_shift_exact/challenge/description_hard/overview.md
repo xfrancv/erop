@@ -12,8 +12,8 @@ a batch of 1 says almost nothing.
 
 **Goal:** for every test image, predict its class **and** attach a confidence
 score. We keep the 80 % of your predictions you were most confident about, and
-measure how much worse they are than a reference predictor fine-tuned for the
-location each batch came from. Lower is better.
+measure how much worse they are than the best possible predictor that knows
+the location each batch came from. Lower is better.
 
 The interesting part is the confidence, not only the labels. Two images can be
 equally hard to classify while the batches they arrived in differ completely in
