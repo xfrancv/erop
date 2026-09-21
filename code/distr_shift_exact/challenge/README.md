@@ -51,14 +51,23 @@ must match both the driver and the GPU, see **Training on a GPU machine** below.
 python download_data.py                                            # ~125 MB
 python make_split.py out/v3/split                                  # rotate + split
 python train_base_model.py out/v3/model --split out/v3/split --device cuda
-python hard_make_data.py out/v3/data --split out/v3/split --model out/v3/model \
-    --priors-out priors_tissuemnist_v3.txt
+python hard_make_data.py out/v3/data --split out/v3/split --model out/v3/model
 python hard_package.py out/v3/data out/v3/kaggle
 python make_metric_notebook.py metric-template.ipynb
 python make_student_bundle.py out/v3/kaggle_code --zip
 
 ./run_baselines.sh out/v3/kaggle/organiser out/v3/submissions     # pre-launch checks
 ```
+
+`./run_all.sh` runs all of that in one go, from a clean `out/`, and asserts the
+pre-launch checks at the end; `--smoke` does the capped version below. The one
+thing it does not do is install the packages, since the CUDA wheel depends on
+the driver — see **Training on a GPU machine**.
+
+The 9 location priors are an output, written to `out/v3/data/priors.txt` (which
+`hard_package.py` reads) and kept out of the repo: a committed copy would go
+stale on every regeneration, and its header carries the secret `w`.
+`hard_make_data.py --priors-out <file>` writes a second copy if you want one.
 
 `out/` is gitignored. A capped smoke run of the whole pipeline, for checking
 the plumbing rather than producing anything usable (the scoring of ~187 000
@@ -263,6 +272,7 @@ width of every interval (C9.2).
 
 | Script | Does |
 | :-- | :-- |
+| `run_all.sh` | the whole pipeline from a clean `out/`, with the pre-launch checks asserted |
 | `download_data.py` | fetch and verify the TissueMNIST archive |
 | `make_split.py` | rotate every image once; secret / training / development / test split |
 | `train_base_model.py` | fit and BCTS-calibrate the label model on the secret set; score every pool |
