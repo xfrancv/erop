@@ -1,8 +1,8 @@
-"""The batch protocol: the grid, the batch counts, the sampler (C4).
+"""The batch protocol: the grid, the batch counts, the sampler.
 
 One *batch* is ``m`` rows from one location ``l``, drawn i.i.d. from the secret
 location prior ``w``. Every row of every batch is drawn independently of all
-others (tasks/even_harder_variant.md, *Labels*):
+others:
 
 1. ``y ~ pi_l``, the location's label prior;
 2. an image ``x`` from the pool ``P`` with probability ``q(y | x) / sum_P q(y | .)``,
@@ -21,7 +21,7 @@ which is what the reference predictor maximises.
 Every row is a submission row and every one is scored, so the pooled ranking at
 size ``m`` has ``B_m = N(m) * m`` rows. ``N_MIN`` is the load-bearing constant:
 rows inside one batch share the location and the same adaptation evidence, so
-precision tracks the number of *batches*, not rows (C9.2).
+precision tracks the number of *batches*, not rows.
 """
 
 from __future__ import annotations
@@ -33,13 +33,13 @@ import numpy as np
 SIZE_GRID = (1, 2, 5, 10, 20, 50, 100)
 N_MIN = 200
 BATCH_SCALE = 2000          # N(m) = max(N_MIN, ceil(BATCH_SCALE / m))
-# C4 / S6.2: m_max must not exceed a tenth of the pool it is drawn from, or
+# m_max must not exceed a tenth of the pool it is drawn from, or
 # repeated images inside a batch stop being rare.
 POOL_SIZE_RATIO = 10
 
 
 def n_batches(m: int, n_min: int = N_MIN, scale: int = BATCH_SCALE) -> int:
-    """``N(m) = max(N_min, ceil(scale / m))`` (C4)."""
+    """``N(m) = max(N_min, ceil(scale / m))``."""
     assert m >= 1
     return int(max(n_min, -(-scale // m)))
 

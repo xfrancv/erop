@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rotate every image once and split the data (tasks/even_harder_variant.md).
+"""Rotate every image once and split the data.
 
 1. **Rotation.** Every image of TissueMNIST -- train, val and test splits -- is
    rotated once by 90, 180 or 270 degrees (``chal.transform``). No noise. The
@@ -22,7 +22,7 @@ organisers can report how the generated labels relate to them.
 
 Output: ``out_dir/split.npz`` (organiser only), ``out_dir/report.txt``.
 
-    python make_split.py out/v3/split
+    python make_split.py out/final/split
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ def main() -> None:
         return "  ".join(f"{v:.4f}" for v in np.bincount(y, minlength=Y) / len(y))
 
     lines = [
-        "Split (tasks/even_harder_variant.md, Data split)",
+        "Split: secret set, training data, development pool, test pool",
         "=" * 78,
         f"timestamp : {datetime.now().isoformat(timespec='seconds')}",
         f"command   : {' '.join(sys.argv)}",

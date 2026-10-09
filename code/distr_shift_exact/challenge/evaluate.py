@@ -1,28 +1,21 @@
 #!/usr/bin/env python3
-"""Score a submission and plot how it behaves across batch sizes (C7).
+"""Score a submission and plot how it behaves across batch sizes.
 
-    python evaluate.py out/v3/submissions/bayes_epistemic_em.csv \\
-        out/v3/kaggle/organiser/test/solution.csv
+    python evaluate.py out/final/submissions/bayes_epistemic_em.csv \\
+        out/final/kaggle/organiser/test/solution.csv
     python evaluate.py sub.csv sol.csv --usage Private --out-dir figures/
-    python evaluate.py sub.csv sol.csv --budget 2000     # paper-style pooling
 
 The headline number is exactly what Kaggle computes: ``score()`` from
 ``chal/metric.py``, the same function ``metric-template.ipynb`` contains. Every
 other number here is diagnostic.
 
 **Bootstrap intervals resample batches, not rows.** Rows inside one batch share
-``theta_*`` and the same adaptation evidence, so they are strongly dependent;
+the location and the same adaptation evidence, so they are strongly dependent;
 resampling rows would understate the intervals badly. The resampling is done
 without re-sorting: the rows of a size group are sorted by confidence once, and
 a replicate only changes each row's *multiplicity*, so the accepted prefix is
 found by a cumulative sum. That is what makes 1000 replicates over 42 000 rows
 cheap.
-
-``--budget B`` re-imposes the parent README's constant curve budget -- ``B``
-rows per size, each batch contributing equally -- for panels whose bands are
-meant to be comparable across the x-axis. Note this is *not* what sets band
-width: the bootstrap unit is the batch, so precision tracks ``N(m)``, which
-still spans 2000 down to 200 across the grid (C9.2).
 """
 
 from __future__ import annotations
@@ -40,23 +33,6 @@ REPS = 1000
 ALPHA = 0.05
 
 
-def constant_budget(df: pd.DataFrame, budget: int, m: int,
-                    rng: np.random.Generator) -> pd.DataFrame:
-    """Subsample a size group to ``budget`` rows, each batch contributing equally.
-
-    The parent README's pooling rule, kept as an option for figures whose bands
-    are meant to be comparable across the x-axis (C9.2). Slot order inside a
-    batch is uniformly random by construction, so a prefix of slots is itself a
-    uniform subsample.
-    """
-    n_batches = df["id_test"].nunique()
-    per_batch = max(1, budget // n_batches)
-    keep = df[df["slot"] < per_batch]
-    if len(keep) <= budget:
-        return keep
-    return keep.sample(n=budget, random_state=int(rng.integers(1 << 31)))
-
-
 def main() -> None:
     p = argparse.ArgumentParser(
         description=__doc__,
@@ -70,9 +46,6 @@ def main() -> None:
     p.add_argument("--coverage", type=float, default=COVERAGE)
     p.add_argument("--reps", type=int, default=REPS,
                    help=f"bootstrap replicates (default {REPS}; 0 to skip)")
-    p.add_argument("--budget", type=int, default=0,
-                   help="re-impose the constant curve budget of B rows per "
-                        "size (0 = off, the default; C9.2)")
     p.add_argument("--out-dir", type=Path, default=None,
                    help="write figures here (default: alongside the submission)")
     p.add_argument("--seed", type=int, default=0)
@@ -108,8 +81,6 @@ def main() -> None:
     rows = []
     for m in sizes:
         g = merged[merged["m"] == m]
-        if args.budget:
-            g = constant_budget(g, args.budget, m, rng)
         g = g.sort_values("row_id", kind="stable")
         excess = g["excess"].to_numpy()
         conf = g["confidence"].to_numpy(dtype=float)
@@ -143,7 +114,7 @@ def main() -> None:
     print(f"AvgRegAtCoverage (c = {args.coverage}) = {headline:+.6f}"
           f"      lower is better")
     mean_of_table = float(table["reg_at_c"].mean())
-    assert abs(mean_of_table - headline) < 1e-9 or args.budget, (
+    assert abs(mean_of_table - headline) < 1e-9, (
         f"the per-size table ({mean_of_table:+.6f}) disagrees with score() "
         f"({headline:+.6f}) -- they must be the same computation")
 

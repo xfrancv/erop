@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate every label, location and batch (tasks/even_harder_variant.md).
+"""Generate every label, location and batch.
 
 Needs the split of ``make_split.py`` and the label model ``q(y | x)`` of
-``train_base_model.py``; needs no torch.
+``train_label_model.py``; needs no torch.
 
 1. **Label model.** ``q(y | x)`` is read for every image of the training data,
    the development pool and the test pool, optionally tempered
@@ -24,21 +24,20 @@ Needs the split of ``make_split.py`` and the label model ``q(y | x)`` of
    ``pibar_P`` the mean of ``q`` over the pool -- the Bayes prediction given the
    location, exactly.
 
-Outputs in ``out_dir`` (all organiser-only; ``hard_package.py`` decides what is
+Outputs in ``out_dir`` (all organiser-only; ``make_package.py`` decides what is
 published):
 
 ``data.npz``    images, labels, locations, batches, ids, reference predictions
-``priors.txt``  the 9 location priors (also written to ``--priors-out``)
+``priors.txt``  the 9 location priors; its header holds the secret ``w``
 ``report.txt``  the labels, the location plan, the batches, the EM check
 
-    python hard_make_data.py out/v3/data --split out/v3/split \\
-        --model out/v3/model --priors-out priors_tissuemnist_v3.txt
+    python make_data.py out/final/data --split out/final/split \\
+        --model out/final/model
 
 A capped smoke run, for the plumbing only::
 
-    python hard_make_data.py out/smoke/data --split out/smoke/split \\
-        --model out/smoke/model --n-min 5 --batch-scale 20 --dev-n-min 5 \\
-        --dev-batch-scale 20
+    python make_data.py out/smoke/data --split out/smoke/split \\
+        --model out/smoke/model --n-min 20 --batch-scale 100
 """
 
 from __future__ import annotations
@@ -72,13 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--split", type=Path, required=True,
                    help="output directory of make_split.py")
     p.add_argument("--model", type=Path, required=True,
-                   help="output directory of train_base_model.py")
+                   help="output directory of train_label_model.py")
     p.add_argument("--base-priors", type=Path,
-                   default=Path("priors_tissuemnist_challenge.txt"),
+                   default=Path(__file__).resolve().parent / "base_priors.txt",
                    help="the 8 priors locations 0..7 start from")
-    p.add_argument("--priors-out", type=Path, default=None,
-                   help="also write the 9 location priors here (they always "
-                        "go to out_dir/priors.txt)")
     p.add_argument("--eps", type=float, default=EPS_DEFAULT,
                    help=f"floor on every location prior (default {EPS_DEFAULT})")
     p.add_argument("--n-min-location", type=int, default=N_MIN_DEFAULT,
@@ -107,8 +103,6 @@ def main() -> None:
     args = build_parser().parse_args()
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    priors_files = [out_dir / "priors.txt"] + (
-        [args.priors_out] if args.priors_out else [])
     Y = chdata.NUM_CLASSES
     grid = tuple(int(m) for m in args.grid)
 
@@ -160,7 +154,7 @@ def main() -> None:
     w_checks = check_location_prior(w, plan.sizes)
 
     header = [
-        "Location priors of the challenge (tasks/even_harder_variant.md)",
+        "Location priors of the challenge",
         f"L = {ps.C} locations over Y = {ps.Y} classes; each prior is the "
         f"exact class frequency of its location's GENERATED training labels",
         f"locations 0..{K - 1} are the priors of {args.base_priors.name} "
@@ -172,8 +166,7 @@ def main() -> None:
         + " ".join(f"{v:.4f}" for v in w),
         "TV to theta_tr below is against the pooled generated-label frequency",
     ]
-    for path in priors_files:
-        write_prior_set(ps, path, header=header)
+    write_prior_set(ps, out_dir / "priors.txt", header=header)
 
     # --- 4a. development batches -------------------------------------------
     dev_sampler = PoolSampler(q["devpool"])
@@ -296,7 +289,7 @@ def main() -> None:
 
     cls = "  ".join(f"{c:>6}" for c in range(Y))
     lines = [
-        "Labels, locations, batches (tasks/even_harder_variant.md)",
+        "Labels, locations, batches",
         "=" * 78,
         f"timestamp : {datetime.now().isoformat(timespec='seconds')}",
         f"command   : {' '.join(sys.argv)}",
@@ -371,7 +364,7 @@ def main() -> None:
     (out_dir / "report.txt").write_text(report)
     print(report)
     print(f"wrote {out_dir}/data.npz, {out_dir}/report.txt, "
-          + ", ".join(str(p) for p in priors_files))
+          f"{out_dir}/priors.txt")
 
 
 if __name__ == "__main__":

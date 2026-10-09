@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train and calibrate the label model ``q(y | x)`` (tasks/even_harder_variant.md).
+"""Train and calibrate the label model ``q(y | x)``.
 
 The label model *defines* the ground truth of the challenge: the labels of the
 training data, of every development row and of every test row are drawn from
@@ -20,7 +20,7 @@ development pool and the test pool -- as rotated, exactly as released.
 Whether ``q`` is a good model of the real tissue classes does not matter for
 correctness: by construction it is the true posterior of the data-generating
 process. Calibration matters for realism only -- it sets how noisy the labels
-are -- and ``hard_make_data.py --temperature`` can change that afterwards.
+are -- and ``make_data.py --temperature`` can change that afterwards.
 
 Outputs in ``out_dir``:
 
@@ -33,9 +33,9 @@ Outputs in ``out_dir``:
 
 Run with::
 
-    python train_base_model.py out/v3/model --split out/v3/split --device cuda
-    python train_base_model.py out/smoke/model --split out/smoke/split \
-        --epochs 1 --max-fit 4000                              # smoke only
+    python train_label_model.py out/final/model --split out/final/split
+    python train_label_model.py out/smoke/model --split out/smoke/split \\
+        --epochs 1 --max-fit 3000                              # smoke only
 """
 
 from __future__ import annotations
@@ -52,12 +52,7 @@ import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 
 from chal import data as chdata
-from chal.calibration import (
-    calibration_summary,
-    fit_bcts,
-    fit_temperature,
-    log_softmax_np,
-)
+from chal.calibration import calibration_summary, fit_bcts, log_softmax_np
 
 try:
     from tqdm import tqdm
@@ -149,16 +144,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--val-fraction", type=float, default=0.20,
                    help="portion of the secret set used for epoch selection "
                         "and BCTS (default 0.20)")
-    p.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
+    p.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"),
+                   help="'auto' (default) uses the GPU when torch sees one")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--lr", type=float, default=1e-3, help="Adam learning rate")
-    p.add_argument("--calibration", choices=("bcts", "temperature", "none"),
-                   default="bcts",
-                   help="post-hoc calibration on the validation part: 'bcts' "
-                        "(default), 'temperature' (scalar T, the Guo et "
-                        "al. ablation) or 'none' (raw softmax)")
     p.add_argument("--curve-sample", type=int, default=10000,
                    help="fit-part examples scored each epoch for the learning "
                         "curve (default 10000); model selection uses the "
@@ -283,14 +274,7 @@ def main() -> None:
 
     # --- calibration on the validation part ---------------------------------
     cal_logits = collect_logits(model, Xt_cal, device)
-    # Every mode ends up as the same affine map on the logits, so there is one
-    # code path downstream: temperature is (Y,) throughout.
-    temperature, bias = np.ones(Y), np.zeros(Y)
-    if args.calibration == "bcts":
-        temperature, bias = fit_bcts(torch.from_numpy(cal_logits).float(), yt_cal)
-    elif args.calibration == "temperature":
-        temperature = np.full(
-            Y, fit_temperature(torch.from_numpy(cal_logits).float(), yt_cal))
+    temperature, bias = fit_bcts(torch.from_numpy(cal_logits).float(), yt_cal)
     assert np.all(temperature > 0), "non-positive temperature from calibration"
     scale = 1.0 / temperature
 
@@ -314,13 +298,13 @@ def main() -> None:
         class_names=np.array(chdata.CLASS_NAMES, dtype=object),
         **{f"log_post_{name}": lp.astype(np.float32)
            for name, lp in lps.items()},
-        # hard_make_data.py refuses posteriors of a different split.
+        # make_data.py refuses posteriors of a different split.
         split_id=str(split["run_id"]),
     )
 
     torch.save({
         "model_state": best_state, "num_classes": Y,
-        "calibration": args.calibration, "temperature": temperature,
+        "calibration": "bcts", "temperature": temperature,
         "calib_scale": scale, "calib_bias": bias,
         "calibration_metrics": calib, "fit_prior": fit_prior,
         "split": str(args.split), "split_id": str(split["run_id"]),
@@ -336,8 +320,7 @@ def main() -> None:
     # are drawn from q, so these are not its error rates.
     orig = {name: split[f"{name}_orig_label"] for name in targets}
     lines = [
-        "Label model q(y | x): training and calibration "
-        "(tasks/even_harder_variant.md)",
+        "Label model q(y | x): training and calibration",
         "=" * 78,
         f"timestamp   : {datetime.now().isoformat(timespec='seconds')}",
         f"command     : {' '.join(sys.argv)}",
@@ -356,8 +339,7 @@ def main() -> None:
     ] + [
         f"best epoch  : {best_epoch}  (validation error {best_err:.4f})",
         "-" * 78,
-        f"calibration : {args.calibration}"
-        + ("   softmax(z_k / T_k + b_k)" if args.calibration == "bcts" else ""),
+        "calibration : bcts   softmax(z_k / T_k + b_k)",
         f"  NLL : {calib['nll_before']:.4f} -> {calib['nll_after']:.4f}",
         f"  ECE : {calib['ece_before']:.4f} -> {calib['ece_after']:.4f}"
         f"   ({calib['n_ece_bins']} equal-mass bins)",

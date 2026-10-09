@@ -1,6 +1,6 @@
 """The label model's side of generation: labels, the reference, the checks.
 
-``hard_make_data.py`` is the only caller. The functions live here so that
+``make_data.py`` is the only caller. The functions live here so that
 ``selftest.py`` can check them on small synthetic problems.
 """
 
@@ -60,7 +60,7 @@ def debiased_posterior(q_rows: np.ndarray, pi_bar_pool: np.ndarray,
 
 def row_checks(id_test, slot, m_of_row, row_id, usage_of_row, pool_image,
                grid) -> dict:
-    """The C8 pre-launch assertions on the test rows, run at generation time."""
+    """The assertions on the test rows, run at generation time."""
     order = np.lexsort((slot, id_test))
     s, b, m = slot[order], id_test[order], m_of_row[order]
     starts = np.concatenate([[0], np.flatnonzero(np.diff(b)) + 1])

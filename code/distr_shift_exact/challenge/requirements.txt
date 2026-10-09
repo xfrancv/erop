@@ -1,4 +1,4 @@
-# The challenge pipeline. Torch is needed only by train_base_model.py; every
+# The challenge pipeline. Torch is needed only by train_label_model.py; every
 # other script reads the calibrated log-posterior it writes and is pure
 # NumPy/SciPy/pandas.
 numpy>=1.24

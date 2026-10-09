@@ -1,4 +1,4 @@
-"""The competition metric: AvgRegAtCoverage (C6, tasks/even_harder_variant.md).
+"""The competition metric: AvgRegAtCoverage.
 
 This module is **standalone on purpose** -- it imports only pandas and numpy and
 nothing from ``chal``. ``metric-template.ipynb`` is generated from this file by

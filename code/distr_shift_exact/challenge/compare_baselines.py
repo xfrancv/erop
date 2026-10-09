@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Compare submissions on **shared** bootstrap resamples (the C8 check).
+"""Compare submissions on **shared** bootstrap resamples.
 
-The pre-launch checklist asks whether `bayes_total` and `bayes_epistemic` are
+The pre-launch checks ask whether `bayes_total` and `bayes_epistemic` are
 "separated by more than their bootstrap intervals". Comparing two independently
 bootstrapped *marginal* intervals is the wrong test, and it is a conservative
 one: the two rejectors are built on the **same base predictor** and differ only
@@ -16,8 +16,8 @@ submission on that same resample, then reports
 * for each submission, the **paired** difference against the chosen reference:
   its interval, and the fraction of replicates on which it wins.
 
-    python compare_baselines.py out/v3/kaggle/organiser/test/solution.csv \\
-        out/v3/submissions/*.csv \\
+    python compare_baselines.py out/final/kaggle/organiser/test/solution.csv \\
+        out/final/submissions/*.csv \\
         --usage Private --vs bayes_total
 """
 
@@ -119,7 +119,7 @@ def main() -> None:
               f" {diff_txt:>21} {win:>6}")
     print("-" * 79)
     print("'wins' = fraction of replicates on which the row beats the reference.")
-    print("A paired interval excluding 0 is the C8 separation criterion; two")
+    print("A paired interval excluding 0 is the separation criterion; two")
     print("overlapping marginal intervals are not evidence against it.")
 
     print(f"\nper-size Reg@{args.coverage:g} (point estimates)")
@@ -133,7 +133,7 @@ def main() -> None:
 
     # The spread over everything is dominated by whichever entry is uniformly
     # bad, which separates at every size and so says nothing about grid design.
-    # What decides whether a size earns its ninth of the metric is whether it
+    # What decides whether a size earns its share of the metric is whether it
     # separates the *best* entries from each other -- the ranking near the top
     # of the leaderboard is the only part anyone competes over.
     zero = oracle_idx(per_size, sizes)

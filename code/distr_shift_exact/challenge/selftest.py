@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Checks that need no data and no network. Run before spending compute.
 
-Three things are worth brute-forcing rather than trusting:
+Four things are worth brute-forcing rather than trusting:
 
 1. **The inference.** ``chal/inference.py`` computes ``H``, ``T``, ``A`` and
    ``E`` with chunked logsumexps over an ``(n, C, Y)`` array. Here the same
-   quantities are recomputed from the definitions in S2 with explicit Python
+   quantities are recomputed from their definitions with explicit Python
    loops over ``theta`` and ``y``, on small random problems.
-2. **The protocol.** ``N(m)``, the row counts of C4, slots ``0..m-1``, and --
-   the load-bearing one -- that the sampler realises the posterior the
-   reference predictor maximises: rows drawn at location ``l`` have
+2. **The protocol.** ``N(m)``, the row counts, slots ``0..m-1``, and -- the
+   load-bearing one -- that the sampler realises the posterior the reference
+   predictor maximises: rows drawn at location ``l`` have
    ``p(y | x, l) ~ q(y | x) pi_l(y) / pibar_P(y)``.
 3. **The metric.** ``score()`` against a direct implementation, including the
    tie-break, the coverage rounding, and the sign of the ranking.
@@ -23,6 +23,7 @@ Three things are worth brute-forcing rather than trusting:
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -30,7 +31,7 @@ import pandas as pd
 from chal.inference import batch_starts_from_ids, infer, plugin_for_prior
 from chal.metric import score
 from chal.predictors import rank_confidence
-from chal.priors import pair_prior_set
+from chal.priors import pair_priors, read_prior_set
 from chal.protocol import SIZE_GRID, n_batches
 
 FAILURES: list[str] = []
@@ -42,10 +43,10 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         FAILURES.append(name)
 
 
-# --- 1. the inference, against the S2 definitions --------------------------
+# --- 1. the inference, against its definitions ------------------------------
 
 def brute_force(log_post, log_train_prior, log_theta, log_p_theta):
-    """``H``, ``T``, ``A``, ``E``, MAP -- straight from S2, loops and all."""
+    """``H``, ``T``, ``A``, ``E``, MAP -- straight from the definitions."""
     n, Y = log_post.shape
     C = len(log_theta)
     post = np.exp(log_post)
@@ -53,14 +54,14 @@ def brute_force(log_post, log_train_prior, log_theta, log_p_theta):
     p_tr = np.exp(log_train_prior)
     p_theta = np.exp(log_p_theta)
 
-    # w(x_i, theta_c) = sum_y (theta_cy / p_tr(y)) p_tr(y | x_i)     (S2.1)
+    # w(x_i, theta_c) = sum_y (theta_cy / p_tr(y)) p_tr(y | x_i)
     w = np.array([[sum(theta[c, y] / p_tr[y] * post[i, y] for y in range(Y))
                    for c in range(C)] for i in range(n)])
     # p_te(y | x_i, theta_c)
     plug = np.array([[[theta[c, y] / p_tr[y] * post[i, y] / w[i, c]
                        for y in range(Y)] for c in range(C)] for i in range(n)])
 
-    # p(theta | D) ~ p(theta) prod_j w(x_j, theta)   -- the whole batch (C3.2)
+    # p(theta | D) ~ p(theta) prod_j w(x_j, theta)   -- the whole batch
     unnorm = np.array([p_theta[c] * np.prod(w[:, c]) for c in range(C)])
     pth = unnorm / unnorm.sum()
 
@@ -79,7 +80,7 @@ def brute_force(log_post, log_train_prior, log_theta, log_p_theta):
 
 
 def test_inference() -> None:
-    print("inference (S2) against a brute-force implementation")
+    print("inference against a brute-force implementation")
     rng = np.random.default_rng(0)
     worst = 0.0
     for trial in range(12):
@@ -106,7 +107,7 @@ def test_inference() -> None:
     check("H, T, A, E and the MAP plugin on 12 random problems", True,
           f"max abs error {worst:.2e}")
 
-    # E >= 0 always: h(x, theta) minimises the per-theta conditional risk (S2.4).
+    # E >= 0 always: h(x, theta) minimises the per-theta conditional risk.
     rng = np.random.default_rng(7)
     log_post = np.log(rng.dirichlet(np.ones(5) * 0.4, size=200))
     p_tr = rng.dirichlet(np.ones(5) * 3.0)
@@ -127,9 +128,7 @@ def test_inference() -> None:
     check("C = 1 leaves no epistemic uncertainty",
           float(np.abs(single.epistemic).max()) < 1e-12)
 
-    # The full-batch posterior does not depend on which row is called the query,
-    # which is the identity C3.2 rests on: leave-one-out and full-batch give the
-    # same H, T, A, E.
+    # The full-batch posterior does not depend on which row is called the query.
     perm = rng.permutation(10)
     a = infer(log_post[:10], np.array([0]), np.log(p_tr), np.log(theta),
               np.full(6, -np.log(6)))
@@ -142,13 +141,13 @@ def test_inference() -> None:
 # --- 2. the protocol -------------------------------------------------------
 
 def test_protocol() -> None:
-    print("\nprotocol (C4)")
+    print("\nprotocol")
     counts = {m: n_batches(m) for m in SIZE_GRID}
-    check("N(m) matches the C4 table",
+    check("N(m) on the default grid",
           list(counts.values()) == [2000, 1000, 400, 200, 200, 200, 200],
           str(list(counts.values())))
     rows = {m: counts[m] * m for m in SIZE_GRID}
-    check("B_m matches the C4 table",
+    check("B_m on the default grid",
           list(rows.values()) == [2000, 2000, 2000, 2000, 4000, 10000, 20000])
     check("4200 batches and 42 000 rows per usage",
           sum(counts.values()) == 4200 and sum(rows.values()) == 42000,
@@ -157,9 +156,10 @@ def test_protocol() -> None:
     from chal.protocol import PoolSampler, draw_rows
     rng = np.random.default_rng(0)
     q_pool = rng.dirichlet(np.ones(8) * 0.5, size=1600)
-    ps = pair_prior_set(np.full(8, 1 / 8), 0.35)
-    w = rng.dirichlet(np.ones(ps.C) * 3.0)
-    drawn = draw_rows(PoolSampler(q_pool), ps.theta, w, rng,
+    theta8 = pair_priors(8, 0.35)
+    C = len(theta8)
+    w = rng.dirichlet(np.ones(C) * 3.0)
+    drawn = draw_rows(PoolSampler(q_pool), theta8, w, rng,
                       grid=(1, 2, 5, 10), n_min=4, scale=8)
     ok = True
     for b in range(drawn.n_batches):
@@ -170,18 +170,18 @@ def test_protocol() -> None:
     check("batches are contiguous and sorted", len(starts) == drawn.n_batches)
 
     # Locations i.i.d. from w; labels i.i.d. from the location's prior.
-    many = draw_rows(PoolSampler(q_pool), ps.theta, w,
+    many = draw_rows(PoolSampler(q_pool), theta8, w,
                      np.random.default_rng(1), grid=(10,), n_min=20000,
                      scale=10)
-    freq = np.bincount(many.batch_location, minlength=ps.C) / many.n_batches
+    freq = np.bincount(many.batch_location, minlength=C) / many.n_batches
     check("batch locations follow w", np.abs(freq - w).max() < 0.012,
           f"max |freq - w| {np.abs(freq - w).max():.4f}")
     loc = many.location_of_row
     lab = np.stack([np.bincount(many.label[loc == l], minlength=8)
-                    / (loc == l).sum() for l in range(ps.C)])
+                    / (loc == l).sum() for l in range(C)])
     check("row labels follow the location's prior",
-          np.abs(lab - ps.theta).max() < 0.02,
-          f"max |freq - pi_l| {np.abs(lab - ps.theta).max():.4f}")
+          np.abs(lab - theta8).max() < 0.02,
+          f"max |freq - pi_l| {np.abs(lab - theta8).max():.4f}")
 
     # The load-bearing one: given the image and the location, the drawn label
     # has exactly the posterior the reference predictor maximises. Checked on
@@ -232,7 +232,7 @@ def naive_score(sol: pd.DataFrame, sub: pd.DataFrame, coverage: float) -> float:
 
 
 def test_metric() -> None:
-    print("\nmetric (C6)")
+    print("\nmetric")
     rng = np.random.default_rng(3)
     sizes = (1, 2, 5)
     n_per = 60
@@ -289,7 +289,7 @@ def test_metric() -> None:
 # --- 4. generation ----------------------------------------------------------
 
 def test_generation() -> None:
-    print("\ngeneration (tasks/even_harder_variant.md)")
+    print("\ngeneration")
     from chal.generate import debiased_posterior, draw_labels, reference, \
         tempered
     from chal.locations import assign_locations, plan_locations
@@ -300,8 +300,12 @@ def test_generation() -> None:
 
     # The location LP, on class counts shaped like TissueMNIST's but smaller.
     D = np.array([4800, 700, 530, 1390, 1060, 690, 3530, 2210])
-    ps = pair_prior_set(np.full(8, 1 / 8), 0.35)
-    plan = plan_locations(D, ps.theta, eps=0.01, n_min=500)
+    base = pair_priors(8, 0.35)
+    on_file = read_prior_set(Path(__file__).resolve().parent / "base_priors.txt",
+                             np.full(8, 1 / 8)).theta
+    check("base_priors.txt holds the sliding-pair priors, tau = 0.35",
+          on_file.shape == base.shape and np.allclose(on_file, base, atol=1e-12))
+    plan = plan_locations(D, base, eps=0.01, n_min=500)
     check("every training image lands in exactly one location",
           np.array_equal(plan.counts.sum(axis=0), D))
     check("locations 0..7 honour n_min", plan.sizes[:-1].min() >= 500,

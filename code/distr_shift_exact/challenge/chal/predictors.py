@@ -1,6 +1,6 @@
-"""The reject-option predictors of S3, built from an organiser directory.
+"""The reject-option baselines, built from an organiser directory.
 
-``hard_package.py`` writes ``organiser/test/`` and ``organiser/dev/``:
+``make_package.py`` writes ``organiser/test/`` and ``organiser/dev/``:
 ``predictions.csv`` (the TRUE label model, one row per batch row),
 ``test_batches.csv``, ``test_priors.csv`` (the 9 location priors, exactly what
 a competitor reads off ``train.csv``) and ``train_prior.csv`` (the base prior
@@ -15,7 +15,7 @@ estimate of ``estimate_location_prior.py``.
 
 A reject-option predictor is a pair (base predictor, uncertainty score). The
 submission format carries a **confidence**, so every score ``u`` is emitted as
-``-u`` or as a rank; only the induced ranking is ever read (C6.2).
+``-u`` or as a rank; only the induced ranking is ever read.
 """
 
 from __future__ import annotations
@@ -27,19 +27,15 @@ import pandas as pd
 
 from .inference import batch_starts_from_ids, infer, plugin_for_prior
 
-# Name -> one-line description, in the order C7 lists them.
+# Name -> one-line description; notation of chal/inference.py.
 PREDICTORS = {
-    "base": "non-adapted base predictor == train-prior plugin (S3 row 4)",
-    "map_plugin": "MAP plugin h(x, theta_map) (S3 row 3)",
-    "bayes_total": "Bayesian base predictor, total uncertainty T (S3 row 1)",
-    "bayes_epistemic": "Bayesian base predictor, epistemic uncertainty E (S3 row 2)",
-    "true_plugin": "true-prior plugin (S3 row 5) -- oracle, zero regret",
-    "bayes_aleatoric": "Bayesian base predictor, aleatoric uncertainty A (S3 row 6)",
+    "base": "non-adapted base predictor, argmax_y q(y | x)",
+    "map_plugin": "MAP plugin h(x, theta_map)",
+    "bayes_total": "Bayesian base predictor, total uncertainty T",
+    "bayes_epistemic": "Bayesian base predictor, epistemic uncertainty E",
+    "true_plugin": "true-prior plugin -- oracle, zero regret",
+    "bayes_aleatoric": "Bayesian base predictor, aleatoric uncertainty A",
 }
-OPTIMAL = "bayes_epistemic"
-NEEDS_INFERENCE = ("map_plugin", "bayes_total", "bayes_epistemic",
-                   "bayes_aleatoric")
-NEEDS_THETA_STAR = ("true_plugin",)
 
 
 def rank_confidence(*keys: np.ndarray) -> np.ndarray:
@@ -54,7 +50,7 @@ def rank_confidence(*keys: np.ndarray) -> np.ndarray:
 
     Exact ties are the common case here, not a corner case: ``E(x, D)`` is
     exactly zero whenever every prior in ``Theta`` votes for the same label, so
-    the tie-break governs a large part of the ranking (S3).
+    the tie-break governs a large part of the ranking.
 
     ``np.lexsort`` takes its *last* key as primary, so the keys are reversed.
     """
@@ -65,26 +61,19 @@ def rank_confidence(*keys: np.ndarray) -> np.ndarray:
 
 
 class Problem:
-    """The released files, loaded and arranged for inference."""
+    """One organiser directory, loaded and arranged for inference."""
 
-    def __init__(self, kaggle_dir: Path, batches_file: str = "test_batches.csv",
-                 predictions_file: str | None = None,
+    def __init__(self, organiser_dir: Path,
                  location_prior: np.ndarray | None = None):
-        kaggle_dir = Path(kaggle_dir)
-        self.dir = kaggle_dir
-        batches = pd.read_csv(kaggle_dir / batches_file)
-        if predictions_file is None:
-            predictions_file = ("dev_predictions.csv"
-                                if batches_file.startswith("dev_")
-                                else "predictions.csv")
-        preds = pd.read_csv(kaggle_dir / predictions_file)
-        train_prior = pd.read_csv(kaggle_dir / "train_prior.csv").to_numpy()[0]
-        priors = pd.read_csv(kaggle_dir / "test_priors.csv")
+        organiser_dir = Path(organiser_dir)
+        self.dir = organiser_dir
+        batches = pd.read_csv(organiser_dir / "test_batches.csv")
+        preds = pd.read_csv(organiser_dir / "predictions.csv")
+        train_prior = pd.read_csv(organiser_dir / "train_prior.csv").to_numpy()[0]
+        priors = pd.read_csv(organiser_dir / "test_priors.csv")
 
         Y = len(train_prior)
         post = preds[[f"p{y}" for y in range(Y)]].to_numpy(dtype=np.float64)
-        # The released posteriors are rounded for file size; renormalise before
-        # taking logs so every row is exactly a distribution.
         post = np.clip(post, 1e-300, None)
         # Renormalise so each row is exactly a distribution. This is a per-row
         # positive rescaling, which cancels everywhere downstream: it shifts
@@ -97,12 +86,11 @@ class Problem:
         # Inference needs rows grouped by batch, each batch contiguous.
         batches = batches.sort_values(["id_test", "slot"], kind="stable"
                                       ).reset_index(drop=True)
-        # Positional lookup rather than a per-row dict: there are half a million
-        # rows and only ~90 000 distinct images.
+        # Positional lookup rather than a per-row dict.
         pos = pd.Index(preds["row_id"]).get_indexer(batches["row_id"])
         missing = int((pos < 0).sum())
         assert missing == 0, (
-            f"{missing} rows have no entry in {predictions_file}, e.g. "
+            f"{missing} rows have no entry in predictions.csv, e.g. "
             f"{batches['row_id'].to_numpy()[pos < 0][:3].tolist()}")
 
         self.batches = batches
@@ -133,15 +121,15 @@ class Problem:
 
     @property
     def inference(self):
-        """The exact S2 inference, computed once and cached."""
+        """The exact inference, computed once and cached."""
         if self._inf is None:
             self._inf = infer(self.log_post, self.starts, self.log_train_prior,
                               self.log_theta, self.log_p_theta)
         return self._inf
 
-    def theta_star_per_row(self, meta_file: str = "batch_meta.csv") -> np.ndarray:
-        """``theta_*`` of each row's batch -- local only, oracle use."""
-        meta = pd.read_csv(self.dir / meta_file)
+    def theta_star_per_row(self) -> np.ndarray:
+        """The location prior of each row's batch -- oracle use only."""
+        meta = pd.read_csv(self.dir / "batch_meta.csv")
         lookup = dict(zip(meta["id_test"], meta["theta_star_index"]))
         return self.theta[np.array([lookup[i] for i in self.id_test])]
 
@@ -164,7 +152,7 @@ def predict(problem: Problem, name: str) -> tuple[np.ndarray, np.ndarray]:
     if name == "bayes_total":
         return inf.bayes_pred, -inf.total
     if name == "bayes_epistemic":
-        # S3 row 2: score by E, ties broken by T.
+        # Score by E, ties broken by T.
         return inf.bayes_pred, rank_confidence(inf.epistemic, inf.total)
     if name == "bayes_aleatoric":
         return inf.bayes_pred, rank_confidence(inf.aleatoric, inf.total)

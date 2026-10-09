@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Write the Kaggle upload (tasks/even_harder_variant.md).
+"""Write the Kaggle upload.
 
-Reads ``hard_make_data.py``'s ``data.npz`` and writes three groups of files.
+Reads ``make_data.py``'s ``data.npz`` and writes three groups of files.
 Needs no torch and no model: the labels and the reference predictions were
 fixed at generation time.
 
@@ -37,8 +37,8 @@ constant confidence. They show the format and nothing else.
     every released development and test row came from
 ``manifest.json``
 
-    python hard_package.py out/v3/data out/v3/kaggle
-    ./run_baselines.sh out/v3/kaggle/organiser out/v3/submissions
+    python make_package.py out/final/data out/final/kaggle
+    ./run_baselines.sh out/final/kaggle/organiser out/final/submissions
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def main() -> None:
     p = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("data_dir", type=Path, help="output of hard_make_data.py")
+    p.add_argument("data_dir", type=Path, help="output of make_data.py")
     p.add_argument("out_dir", type=Path, help="directory receiving the upload")
     p.add_argument("--seed", type=int, default=20260919,
                    help="shuffles the order of the training rows")

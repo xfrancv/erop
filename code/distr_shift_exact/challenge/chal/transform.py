@@ -1,4 +1,4 @@
-"""The image transformation (tasks/even_harder_variant.md, *Images*).
+"""The image transformation.
 
 Every image of the original dataset is rotated **once**, by 90, 180 or 270
 degrees -- never 0 -- before anything else happens to it. The rotated image is

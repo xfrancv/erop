@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compute every C7 baseline and score it -- the pre-launch check that decides
+# Compute every baseline and score it -- the pre-launch check that decides
 # whether the competition has discoverable structure at all.
 #
 # Two comparisons matter, both on shared bootstrap resamples
@@ -7,17 +7,21 @@
 # intervals are the wrong test:
 #   * bayes_total vs bayes_epistemic -- same predictor, different ranking;
 #   * bayes_epistemic under a uniform location prior vs under the EM estimate
-#     of w from the development batches -- the spec's "does EM pay?" check.
+#     of w from the development batches -- the "does EM pay?" check.
 # The runs under the true w show how much of the gap EM closes.
 #
-#   ./run_baselines.sh                                   # out/v3/kaggle/organiser
+#   ./run_baselines.sh                               # out/final/kaggle/organiser
 #   ./run_baselines.sh out/smoke/kaggle/organiser out/smoke/submissions
 set -euo pipefail
 cd "$(dirname "$0")"
 
-ORG=${1:-out/v3/kaggle/organiser}
-SUBS=${2:-out/v3/submissions}
+ORG=${1:-out/final/kaggle/organiser}
+SUBS=${2:-out/final/submissions}
 PY=${PYTHON:-python}
+command -v "$PY" >/dev/null || {
+  echo "no '$PY' on PATH -- activate the virtualenv first (README.md, Setup)" >&2
+  exit 1
+}
 BAYES=(map_plugin bayes_total bayes_epistemic bayes_aleatoric)
 
 mkdir -p "$SUBS"
@@ -67,5 +71,6 @@ Read the output in this order:
   3. bayes_epistemic_em vs bayes_epistemic_uniform: the paired interval must
      exclude 0, or the secret location prior is not worth discovering and w
      should be moved further from uniform.
-  4. bayes_epistemic vs bayes_total (same prior): the C8 separation criterion.
+  4. bayes_epistemic vs bayes_total (same prior): the paired interval must
+     exclude 0 too, or ranking by epistemic uncertainty is not rewarded.
 NOTE

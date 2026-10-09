@@ -1,31 +1,25 @@
-"""Exact Bayesian label-prior adaptation over a finite ``Theta`` (S2, S5, C3.2).
+"""Exact Bayesian label-prior adaptation over a finite set of priors ``Theta``.
 
-Closed-form throughout: ``Theta`` is finite, so every integral of S2 is a sum
-over ``C`` terms, and all of it runs in log space.
+A batch ``D`` is ``m`` images from one location, i.e. under one unknown prior
+``theta`` out of the ``C`` location priors. With ``p_tr(y | x)`` the posterior
+under the base prior ``p_tr(y)``:
 
-**Full-batch, not leave-one-out.** A test batch here is ``m`` images all
-visible at once, so the posterior over ``theta`` conditions on the whole batch:
+    w(x, theta)        = sum_y (theta_y / p_tr(y)) p_tr(y | x)
+    p_te(y | x, theta) = (theta_y / p_tr(y)) p_tr(y | x) / w(x, theta)
+    p(theta | D)       ~ p(theta) prod_{j=1..m} w(x_j, theta)
+    p(y | x_i, D)      = sum_theta p(theta | D) p_te(y | x_i, theta)
 
-    p(theta | D) ~ p(theta) prod_{j=1..m} w(x_j, theta)
+and from these, for every row,
 
-and the label posterior for row ``i`` of that batch is
+    H(x, D)  = argmax_y p(y | x, D)                    the Bayes prediction
+    T(x, D)  = 1 - max_y p(y | x, D)                   total uncertainty
+    h(x, theta) = argmax_y p_te(y | x, theta)          the plug-in prediction
+    A(x, D)  = E_{theta | D} [1 - max_y p_te(y | x, theta)]    aleatoric
+    E(x, D)  = T - A  >= 0                             epistemic
 
-    p(y | x_i, D) = sum_theta p(theta | D) p_te(y | x_i, theta).
-
-Worth knowing before comparing this against the parent code: for ``H``, ``T``,
-``A`` and ``E`` the full-batch rule and the README's leave-one-out rule are the
-*same predictor*, not an approximation of one another. Writing S2.2 with the
-adaptation set ``D^(i) = D \\ {x_i}``, the query contributes the factor
-``p_te(x_i, y | theta)``, whose ``w(x_i, theta)`` exactly restores the factor
-the leave-one-out set is missing:
-
-    p(theta) w(x_i, theta) prod_{j != i} w(x_j, theta) = p(theta) prod_j w(x_j, theta)
-
-which is why ``TrialInference.pth_query`` in the parent ``exact/inference.py``
-is documented as "the same for every triplet ``i``". The only rejector the
-choice actually moves is the **MAP plugin**, which conditions on the adaptation
-set alone: here it uses the full-batch posterior, which is both simpler and
-strictly better informed (C9.3).
+``Theta`` is finite, so every integral is a sum over ``C`` terms, and all of it
+runs in log space. The posterior over ``theta`` conditions on the **whole
+batch**, the query row included; the MAP plug-in uses the same posterior.
 
 Shapes: ``n`` rows, ``C`` priors, ``Y`` classes. Rows must be grouped by batch
 and each batch contiguous -- ``batch_starts`` indexes the first row of each.
@@ -45,7 +39,7 @@ _CHUNK = 65536
 
 def log_weights(log_post: np.ndarray, log_train_prior: np.ndarray,
                 log_theta: np.ndarray) -> np.ndarray:
-    """``r[i, c] = log w(x_i, theta_c)``, the S2.1 weight in log space.
+    """``r[i, c] = log w(x_i, theta_c)``, in log space.
 
     ``w(x, theta) = p_te(x | theta) / p_tr(x) = sum_y (theta_y / p_tr(y)) p_tr(y | x)``
     -- the ratio in which the intractable ``p_tr(x)`` has already cancelled.
@@ -70,7 +64,7 @@ def batch_starts_from_ids(batch_id: np.ndarray) -> np.ndarray:
 
 @dataclass
 class BatchInference:
-    """Every per-row quantity S2-S3 asks for, over all batches at once."""
+    """Every per-row quantity of the module docstring, over all batches."""
 
     bayes_pred: np.ndarray     # (n,)  H(x, D)
     total: np.ndarray          # (n,)  T(x, D)
@@ -85,7 +79,7 @@ class BatchInference:
 def infer(log_post: np.ndarray, batch_starts: np.ndarray,
           log_train_prior: np.ndarray, log_theta: np.ndarray,
           log_p_theta: np.ndarray) -> BatchInference:
-    """Run the exact inference of S2 for every row of every batch.
+    """Run the exact inference for every row of every batch.
 
     Cost is ``O(n C Y)``; nothing is per-batch except one ``reduceat``.
     """
@@ -119,10 +113,10 @@ def infer(log_post: np.ndarray, batch_starts: np.ndarray,
         sl = slice(a, b)
         rows = np.arange(b - a)
 
-        # log p_te(y | x_i, theta_c) = log_post + log(theta/p_tr) - r  (S2.1)
+        # log p_te(y | x_i, theta_c) = log_post + log(theta/p_tr) - r
         log_plug = log_post[sl, None, :] + ratio - r[sl, :, None]   # (k, C, Y)
 
-        # --- S2.2 label posterior and S2.3 total uncertainty ---------------
+        # --- label posterior and total uncertainty -------------------------
         log_lab = logsumexp(log_pth[row_batch[sl], :, None] + log_plug, axis=1)
         log_lab -= logsumexp(log_lab, axis=1, keepdims=True)
         label_post = np.exp(log_lab)
@@ -130,7 +124,7 @@ def infer(log_post: np.ndarray, batch_starts: np.ndarray,
         bayes_pred[sl] = pred
         total[sl] = 1.0 - label_post[rows, pred]
 
-        # --- S2.4 per-theta plugin predictor and the aleatoric term --------
+        # --- per-theta plugin predictor and the aleatoric term -------------
         plugin_pred = log_plug.argmax(axis=2)                       # (k, C)
         plugin_max = np.exp(np.take_along_axis(
             log_plug, plugin_pred[:, :, None], axis=2)[:, :, 0])    # (k, C)
@@ -138,14 +132,14 @@ def infer(log_post: np.ndarray, batch_starts: np.ndarray,
         # A = E_{theta ~ p(theta | D)} [1 - p_te(h(x, theta) | x, theta)]
         aleatoric[sl] = np.einsum("kc,kc->k", pth[row_batch[sl]], plugin_unc)
 
-        # --- S3 row 3: the MAP plugin --------------------------------------
+        # --- the MAP plugin -------------------------------------------------
         mi = map_index[sl]
         map_pred[sl] = plugin_pred[rows, mi]
         map_unc[sl] = plugin_unc[rows, mi]
 
     epistemic = total - aleatoric
     # E >= 0 because h(x, theta) minimises the per-theta conditional risk, so
-    # A <= T(x, D, y_hat) for every y_hat (S2.4). Only float noise may breach it.
+    # A <= T(x, D, y_hat) for every y_hat. Only float noise may breach it.
     assert epistemic.min() > -1e-9, (
         f"epistemic uncertainty went negative ({epistemic.min():.3e}); that is "
         f"an arithmetic bug, not a modelling outcome")
@@ -161,7 +155,7 @@ def plugin_for_prior(log_post: np.ndarray, log_train_prior: np.ndarray,
                      theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """``(h(x, theta), 1 - max_y p_te(y | x, theta))`` for one prior per row.
 
-    ``theta`` is either a single ``(Y,)`` prior -- the train-prior plugin -- or
+    ``theta`` is either a single ``(Y,)`` prior or
     an ``(n, Y)`` array giving each row its own, which is how the true-prior
     reference predictor is evaluated (each row uses its batch's ``theta_*``).
     """

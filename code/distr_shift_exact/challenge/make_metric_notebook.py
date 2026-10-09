@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate ``metric-template.ipynb`` from ``chal/metric.py`` (C6.3).
+"""Generate ``metric-template.ipynb`` from ``chal/metric.py``.
 
 Kaggle runs a notebook, not a package, so the metric has to be a single
 self-contained cell. Rather than maintaining that cell by hand next to the copy

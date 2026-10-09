@@ -7,7 +7,7 @@ an organiser artifact and must never diverge from it:
 ``metric.py``   copied from ``chal/metric.py`` -- the same function Kaggle runs,
                 so a student's offline number is the leaderboard's number
 
-Everything else comes from ``student_hard/``, which holds the student-facing
+Everything else comes from ``student/``, which holds the student-facing
 sources.
 
 **What must never enter the bundle.** Competitors are not told that the problem
@@ -17,7 +17,7 @@ discovering that is the point of the competition. So the builder audits every
 ``.py`` and ``.md`` file it writes for words that would give it away, and
 refuses model weights and organiser code.
 
-    python make_student_bundle.py out/v3/kaggle_code --zip
+    python make_student_bundle.py out/final/kaggle_code --zip
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ FORBIDDEN = (
     "bayes", "reweight", "re-weight", "calibrated", "calibration", "posterior",
     "em algorithm", "expectation-maximization", "mixture",
 )
-SOURCES = "student_hard"
+SOURCES = "student"
 AUDITED_SUFFIXES = (".py", ".md")
 # Organiser artifacts that must never ship: the label model, organiser code.
 FORBIDDEN_FILES = ("model.pt", "log_post.npz", "data.npz", "split.npz",

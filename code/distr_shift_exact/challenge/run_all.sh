@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Regenerate the whole competition from scratch, on a machine with a GPU.
+# Generate the whole competition from scratch, on a machine with a GPU.
 #
-# Everything EXCEPT the install: set up the virtualenv first, as README.md
-# "Training on a GPU machine" describes (torch from a CUDA index matching the
-# driver, then requirements.txt), activate it, and run this.
+# Everything EXCEPT the install: set up and activate the virtualenv first, as
+# README.md "Setup" describes, then run this.
 #
-#   ./run_all.sh                      # out/v3, 30 epochs, cuda
-#   ./run_all.sh --clean              # erase out/ first  (asks to confirm)
+#   ./run_all.sh                      # out/final, 30 epochs, cuda
 #   ./run_all.sh --smoke              # capped plumbing run into out/smoke
-#   ./run_all.sh --out-dir out/v3b --epochs 40 --device cpu
+#   ./run_all.sh --clean              # erase out/ first  (asks to confirm)
+#   ./run_all.sh --out-dir out/b --epochs 40 --device cpu
 #
 # Steps: selftest, download, split, label model, data, package, metric
 # notebook, student bundle, baselines. Everything is logged to
@@ -16,7 +15,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-OUT=out/v3
+OUT=out/final
 DEVICE=cuda
 EPOCHS=30
 CLEAN=0
@@ -37,6 +36,11 @@ done
 
 # A smoke run must never be mistaken for the real thing: it caps the label
 # model and the batch counts, and every artifact it writes is marked.
+command -v "$PY" >/dev/null || {
+  echo "no '$PY' on PATH -- activate the virtualenv first (README.md, Setup)" >&2
+  exit 1
+}
+
 if [[ $SMOKE == 1 ]]; then
   TRAIN_EXTRA=(--max-fit 3000)
   DATA_EXTRA=(--n-min 20 --batch-scale 100)
@@ -62,20 +66,24 @@ echo "=== run_all.sh   $(date -Is)"
 echo "out=$OUT device=$DEVICE epochs=$EPOCHS smoke=$SMOKE"
 echo "python: $($PY -V), $($PY -c 'import sys; print(sys.prefix)')"
 
-$PY - <<EOF
+$PY - "$DEVICE" <<'EOF'
 import sys
+device = sys.argv[1]
 try:
     import torch
 except ModuleNotFoundError:
-    sys.exit("torch is not installed -- see README.md, 'Training on a GPU machine'")
+    sys.exit("torch is not installed -- see README.md, Setup")
 print(f"torch {torch.__version__}, CUDA {torch.version.cuda}, "
       f"available {torch.cuda.is_available()}")
-if "$DEVICE" == "cuda":
+if device == "cuda":
     if not torch.cuda.is_available():
-        sys.exit("--device cuda, but no GPU is visible: the wheel's CUDA is "
+        sys.exit("--device cuda, but torch sees no GPU: the wheel's CUDA is "
                  "probably newer than the driver. Reinstall torch from an "
-                 "older index (README.md), or pass --device cpu.")
+                 "older index (README.md, Setup), or pass --device cpu.")
     print("GPU:", torch.cuda.get_device_name(0))
+    # is_available() does not notice a wheel without kernels for this GPU;
+    # the first convolution does.
+    torch.nn.Conv2d(1, 8, 3).cuda()(torch.randn(2, 1, 28, 28, device="cuda"))
 EOF
 
 step() { echo; echo "=== $* "; }
@@ -90,18 +98,15 @@ step "3/9 split: rotate every image once, secret / train / dev / test"
 $PY make_split.py "$OUT/split"
 
 step "4/9 label model on the secret set   (the slow step)"
-$PY train_base_model.py "$OUT/model" --split "$OUT/split" --device "$DEVICE" \
+$PY train_label_model.py "$OUT/model" --split "$OUT/split" --device "$DEVICE" \
     --epochs "$EPOCHS" ${TRAIN_EXTRA[@]+"${TRAIN_EXTRA[@]}"}
 
 step "5/9 labels, locations, batches"
-# No --priors-out: the 9 location priors are an OUTPUT, written to
-# $OUT/data/priors.txt, which is what hard_package.py reads. A copy in the
-# repo would only go stale, and its header carries the secret w.
-$PY hard_make_data.py "$OUT/data" --split "$OUT/split" --model "$OUT/model" \
+$PY make_data.py "$OUT/data" --split "$OUT/split" --model "$OUT/model" \
     ${DATA_EXTRA[@]+"${DATA_EXTRA[@]}"}
 
 step "6/9 the Kaggle upload"
-$PY hard_package.py "$OUT/data" "$OUT/kaggle"
+$PY make_package.py "$OUT/data" "$OUT/kaggle"
 
 step "7/9 the metric notebook"
 $PY make_metric_notebook.py metric-template.ipynb

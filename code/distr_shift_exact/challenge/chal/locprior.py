@@ -1,4 +1,4 @@
-"""The secret location prior ``w`` and its EM estimate (*Parameter prior*).
+"""The secret location prior ``w`` and its EM estimate.
 
 The location of every development and test batch is drawn i.i.d. from ``w``,
 the same for every batch size and for the development, public and private
@@ -24,6 +24,8 @@ import numpy as np
 import pandas as pd
 from scipy.special import logsumexp
 
+from .priors import total_variation
+
 # Neither uniform nor proportional to the training location sizes (location 8
 # holds most of the training data), since both are the first guesses
 # competitors will try. TV 0.42 from uniform, every entry >= 0.03. A milder
@@ -33,12 +35,8 @@ W_DEFAULT = (0.30, 0.03, 0.20, 0.03, 0.05, 0.25, 0.03, 0.08, 0.03)
 W_MIN = 0.03
 
 
-def total_variation(p: np.ndarray, q: np.ndarray) -> float:
-    return float(0.5 * np.abs(np.asarray(p) - np.asarray(q)).sum())
-
-
 def check_location_prior(w: np.ndarray, location_sizes: np.ndarray) -> dict:
-    """The guards of the spec, returned as numbers for the report."""
+    """The guards on ``w``, returned as numbers for the report."""
     w = np.asarray(w, dtype=np.float64)
     L = len(w)
     assert abs(w.sum() - 1.0) < 1e-9, f"w sums to {w.sum()}"

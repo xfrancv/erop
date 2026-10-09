@@ -1,10 +1,10 @@
-"""Assigning the training data to locations -- the hard variant (tasks/hard_variant.md).
+"""Assigning the training data to locations.
 
-The hard variant tells competitors that the training data come from ``L``
-locations with different class frequencies. Underneath, each location is one
-label prior: locations ``0..K-1`` start from the ``K`` priors of the easy
-variant's priors file, and location ``K`` takes **every remaining training
-image**, so no training data are discarded.
+Competitors are told that the training data come from ``L`` locations with
+different class frequencies. Underneath, each location is one label prior:
+locations ``0..K-1`` start from the ``K`` priors of ``base_priors.txt``, and
+location ``K`` takes **every remaining training image**, so no training data
+are discarded.
 
 **Why the priors cannot be used as they are.** Each sliding-pair prior puts
 0.35 on two classes and 0.05 on the other six, so summed over the ``K = 8``

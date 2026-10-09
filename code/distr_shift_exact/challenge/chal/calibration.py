@@ -1,14 +1,12 @@
-"""BCTS calibration and the two calibration numbers S6.1 asks for.
+"""BCTS calibration of the label model, and its two calibration numbers.
 
-Label-shift correction re-weights ``p_tr(y|x)`` by ``theta_y / p_tr(y)``, so it
-inherits every calibration error of the base model directly. S6.1 therefore
-makes the default **bias-corrected temperature scaling with a per-class
-temperature** -- ``softmax(z_k / T_k + b_k)``, all ``2Y`` parameters fit by
-LBFGS on validation NLL -- and requires validation NLL and ECE (15
-**equal-mass** bins) reported before and after.
+The label model is calibrated by **bias-corrected temperature scaling with a
+per-class temperature** -- ``softmax(z_k / T_k + b_k)``, all ``2Y`` parameters
+fit by LBFGS on validation NLL. Validation NLL and ECE (15 **equal-mass**
+bins) are reported before and after.
 
-Both fitters return the same affine pair, so the rest of the code only ever
-applies ``log_softmax(z * scale + bias)`` with ``scale = 1 / T``.
+The calibrated posterior is ``log_softmax(z * scale + bias)`` with
+``scale = 1 / T``.
 """
 
 from __future__ import annotations
@@ -58,26 +56,6 @@ def fit_bcts(logits: torch.Tensor, y: torch.Tensor,
     return T, bd - bd.mean()
 
 
-def fit_temperature(logits: torch.Tensor, y: torch.Tensor,
-                    max_iter: int = 200) -> float:
-    """Scalar ``T_cal`` minimising NLL of ``softmax(logits / T)`` (Guo et al.).
-
-    Kept as the S6.1 ablation against which BCTS is compared; ``fit_bcts`` is
-    the default. Optimised over ``log T`` so the temperature stays positive.
-    """
-    log_t = torch.zeros(1, requires_grad=True)
-    opt = torch.optim.LBFGS([log_t], lr=0.1, max_iter=max_iter)
-
-    def closure():
-        opt.zero_grad()
-        loss = F.cross_entropy(logits / log_t.exp(), y)
-        loss.backward()
-        return loss
-
-    opt.step(closure)
-    return float(log_t.detach().exp())
-
-
 def nll(log_post: np.ndarray, y: np.ndarray) -> float:
     """Mean negative log-likelihood of the labels under ``log_post`` (n, Y)."""
     return float(-log_post[np.arange(len(y)), y].mean())
@@ -107,8 +85,7 @@ def calibration_summary(logits: np.ndarray, y: np.ndarray,
                         scale: np.ndarray, bias: np.ndarray) -> dict:
     """NLL and ECE before (raw softmax) and after ``z * scale + bias``.
 
-    ``scale`` is ``1 / T`` -- per-class for BCTS, constant for scalar
-    temperature scaling, all-ones for the uncalibrated ablation.
+    ``scale`` is the per-class ``1 / T`` of :func:`fit_bcts`.
     """
     def stats(log_post):
         return nll(log_post, y), ece_equal_mass(np.exp(log_post), y)

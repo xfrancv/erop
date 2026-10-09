@@ -2,8 +2,7 @@
 
 Rows inside one batch share ``theta_*`` and the same adaptation evidence, so
 they are strongly dependent; resampling rows would understate every interval
-badly. Precision therefore tracks ``N(m)``, the number of batches, not ``B_m``
-(C9.2).
+badly. Precision therefore tracks ``N(m)``, the number of batches, not ``B_m``.
 
 Two things make this cheap enough to run on 42 000 rows per usage:
 
@@ -25,7 +24,7 @@ from __future__ import annotations
 import numpy as np
 
 # Replicates per vectorised chunk; caps peak memory at roughly
-# CHUNK * B * 8 bytes per array, and B reaches 100 000 at m = 500.
+# CHUNK * B * 8 bytes per array, and B reaches 20 000 at m = 100.
 _CHUNK = 64
 
 
