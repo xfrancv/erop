@@ -32,6 +32,13 @@ What v3 changes against v2:
    that the development batches follow the same process; the intended solution
    estimates `w` by EM on the development batches.
 
+## Kaggle
+
+Download solution.scv file:
+```
+kaggle competitions solution status   know-what-you-dont-know-under-a-new-prior --json
+```
+
 ## Setup
 
 ```bash
